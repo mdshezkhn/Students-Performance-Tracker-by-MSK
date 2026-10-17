@@ -499,6 +499,10 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
 
 body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none; }
 
+/* share & sync */
+.panel code { background: var(--paper-dim); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.panel input[readonly] { color: var(--ink-60); }
+
 </style>
 </head>
 <body>
@@ -1150,8 +1154,26 @@ window.SEED = null;
   const CREDIT_LINE = ['', '', CREDIT];
   function addCreditRow(rows) { rows.push([], CREDIT_LINE); return rows; }
 
+  /* Hardcoded document properties (live inside the .xlsx itself, so they survive
+     file renames, copies and re-saves by SheetJS). Maps to Windows Properties:
+     Author → core.xml dc:creator ("Authors"), LastAuthor → cp:lastModifiedBy
+     ("Last saved by"), Manager → app.xml <Manager> ("Manager"). */
+  const AUTHOR = 'Mohammed Shehzad Khan (Teacher Mo)';
+  function stampProps(wb, extra) {
+    wb.Props = Object.assign({
+      Author: AUTHOR,
+      LastAuthor: AUTHOR,
+      Manager: AUTHOR,
+      Company: 'SPR — by Teacher Mo'
+    }, extra || {});
+    return wb;
+  }
+
   function exportWorkbook(sem) {
-    const wb = XLSX.utils.book_new();
+    const wb = stampProps(XLSX.utils.book_new(), {
+      Title: [sem.school, sem.className, 'SPR', sem.name].filter(Boolean).join(' - '),
+      Company: sem.school || 'SPR — by Teacher Mo'
+    });
     const G = (sid) => Calc.gradeStudent(sem, sid);
 
     /* ---- Instructions ---- */
@@ -1361,7 +1383,10 @@ window.SEED = null;
 
   /* ---------------- BATCH: all report cards → one workbook ---------------- */
   function exportAllReportCards(sem, analysis) {
-    const wb = XLSX.utils.book_new();
+    const wb = stampProps(XLSX.utils.book_new(), {
+      Title: [sem.className, 'all-report-cards', sem.name].filter(Boolean).join(' - '),
+      Company: sem.school || 'SPR — by Teacher Mo'
+    });
     for (const s of sem.students) {
       const name = (s.nameEn || s.nameCn || s.id).replace(/[\\\/\?\*\[\]:]/g, '-');
       const ws = exportReportCard(sem, s.id, analysis);
@@ -1441,7 +1466,7 @@ window.SEED = null;
     return fallback || 'Imported semester';
   }
 
-  return { importWorkbook, exportWorkbook, suggestNameFromFilename,
+  return { importWorkbook, exportWorkbook, suggestNameFromFilename, stampProps,
            exportReportCard, exportAllReportCards, exportClassReport };
 });
 
@@ -1799,7 +1824,9 @@ window.SEED = null;
         (d) => {
           d.onclick = (e) => {
             const b = e.target.closest('[data-x]');
-            if (b) { closeDlg(); fin(b.dataset.x === '1'); }
+            /* resolve BEFORE closeDlg(): closing fires the dialog's close event,
+               whose onclose would otherwise win the race and always resolve false */
+            if (b) { fin(b.dataset.x === '1'); closeDlg(); }
           };
           d.onclose = () => fin(false);
         }
@@ -2606,6 +2633,29 @@ window.SEED = null;
         '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '" style="width:64px"></label>' +
         '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '" style="width:64px"></label>' +
       '</div></div>' +
+      '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
+      (function () {
+        var c = getShare();
+        var canCrypto = !!subtle();
+        var status = [];
+        if (c.bin) status.push('bin <code>' + U.esc(c.bin) + '</code>');
+        if (c.lastPush) status.push('pushed by ' + U.esc(c.lastPushBy || '?') + ' · ' + new Date(c.lastPush).toLocaleString());
+        if (c.lastPull) status.push('pulled ' + new Date(c.lastPull).toLocaleString());
+        var link = shareLink();
+        return '<div class="panel">' +
+          '<p class="small" style="margin-bottom:10px">Create one free bin at <b>npoint.io</b> (New JSON bin — content can stay <code>{}</code>), then paste its ID here. Data is <b>encrypted (AES-GCM)</b> before upload; the key travels only inside the share link, so the cloud never sees your data. Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins.</p>' +
+          '<div class="flex">' +
+            '<input class="inp" id="shareBin" placeholder="npoint bin ID (e.g. a1b2c3d4)" style="width:230px" value="' + U.esc(c.bin || '') + '">' +
+            '<button class="btn" data-action="share-save">Save bin ID</button>' +
+            '<button class="btn primary" data-action="share-push"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Push to cloud</button>' +
+            '<button class="btn" data-action="share-pull"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Pull from cloud</button>' +
+          '</div>' +
+          (link ? '<div class="flex mt" style="align-items:center"><input class="inp" id="shareLink" readonly style="flex:1;min-width:260px;font-size:12px" value="' + U.esc(link) + '"><button class="btn" data-action="share-copy">Copy share link</button></div>' +
+            '<p class="small" style="margin-top:6px">Anyone with this link can read and edit the class data — send it only to your co-teacher.</p>' : '') +
+          (status.length ? '<p class="small" style="margin-top:8px">' + status.join(' · ') + '</p>' : '') +
+          (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Share &amp; sync needs the online version (https). Open the website in a browser to use it.</p>' : '') +
+          '</div>';
+      })() +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Data</h3>' +
       '<div class="flex">' +
         '<button class="btn" data-action="load-sample">Reset to sample data</button>' +
@@ -2961,7 +3011,10 @@ window.SEED = null;
   function dlClassReport() {
     const sem = cur(); if (!sem) return;
     const ws = EB.exportClassReport(sem);
-    const wb = XLSX.utils.book_new();
+    const wb = EB.stampProps(XLSX.utils.book_new(), {
+      Title: [sem.className, 'class-report', sem.name].filter(Boolean).join(' - '),
+      Company: sem.school || 'SPR — by Teacher Mo'
+    });
     XLSX.utils.book_append_sheet(wb, ws, 'Class Report');
     XLSX.writeFile(wb, sanitizeFn(sem.className + '-class-report-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
     toast('Class report downloaded');
@@ -2982,7 +3035,10 @@ window.SEED = null;
     const stu = sem.students.find((s) => s.id === sid);
     if (!stu) return;
     const ws = EB.exportReportCard(sem, sid, window.Analysis);
-    const wb = XLSX.utils.book_new();
+    const wb = EB.stampProps(XLSX.utils.book_new(), {
+      Title: ['report-card', (stu.nameEn || stu.nameCn), sem.name].filter(Boolean).join(' - '),
+      Company: sem.school || 'SPR — by Teacher Mo'
+    });
     XLSX.utils.book_append_sheet(wb, ws, 'Report Card');
     XLSX.writeFile(wb, sanitizeFn('report-card-' + (stu.nameEn || stu.nameCn) + '-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
     toast('Report card downloaded for ' + (stu.nameEn || stu.nameCn));
@@ -3183,11 +3239,28 @@ window.SEED = null;
       if (!u || !p) { $('#loginErr').textContent = 'Enter username and password.'; return; }
       const user = doLogin(u, p);
       if (!user) { $('#loginErr').textContent = 'Invalid username or password.'; return; }
-      closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + user.name);
+      closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + user.name); maybeJoin();
       if (!DB.settings.privacyAck) openPrivacy();
       return;
     }
     if (a === 'logout') { doLogout(); return; }
+    if (a === 'share-save') {
+      const v = ($('#shareBin') ? $('#shareBin').value : '').trim();
+      if (!v) { toast('Enter the npoint bin ID first', true); return; }
+      const c = getShare(); c.bin = v; setShare(c);
+      toast('Bin saved — you can Push to cloud now');
+      renderManage(); return;
+    }
+    if (a === 'share-push') { sharePush(); return; }
+    if (a === 'share-pull') { sharePull(); return; }
+    if (a === 'share-copy') {
+      const inp = $('#shareLink');
+      if (!inp) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inp.value).then(() => toast('Share link copied'), () => { inp.select(); document.execCommand('copy'); toast('Share link copied'); });
+      } else { inp.select(); document.execCommand('copy'); toast('Share link copied'); }
+      return;
+    }
     if (a === 'privacy-open') { openPrivacy(); return; }
     if (a === 'privacy-ack') { privacyAck(); return; }
     if (a === 'dl-class-report') { dlClassReport(); return; }
@@ -3335,6 +3408,106 @@ window.SEED = null;
   /* =================================== init =================================== */
 
   /* ============================ AUTHENTICATION ============================ */
+  /* ============================ share & sync (npoint.io) ============================
+     Two teachers, one dataset. The class data is AES-GCM encrypted with a random
+     key; only the ciphertext goes to the cloud bin. The key travels exclusively
+     inside the share link (#join=<bin>&k=<key>), so the server never sees it.
+     Manual Push/Pull (last-save-wins). */
+  const SHARE_KEY = 'spr-share-v1';
+  const NP_API = 'https://api.npoint.io/';
+  function getShare() { try { return JSON.parse(localStorage.getItem(SHARE_KEY)) || {}; } catch (e) { return {}; } }
+  function setShare(cfg) { localStorage.setItem(SHARE_KEY, JSON.stringify(cfg)); }
+  function b64uFromBytes(b) { let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function bytesFromB64u(s) { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); const b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; }
+  function subtle() { return (window.crypto && window.crypto.subtle) ? window.crypto.subtle : null; }
+
+  async function cloudEnvelope(cfg) {
+    /* reuse the stored key so share links stay valid across pushes */
+    const keyBytes = cfg.key ? bytesFromB64u(cfg.key) : crypto.getRandomValues(new Uint8Array(32));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const ct = await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(JSON.stringify({ spr: 1, db: DB })));
+    const env = { sprEnc: 1, pushedAt: new Date().toISOString(), pushedBy: (currentUser() || {}).username || 'teacher', iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
+    return { keyBytes: keyBytes, env: env };
+  }
+  async function cloudDecrypt(env, keyB64) {
+    const ck = await subtle().importKey('raw', bytesFromB64u(keyB64), 'AES-GCM', false, ['decrypt']);
+    const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(env.iv) }, ck, bytesFromB64u(env.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  function applyCloudObj(env, keyB64) {
+    let obj;
+    if (env && env.sprEnc) {
+      if (!keyB64) throw new Error('this cloud copy is encrypted — open the share link that contains its key');
+      return cloudDecrypt(env, keyB64);
+    } else if (env && env.spr === 1) obj = env;
+    else throw new Error('not an SPR cloud copy');
+    return Promise.resolve(obj);
+  }
+  function shareLink() {
+    const c = getShare();
+    if (!c.bin || !c.key) return null;
+    return location.origin + location.pathname + '#join=' + encodeURIComponent(c.bin) + '&k=' + encodeURIComponent(c.key);
+  }
+  async function sharePush() {
+    if (!subtle()) { toast('Share & sync needs the online (https) version of the app', true); return; }
+    const c = getShare();
+    if (!c.bin) { toast('Save a npoint bin ID first (Manage → Share & sync)', true); return; }
+    try {
+      toast('Pushing…');
+      const out = await cloudEnvelope(c);
+      const res = await fetch(NP_API + encodeURIComponent(c.bin), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out.env) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      c.key = b64uFromBytes(out.keyBytes); c.lastPush = out.env.pushedAt; c.lastPushBy = out.env.pushedBy; setShare(c);
+      toast('Pushed — copy the share link to your co-teacher');
+      if (location.hash === '#/manage') renderManage();
+    } catch (e) { toast('Push failed: ' + e.message, true); }
+  }
+  async function sharePull() {
+    const c = getShare();
+    if (!c.bin) { toast('Save a npoint bin ID first', true); return; }
+    try {
+      toast('Checking cloud…');
+      const res = await fetch(NP_API + encodeURIComponent(c.bin));
+      if (!res.ok) throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (bin not found)' : ''));
+      const env = await res.json();
+      const obj = await applyCloudObj(env, c.key);
+      if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
+      const when = env.pushedAt ? new Date(env.pushedAt).toLocaleString() : 'unknown time';
+      const okGo = await confirmDlg('Pull from cloud?',
+        'Replace the data in this browser with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. Local changes not pushed yet will be lost.', 'Pull & replace');
+      if (!okGo) return;
+      localStorage.setItem(LS_KEY, JSON.stringify(obj.db));
+      c.lastPull = new Date().toISOString(); setShare(c);
+      location.reload();
+    } catch (e) { toast('Pull failed: ' + e.message, true); }
+  }
+  async function shareJoin(binId, keyB64) {
+    try {
+      toast('Joining shared workbook…');
+      const res = await fetch(NP_API + encodeURIComponent(binId));
+      if (!res.ok) throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (bin not found)' : ''));
+      const env = await res.json();
+      const obj = await applyCloudObj(env, keyB64);
+      if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
+      const okGo = await confirmDlg('Join shared workbook?',
+        'Load the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + ' into this browser and use it for future Push/Pull?', 'Join');
+      if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
+      setShare({ bin: binId, key: keyB64 || null, lastPull: new Date().toISOString() });
+      localStorage.setItem(LS_KEY, JSON.stringify(obj.db));
+      history.replaceState(null, '', location.pathname + location.search);
+      location.reload();
+    } catch (e) {
+      toast('Join failed: ' + e.message, true);
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+  function maybeJoin() {
+    const m = (location.hash || '').match(/^#join=([^&]+)(?:&k=([^&]+))?/);
+    if (!m) return;
+    shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null);
+  }
+
   const AUTH_KEY = 'spr-auth-v1';
 
   function hashPassword(pw) {
@@ -3437,6 +3610,7 @@ window.SEED = null;
     route();
     if (!isLoggedIn()) { document.body.classList.add('auth-gate'); renderLogin(); }
     else if (!DB.settings.privacyAck) openPrivacy();
+    maybeJoin();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
