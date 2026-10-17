@@ -426,8 +426,33 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
 .privacy-body h4 { margin: 12px 0 4px; font-size: 13px; }
 .privacy-body ul { margin: 4px 0; padding-left: 18px; }
 @media (max-width: 760px) { .swot-grid { grid-template-columns: 1fr; } }
+/* ============ REPORT CARDS ============ */
+.report-card {
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 32px 36px; max-width: 780px; margin: 0 auto;
+}
+.rc-header { text-align: center; margin-bottom: 24px; }
+.rc-school { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--board); }
+.rc-title { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink); margin: 6px 0; }
+.rc-meta { font-size: 13px; color: var(--ink-60); }
+.rc-stu { margin-bottom: 20px; }
+.rc-stu th { text-align: right; font-weight: 600; font-size: 12px; color: var(--ink-60); padding: 6px 12px 6px 0; white-space: nowrap; }
+.rc-stu td { font-weight: 600; font-size: 13px; }
+.rc-scores { margin-bottom: 20px; }
+.rc-rag { margin-bottom: 20px; }
+.rc-rag th { text-align: right; font-weight: 600; font-size: 12px; color: var(--ink-60); padding: 6px 12px 6px 0; }
+.rc-rag td { font-weight: 600; }
+.rc-swot { margin-bottom: 20px; }
+.rc-swot h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--ink); }
+.rc-remark { margin-bottom: 24px; }
+.rc-remark h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
+.rc-sign { display: flex; justify-content: space-between; gap: 20px; margin: 32px 0 16px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-60); font-weight: 500; }
+.rc-credit { text-align: center; font-size: 11px; color: var(--ink-40); font-style: italic; margin-top: 16px; }
+
 @media print {
   .swot-cell { break-inside: avoid; }
+  .report-card { box-shadow: none; border: none; padding: 0; max-width: 100%; }
   .print-only { display: block !important; }
   .print-credit {
     position: fixed; bottom: 12px; left: 0; right: 0;
@@ -1238,13 +1263,149 @@ window.SEED = null;
     return wb;
   }
 
+  /* ---------------- REPORT CARD: single student → formatted sheet ---------------- */
+  function exportReportCard(sem, sid, analysis) {
+    const stu = sem.students.find((s) => s.id === sid);
+    if (!stu) throw new Error('Student not found: ' + sid);
+    const g = Calc.gradeStudent(sem, sid);
+    const sw = analysis ? analysis.swot({ semesters: [sem] }, sid) : null;
+    const L = (p) => (p === null ? '—' : Calc.letter(p));
+    const P = (p) => (p === null ? '—' : Math.round(p * 10) / 10 + '%');
+
+    const rows = [
+      [sem.school.toUpperCase() + ' — STUDENT PERFORMANCE REPORT CARD'],
+      ['Class: ' + sem.className + '    Semester: ' + sem.name],
+      [],
+      ['Student Name', stu.nameEn || '', stu.nameCn || ''],
+      ['Student ID', stu.id, stu.gender || ''],
+      [],
+      ['COMPONENT', 'SCORE', 'GRADE', 'WEIGHT', 'CONTRIBUTION'],
+    ];
+    const parts = [
+      ['Listening', g.skills.Listening], ['Speaking', g.skills.Speaking],
+      ['Writing', g.skills.Writing], ['Reading', g.skills.Reading],
+      ['Spelling', g.spelling], ['Daily Assignments', g.daily],
+      ['Mid-Term', g.midterm], ['Oral', g.oral], ['Written', g.written],
+    ];
+    for (const [name, val] of parts) {
+      const w = name === 'Written' ? 20 : 10;
+      rows.push([name, P(val), L(val), w + '%', val === null ? '—' : (Math.round(val * w) / 100).toFixed(2)]);
+    }
+    rows.push(['FINAL SCORE', Math.round(g.final * 10) / 10 + '%', g.letter, '100%', '']);
+    rows.push([]);
+    rows.push(['RAG STATUS', g.final >= 75 ? 'GREEN' : g.final >= 55 ? 'AMBER' : 'RED', '', '', '']);
+    rows.push([]);
+
+    if (sw) {
+      rows.push(['SWOT ANALYSIS']);
+      rows.push(['Strengths']);
+      sw.strengths.forEach((x) => rows.push(['  • ' + x]));
+      rows.push(['Weaknesses']);
+      sw.weaknesses.forEach((x) => rows.push(['  • ' + x]));
+      rows.push(['Opportunities']);
+      (sw.opportunities.length ? sw.opportunities : ['Stable — maintain current approach']).forEach((x) => rows.push(['  • ' + x]));
+      rows.push(['Threats / Concerns']);
+      sw.threats.forEach((x) => rows.push(['  • ' + x]));
+      rows.push([]);
+      rows.push(['TEACHER REMARK']);
+      rows.push([sw.remark]);
+      rows.push([]);
+    }
+
+    rows.push(['', '', '']);
+    rows.push(['Teacher Signature: ____________________', '', 'Date: ____________']);
+    rows.push([]);
+    rows.push([CREDIT]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 14 }];
+    return ws;
+  }
+
+  /* ---------------- BATCH: all report cards → one workbook ---------------- */
+  function exportAllReportCards(sem, analysis) {
+    const wb = XLSX.utils.book_new();
+    for (const s of sem.students) {
+      const name = (s.nameEn || s.nameCn || s.id).replace(/[\\\/\?\*\[\]:]/g, '-');
+      const ws = exportReportCard(sem, s.id, analysis);
+      XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 28));
+    }
+    return wb;
+  }
+
+  /* ---------------- CLASS REPORT → summary sheet ---------------- */
+  function exportClassReport(sem) {
+    const gs = Calc.gradeAll(sem);
+    const dist = Calc.gradeDistribution(sem);
+    const comp = Calc.completeness(sem);
+    const L = (p) => (p === null ? '—' : Calc.letter(p));
+    const P = (p) => (p === null ? '—' : Math.round(p * 10) / 10 + '%');
+
+    const rows = [
+      [sem.school.toUpperCase() + ' — CLASS PERFORMANCE SUMMARY'],
+      ['Class: ' + sem.className + '    Semester: ' + sem.name],
+      ['Teachers: ' + (sem.teachers || []).join(', ')],
+      [],
+      ['CLASS STATISTICS'],
+      ['Students', sem.students.length],
+      ['Class Final Average', P(Calc.classFinalAvg(sem))],
+      ['A* Count', dist['A*']],
+      ['A Count', dist.A],
+      ['B Count', dist.B],
+      ['C Count', dist.C],
+      ['D Count', dist.D],
+      ['U Count', dist.U],
+      ['Students Needing Attention', Calc.atRisk(sem).length],
+      ['Observations Recorded', Math.round(comp.obs * 100) + '%'],
+      ['Spelling Recorded', Math.round(comp.spelling * 100) + '%'],
+      ['Daily Assignments Recorded', Math.round(comp.daily * 100) + '%'],
+      ['Tests Recorded', Math.round(comp.tests * 100) + '%'],
+      [],
+      ['STUDENT RESULTS'],
+      ['Index', 'ID', 'Name (English)', 'Name (Chinese)', 'Listen', 'Speak', 'Write', 'Read', 'Spell', 'Daily', 'Mid', 'Oral', 'Written', 'Final', 'Grade'],
+    ];
+
+    sem.students.forEach((s, i) => {
+      const g = Calc.gradeStudent(sem, s.id);
+      rows.push([i + 1, s.id, s.nameEn || '', s.nameCn || '',
+        L(g.skills.Listening), L(g.skills.Speaking), L(g.skills.Writing), L(g.skills.Reading),
+        L(g.spelling), L(g.daily), L(g.midterm), L(g.oral), L(g.written),
+        Math.round(g.final * 10) / 10 + '%', g.letter]);
+    });
+
+    rows.push([]);
+    rows.push(['COMPONENT AVERAGES']);
+    const components = ['Listening', 'Speaking', 'Writing', 'Reading', 'Spelling', 'Daily Assignments', 'Mid-Term', 'Oral', 'Written'];
+    components.forEach((c) => {
+      const avg = gs.map((g) => g.parts[c]).filter((v) => v !== null);
+      rows.push([c, avg.length ? P(avg.reduce((a, b) => a + b, 0) / avg.length) : '—']);
+    });
+
+    rows.push([]);
+    rows.push(['STUDENTS NEEDING ATTENTION']);
+    const risk = Calc.atRisk(sem);
+    if (risk.length === 0) rows.push(['All students on track']);
+    risk.forEach((r) => {
+      const stu = sem.students.find((s) => s.id === r.sid);
+      rows.push([stu ? (stu.nameEn || stu.nameCn) : r.sid, r.reasons.join('; ')]);
+    });
+
+    rows.push([]);
+    rows.push([CREDIT]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 8 }];
+    return ws;
+  }
+
   function suggestNameFromFilename(fn, fallback) {
     const m = String(fn || '').match(/(20\d{2})[\s._-]*(fall|spring)/i);
     if (m) return m[1] + ' ' + (m[2][0].toUpperCase() + m[2].slice(1).toLowerCase());
     return fallback || 'Imported semester';
   }
 
-  return { importWorkbook, exportWorkbook, suggestNameFromFilename };
+  return { importWorkbook, exportWorkbook, suggestNameFromFilename,
+           exportReportCard, exportAllReportCards, exportClassReport };
 });
 
 </script>
@@ -1610,7 +1771,7 @@ window.SEED = null;
   }
 
   /* ============================ shell & router ============================ */
-  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['manage', 'Manage & setup']];
+  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['manage', 'Manage & setup']];
   function buildShell() {
     const sem = cur();
     $('#app').innerHTML =
@@ -1657,6 +1818,8 @@ window.SEED = null;
       case 'entry': renderEntry(parts[1] || 'sp'); break;
       case 'grading': renderGrading(); break;
       case 'analysis': ui.anMode = parts[1] === 'student' ? 'student' : 'class'; renderAnalysis(); break;
+      case 'reports': ui.rptMode = parts[1] === 'student' ? 'student' : 'class'; renderReports(); break;
+      case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
       case 'manage': renderManage(); break;
       default: renderDashboard();
     }
@@ -1890,7 +2053,8 @@ window.SEED = null;
       U.esc(sem.name),
       (prevStu ? '<a class="btn sm" href="#/student/' + U.esc(prevStu.id) + '">← ' + U.esc(prevStu.nameEn || prevStu.nameCn) + '</a>' : '') +
       (nextStu ? '<a class="btn sm" href="#/student/' + U.esc(nextStu.id) + '">' + U.esc(nextStu.nameEn || nextStu.nameCn) + ' →</a>' : '') +
-      '<button class="btn sm" data-action="print">Print report</button>') +
+      '<button class="btn sm" data-action="print">Print report</button>' +
+      '<a class="btn sm primary" href="#/report/' + U.esc(sid) + '">Report Card</a>') +
 
       '<section class="profile-head">' +
         '<div class="stu-id-block"><div class="avatar">' + U.esc(avatarChar(s)) + '</div>' +
@@ -2599,7 +2763,189 @@ window.SEED = null;
     }
   }
 
-  /* ============================ privacy & data notice ============================ */
+  /* ============================ report cards ============================ */
+  function renderReports() {
+    const sem = cur();
+    const n = DB.semesters.length;
+    const mode = ui.rptMode || 'class';
+    const tabs = '<div class="tabs">' +
+      '<a class="tab' + (mode === 'class' ? ' on' : '') + '" data-accent="gr" href="#/reports/class">Class report</a>' +
+      '<a class="tab' + (mode === 'student' ? ' on' : '') + '" data-accent="obs" href="#/reports/student">Student report cards</a></div>';
+    let body = '';
+    if (n === 0) body = '<div class="empty"><div class="big">No semesters yet</div><p>Import an SPR file first.</p></div>';
+    else if (mode === 'student') body = rptStudentPicker(sem);
+    else body = rptClassView(sem);
+    $('#content').innerHTML = pageHead('Report Cards', 'download, print or share — every card carries your credit',
+      '<button class="btn" data-action="print">Print</button>') + tabs + body;
+  }
+
+  function rptClassView(sem) {
+    const dist = C.gradeDistribution(sem);
+    const comp = C.completeness(sem);
+    const risk = C.atRisk(sem);
+    const gAll = C.gradeAll(sem);
+    const top = gAll.filter((g) => g.final !== null).sort((a, b) => b.final - a.final).slice(0, 5);
+    return '<div class="kpi-strip">' +
+        kpi(fmt(C.classFinalAvg(sem), 1), 'class average', false) +
+        kpi(dist['A*'] + '/' + sem.students.length, 'grade A*') +
+        kpi(risk.length, 'need attention', risk.length > 0) +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="panel"><h3>Grade distribution</h3><div class="panel-sub">A* → U</div>' +
+          '<div class="chart-box" style="height:220px"><canvas id="ch-rptDist"></canvas></div></div>' +
+        '<div class="panel"><h3>Recording status</h3><div class="panel-sub">data completeness</div>' +
+          '<table class="tbl"><tbody>' +
+            ['Observations', 'Spelling', 'Daily', 'Tests'].map((l, i) => {
+              const k = ['obs', 'spelling', 'daily', 'tests'][i];
+              const p = Math.round(comp[k] * 100);
+              return '<tr><td>' + l + '</td><td class="num">' + p + '%</td>' +
+                '<td style="width:50%"><div class="comp-bar"><i style="width:' + p + '%;background:' + (p >= 85 ? '#10b981' : p >= 50 ? '#f59e0b' : '#ef4444') + '"></i></div></td></tr>';
+            }).join('') +
+          '</tbody></table></div>' +
+      '</div>' +
+      '<div class="panel mt"><h3>Top performers</h3>' +
+        '<table class="tbl"><thead><tr><th>#</th><th>Student</th><th class="num">Final</th><th class="c">Grade</th></tr></thead><tbody>' +
+        top.map((g, i) => { const s = sem.students.find((x) => x.id === g.sid);
+          return '<tr><td>' + (i + 1) + '</td>' +
+            '<td><a class="stu-link" href="#/report/' + U.esc(g.sid) + '">' + U.esc(s ? (s.nameEn || s.nameCn) : g.sid) + '</a></td>' +
+            '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td></tr>'; }).join('') +
+        '</tbody></table></div>' +
+      '<div class="panel mt"><h3>All students</h3>' +
+        '<table class="tbl"><thead><tr><th>Student</th><th class="c">Final</th><th class="c">Grade</th><th class="c">Report Card</th></tr></thead><tbody>' +
+        sem.students.map((s) => { const g = C.gradeStudent(sem, s.id);
+          return '<tr><td>' + U.esc(s.nameEn || s.nameCn) + ' <span class="muted small">' + U.esc(s.nameCn || '') + '</span></td>' +
+            '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td>' +
+            '<td class="c"><a class="btn sm" href="#/report/' + U.esc(s.id) + '">View card</a></td></tr>'; }).join('') +
+        '</tbody></table></div>' +
+      '<div class="flex mt" style="justify-content:center;gap:16px">' +
+        '<button class="btn primary" data-action="dl-class-report">Download Class Report (Excel)</button>' +
+        '<button class="btn" data-action="dl-all-cards">Download All Report Cards (Excel)</button>' +
+      '</div>';
+  }
+
+  function rptStudentPicker(sem) {
+    return '<div class="sheet-toolbar"><div class="flex" style="width:100%">' +
+      '<label>Student <select class="inp" id="rptStu">' +
+      sem.students.map((s) => '<option value="' + U.esc(s.id) + '">' + U.esc(s.nameEn || s.nameCn) + ' ' + U.esc(s.nameCn || '') + '</option>').join('') +
+      '</select></label>' +
+      '<button class="btn primary" data-action="view-card">View Report Card</button>' +
+      '<button class="btn" data-action="dl-one-card">Download (Excel)</button>' +
+      '</div></div>' +
+      '<div class="empty"><div class="big">Select a student above</div><p>Choose a student and click "View Report Card" to preview, print, or download their individual card.</p></div>';
+  }
+
+  function renderReportCard(sid) {
+    const sem = cur();
+    const stu = sem.students.find((s) => s.id === sid);
+    if (!stu) { location.hash = '#/reports/student'; return; }
+    const g = C.gradeStudent(sem, sid);
+    const sw = A.swot(DB, sid);
+    const clsAvg = C.classFinalAvg(sem);
+    const ragCode = g.final >= 75 ? 'G' : g.final >= 55 ? 'A' : 'R';
+    const ragName = ragCode === 'G' ? 'Green' : ragCode === 'A' ? 'Amber' : 'Red';
+    const rank = (function () {
+      const sorted = C.gradeAll(sem).filter((x) => x.final !== null).sort((a, b) => b.final - a.final);
+      const i = sorted.findIndex((x) => x.sid === sid);
+      return i >= 0 ? (i + 1) + ' / ' + sorted.length : '—';
+    })();
+
+    const componentRows = [
+      ['Listening', g.skills.Listening], ['Speaking', g.skills.Speaking],
+      ['Writing', g.skills.Writing], ['Reading', g.skills.Reading],
+      ['Spelling', g.spelling], ['Daily Assignments', g.daily],
+      ['Mid-Term', g.midterm], ['Oral', g.oral], ['Written', g.written],
+    ].map(([name, val]) => {
+      const w = name === 'Written' ? 20 : 10;
+      return '<tr><td>' + name + '</td><td class="num">' + fmt(val, 1) + '%</td>' +
+        '<td class="c">' + gBadge(val === null ? null : C.letter(val)) + '</td>' +
+        '<td class="num">' + w + '%</td>' +
+        '<td class="num">' + (val === null ? '—' : fmt(val * w / 100, 2)) + '</td></tr>';
+    }).join('');
+
+    $('#content').innerHTML = pageHead('Report Card', stu.nameEn + ' · ' + sem.name,
+      '<button class="btn primary" data-action="print">Print / Save PDF</button>' +
+      '<button class="btn" data-action="dl-card" data-sid="' + U.esc(sid) + '">Download (Excel)</button>' +
+      '<a class="btn" href="#/student/' + U.esc(sid) + '">Full profile</a>') +
+
+      '<div class="report-card">' +
+        '<div class="rc-header">' +
+          '<div class="rc-school">' + U.esc(sem.school) + '</div>' +
+          '<div class="rc-title">STUDENT PERFORMANCE REPORT CARD</div>' +
+          '<div class="rc-meta">' + U.esc(sem.className) + ' · ' + U.esc(sem.name) + '</div>' +
+        '</div>' +
+        '<div class="rc-stu">' +
+          '<table class="tbl"><tbody>' +
+            '<tr><th>Student Name</th><td>' + U.esc(stu.nameEn || '') + ' ' + U.esc(stu.nameCn || '') + '</td>' +
+                '<th>Student ID</th><td>' + U.esc(stu.id) + '</td></tr>' +
+            '<tr><th>Gender</th><td>' + U.esc(stu.gender || '') + '</td>' +
+                '<th>Class Rank</th><td>' + rank + '</td></tr>' +
+          '</tbody></table>' +
+        '</div>' +
+        '<div class="rc-scores">' +
+          '<table class="tbl"><thead><tr><th>Component</th><th class="num">Score</th><th class="c">Grade</th><th class="num">Weight</th><th class="num">Contribution</th></tr></thead>' +
+          '<tbody>' + componentRows +
+          '<tr style="border-top:2px solid var(--rule-strong)"><td><b>FINAL SCORE</b></td>' +
+            '<td class="num"><b>' + fmt(g.final, 1) + '%</b></td>' +
+            '<td class="c">' + gBadge(g.letter) + '</td><td class="num">100%</td><td></td></tr>' +
+          '</tbody></table>' +
+        '</div>' +
+        '<div class="rc-rag">' +
+          '<table class="tbl"><tr>' +
+            '<th>RAG Status</th><td>' + ragChip(ragCode, ragName) + '</td>' +
+            '<th>Class Average</th><td>' + fmt(clsAvg, 1) + '%</td>' +
+            '<th>vs Class</th><td>' + (g.final >= clsAvg ? '<span class="delta-up">+' : '<span class="delta-down">') + fmt(Math.abs(g.final - clsAvg), 1) + '</span></td>' +
+          '</tr></table>' +
+        '</div>' +
+        (sw ? '<div class="rc-swot">' +
+          '<h3>SWOT Analysis</h3>' +
+          '<div class="swot-grid">' +
+            '<div class="swot-cell s"><h4>Strengths</h4><ul>' + sw.strengths.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+            '<div class="swot-cell w"><h4>Weaknesses</h4><ul>' + sw.weaknesses.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+            '<div class="swot-cell o"><h4>Opportunities</h4><ul>' + (sw.opportunities.length ? sw.opportunities.map((x) => '<li>' + U.esc(x) + '</li>').join('') : '<li>Maintain current approach</li>') + '</ul></div>' +
+            '<div class="swot-cell t"><h4>Threats</h4><ul>' + sw.threats.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+          '</div>' +
+        '</div>' : '') +
+        (sw ? '<div class="rc-remark"><h3>Teacher Remark</h3><div class="remark-box">' + U.esc(sw.remark) + '</div></div>' : '') +
+        '<div class="rc-sign">' +
+          '<div>Teacher Signature: ____________________</div>' +
+          '<div>Date: ____________</div>' +
+          '<div>Parent Signature: ____________________</div>' +
+        '</div>' +
+        '<div class="rc-credit">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
+      '</div>';
+  }
+
+  /* ============================ report download helpers ============================ */
+  function dlClassReport() {
+    const sem = cur(); if (!sem) return;
+    const ws = EB.exportClassReport(sem);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Class Report');
+    XLSX.writeFile(wb, sanitizeFn(sem.className + '-class-report-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
+    toast('Class report downloaded');
+  }
+  function dlAllCards() {
+    const sem = cur(); if (!sem) return;
+    const wb = EB.exportAllReportCards(sem, window.Analysis);
+    XLSX.writeFile(wb, sanitizeFn(sem.className + '-all-report-cards-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
+    toast('All ' + sem.students.length + ' report cards downloaded');
+  }
+  function dlOneCard() {
+    const sel = $('#rptStu');
+    if (sel && sel.value) { dlCard(sel.value); return; }
+    toast('Select a student first', true);
+  }
+  function dlCard(sid) {
+    const sem = cur(); if (!sem || !sid) return;
+    const stu = sem.students.find((s) => s.id === sid);
+    if (!stu) return;
+    const ws = EB.exportReportCard(sem, sid, window.Analysis);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Report Card');
+    XLSX.writeFile(wb, sanitizeFn('report-card-' + (stu.nameEn || stu.nameCn) + '-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
+    toast('Report card downloaded for ' + (stu.nameEn || stu.nameCn));
+  }
+
   function privacyHtml() {
     return '<h3>Privacy &amp; data protection notice</h3>' +
       '<div class="privacy-body"><p>This app handles <b>real student data</b> — names, IDs and grades. Please read carefully:</p>' +
@@ -2785,6 +3131,15 @@ window.SEED = null;
     const sem = cur();
     if (a === 'privacy-open') { openPrivacy(); return; }
     if (a === 'privacy-ack') { privacyAck(); return; }
+    if (a === 'dl-class-report') { dlClassReport(); return; }
+    if (a === 'dl-all-cards') { dlAllCards(); return; }
+    if (a === 'dl-one-card') { dlOneCard(); return; }
+    if (a === 'dl-card') { dlCard(el.dataset.sid); return; }
+    if (a === 'view-card') {
+      const sel = $('#rptStu');
+      if (sel && sel.value) location.hash = '#/report/' + sel.value;
+      return;
+    }
     if (a === 'wiz-open') { openWizard(); return; }
     if (a === 'dlg-close') { closeDlg(); return; }
     if (a === 'wiz-create') { wizCreate(); return; }
