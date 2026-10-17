@@ -6,7 +6,7 @@ averages, auto-grading (A*/A/B/C/D/U), per-student charts, and Excel
 import/export in the SPR workbook format. Fully offline — no internet
 needed after the page loads.
 
-**Open the app:** https://mdshezkhn.github.io/p4c4-markbook/
+**Open the app:** https://mdshezkhn.github.io/Students-Performance-Tracker-by-MSK/
 
 **No student data is stored in this repository.** All data stays in your
 browser (localStorage). Load your class via "Import SPR Excel" on first
