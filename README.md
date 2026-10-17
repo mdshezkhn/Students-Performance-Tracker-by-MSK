@@ -1,7 +1,7 @@
-# P4C4 Markbook — ESL Student Performance Tracker
+|# Student's Performance Report
 
-A single-file web app for ESL teachers: weekly/monthly score entry for
-Classroom Observations, Spelling, Daily Assignments and Tests, with live
+ ESL teacher's markbook: observations, spelling, daily assignments, tests, grading,
+cross-semester comparative analysis (RAG / SWOT), Excel import-export in SPR format.
 averages, auto-grading (A*/A/B/C/D/U), per-student charts, and Excel
 import/export in the SPR workbook format. Fully offline — no internet
 needed after the page loads.

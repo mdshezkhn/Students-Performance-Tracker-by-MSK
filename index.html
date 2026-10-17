@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>P4C4 Markbook — ESL Performance Tracker</title>
+<title>Student's Performance Report</title>
 <style>
 /* =========================================================================
    P4C4 Markbook — "Teacher's Markbook" design system
@@ -393,6 +393,41 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
   .grid th { position: static; }
   .chart-box { height: 220px !important; }
 }
+
+/* ---------- analysis: RAG, SWOT, remarks, privacy ---------- */
+.wm-class { font-size: 15px !important; line-height: 1.25 !important; }
+.rag-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 9px 1px 7px; border: 1.5px solid; }
+.rag-chip.G { color: #1d7a4a; border-color: #1d7a4a; background: #eef7f0; }
+.rag-chip.A { color: #b07d1e; border-color: #c9973b; background: #faf4e4; }
+.rag-chip.R { color: #c4453c; border-color: #c4453c; background: #faeeed; }
+.dotrag { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.dotrag.G { background: #1d7a4a; } .dotrag.A { background: #c9973b; } .dotrag.R { background: #c4453c; }
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.swot-cell { border: 1px solid var(--rule-strong); border-radius: 6px; padding: 10px 14px; background: #fff; border-top: 3px solid var(--ink-40); }
+.swot-cell h4 { margin: 0 0 6px; font-size: 11.5px; letter-spacing: 0.05em; color: var(--ink-60); font-weight: 700; }
+.swot-cell ul { margin: 0; padding-left: 16px; font-size: 12.5px; line-height: 1.55; }
+.swot-cell.s { border-top-color: var(--g-As); }
+.swot-cell.w { border-top-color: var(--g-D); }
+.swot-cell.o { border-top-color: var(--g-B); }
+.swot-cell.t { border-top-color: var(--rust); }
+.remark-box { border: 1px solid var(--rule-strong); border-left: 4px solid var(--board); background: #fff; border-radius: 6px; padding: 12px 16px; font-size: 13.5px; line-height: 1.65; }
+.matrix td, .matrix th { white-space: nowrap; }
+.delta-up { color: #1d7a4a; font-weight: 600; }
+.delta-down { color: #c4453c; font-weight: 600; }
+.conf-tag { display: inline-block; margin-top: 10px; font-size: 10px; color: var(--red); border: 1px solid #e0b4b0; border-radius: 999px; padding: 1px 8px; background: #faf0ef; }
+.rail-privacy { font-size: 11px; margin-top: 6px; }
+.rail-privacy a { color: var(--chalk-dim); text-decoration: underline; }
+.quote { font-size: 10.5px; color: var(--chalk-dim); margin-top: 12px; font-style: italic; line-height: 1.45; }
+.quote-inline { text-align: center; color: var(--ink-60); font-style: italic; font-size: 12.5px; margin-top: 26px; }
+.privacy-body { font-size: 13px; line-height: 1.6; max-height: 55vh; overflow: auto; }
+.privacy-body h4 { margin: 12px 0 4px; font-size: 13px; }
+.privacy-body ul { margin: 4px 0; padding-left: 18px; }
+@media (max-width: 760px) { .swot-grid { grid-template-columns: 1fr; } }
+@media print {
+  .swot-cell { break-inside: avoid; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }
 
 </style>
 </head>
@@ -1201,12 +1236,223 @@ window.SEED = null;
 </script>
 <script>
 /* =========================================================================
+   Student's Performance Report — comparative analysis engine (pure, no DOM)
+   Cross-semester class/student progress, RAG classification, SWOT remarks.
+   Requires Calc (gradeStudent/gradeAll) and Util.
+   RAG thresholds:  Green ≥ 75 (secure A/A*) · Amber 55–74.9 (B/C) · Red < 55 (D/U)
+   ========================================================================= */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.Analysis = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+  const Calc = (typeof window !== 'undefined' && window.Calc) || (typeof require === 'function' ? require('./calc.js') : null);
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  const r1 = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+  const f1 = (v) => (v === null || v === undefined ? '–' : (Math.round(v * 10) / 10).toFixed(1));
+
+  const COMPONENTS = ['Listening', 'Speaking', 'Writing', 'Reading', 'Spelling',
+    'Daily Assignments', 'Mid-Term', 'Oral', 'Written'];
+  const SHORT = { 'Listening': 'Listen', 'Speaking': 'Speak', 'Writing': 'Write',
+    'Reading': 'Read', 'Spelling': 'Spell', 'Daily Assignments': 'Daily',
+    'Mid-Term': 'Mid-Term', 'Oral': 'Oral', 'Written': 'Written' };
+
+  /* ---------------- RAG ---------------- */
+  function rag(pct) {
+    if (pct === null || pct === undefined || isNaN(pct)) return null;
+    if (pct >= 75) return 'G';
+    if (pct >= 55) return 'A';
+    return 'R';
+  }
+  // overall RAG for a grade result, adjusted by cross-semester trend
+  function ragOverall(g, delta) {
+    let base = rag(g && g.final);
+    if (base === null) return null;
+    if (delta !== null && delta <= -8 && base !== 'R') return base === 'G' ? 'A' : 'R'; // sharp decline
+    if (delta !== null && delta >= 8 && base !== 'G') return base === 'R' ? 'A' : 'G';  // sharp rise
+    return base;
+  }
+  const RAG_NAME = { G: 'Green', A: 'Amber', R: 'Red' };
+
+  /* ---------------- class-level series ---------------- */
+  // one row per semester: part averages, final avg, distribution, at-risk count
+  function classSemesterRows(db) {
+    return db.semesters.map((sem) => {
+      const gs = Calc.gradeAll(sem);
+      const parts = {};
+      for (const k of COMPONENTS) parts[k] = mean(gs.map((g) => g.parts[k]).filter((v) => v !== null));
+      const obsAvg = mean([parts.Listening, parts.Speaking, parts.Writing, parts.Reading].filter((v) => v !== null));
+      return {
+        semId: sem.id, semName: sem.name, n: sem.students.length,
+        parts: parts, obsAvg: obsAvg,
+        final: Calc.classFinalAvg(sem),
+        dist: Calc.gradeDistribution(sem),
+        atRisk: Calc.atRisk(sem).length,
+      };
+    });
+  }
+  function classAvgParts(db, semId) {
+    const row = classSemesterRows(db).find((r) => r.semId === semId);
+    return row ? row.parts : {};
+  }
+
+  // movers: final delta between the last two semesters that share students
+  function movers(db) {
+    if (db.semesters.length < 2) return null;
+    const a = db.semesters[db.semesters.length - 2], b = db.semesters[db.semesters.length - 1];
+    const out = [];
+    for (const s of b.students) {
+      if (!a.students.some((x) => x.id === s.id)) continue;
+      const ga = Calc.gradeStudent(a, s.id), gb = Calc.gradeStudent(b, s.id);
+      if (ga.final === null || gb.final === null) continue;
+      out.push({ sid: s.id, name: s.nameEn || s.nameCn, from: a.name, to: b.name, delta: gb.final - ga.final, final: gb.final });
+    }
+    out.sort((x, y) => y.delta - x.delta);
+    return { from: a.name, to: b.name, list: out };
+  }
+
+  // class-level narrative: best/worst components + trajectory
+  function classSummary(db) {
+    const rows = classSemesterRows(db);
+    if (!rows.length) return null;
+    const last = rows[rows.length - 1], prev = rows[rows.length - 2] || null;
+    const ranked = COMPONENTS.map((k) => ({ k: k, v: last.parts[k] }))
+      .filter((x) => x.v !== null).sort((x, y) => y.v - x.v);
+    const best = ranked.slice(0, 2).map((x) => x.k + ' (' + f1(x.v) + '%)');
+    const worst = ranked.slice(-2).reverse().map((x) => x.k + ' (' + f1(x.v) + '%)');
+    const d = prev && prev.final !== null && last.final !== null ? last.final - prev.final : null;
+    return { last: last, prev: prev, best: best, worst: worst, delta: d };
+  }
+
+  /* ---------------- student-level series ---------------- */
+  function studentSemesterRows(db, sid) {
+    const out = [];
+    for (const sem of db.semesters) {
+      if (!sem.students.some((x) => x.id === sid)) continue;
+      const g = Calc.gradeStudent(sem, sid);
+      const finals = sem.students
+        .map((s) => ({ id: s.id, f: Calc.gradeStudent(sem, s.id).final }))
+        .filter((x) => x.f !== null)
+        .sort((x, y) => y.f - x.f);
+      const rank = finals.findIndex((x) => x.id === sid) + 1;
+      out.push({
+        semId: sem.id, semName: sem.name, parts: g.parts, final: g.final, letter: g.letter,
+        rank: rank || null, total: finals.length, missing: g.missing,
+      });
+    }
+    return out;
+  }
+  // component × semester matrix with last-vs-prev delta
+  function studentMatrix(db, sid) {
+    const rows = studentSemesterRows(db, sid);
+    const prev = rows[rows.length - 2] || null, last = rows[rows.length - 1] || null;
+    return COMPONENTS.concat(['__final']).map((k) => {
+      const vals = rows.map((r) => (k === '__final' ? r.final : r.parts[k]));
+      const lv = vals[vals.length - 1], pv = vals.length > 1 ? vals[vals.length - 2] : null;
+      return {
+        key: k === '__final' ? 'Final' : k, short: k === '__final' ? 'Final' : SHORT[k],
+        values: vals,
+        delta: (lv !== null && pv !== null) ? lv - pv : null,
+        rag: k === '__final' ? rag(lv) : rag(lv),
+      };
+    });
+  }
+
+  /* ---------------- SWOT + remark ---------------- */
+  function swot(db, sid) {
+    const rows = studentSemesterRows(db, sid);
+    if (!rows.length) return null;
+    const last = rows[rows.length - 1];
+    const prev = rows[rows.length - 2] || null;
+    const stu = db.semesters.find((s) => s.id === last.semId).students.find((x) => x.id === sid);
+    const name = (stu && (stu.nameEn || stu.nameCn)) || sid;
+    const cls = classAvgParts(db, last.semId);
+    const L = last.parts;
+
+    const ranked = COMPONENTS.map((k) => ({ k: k, v: L[k], c: cls[k], d: cls[k] !== null && L[k] !== null ? L[k] - cls[k] : null }))
+      .filter((x) => x.v !== null);
+    const byVal = ranked.slice().sort((a, b) => b.v - a.v);
+    const byGap = ranked.slice().sort((a, b) => (b.d === null ? -99 : b.d) - (a.d === null ? -99 : a.d));
+
+    const strengths = ranked.filter((x) => x.v >= 85 || (x.d !== null && x.d >= 8)).sort((a, b) => b.v - a.v).slice(0, 3);
+    const weaknesses = ranked.filter((x) => x.v < 60 || (x.d !== null && x.d <= -8)).sort((a, b) => a.v - b.v).slice(0, 3);
+    if (!strengths.length && byVal.length) strengths.push(byVal[0]);
+    if (!weaknesses.length && byVal.length) weaknesses.push(byVal[byVal.length - 1]);
+
+    // opportunities: close to the next grade band (68–74 → A, 78–84 → A*)
+    const opportunities = ranked.filter((x) => (x.v >= 68 && x.v < 75) || (x.v >= 78 && x.v < 85))
+      .sort((a, b) => b.v - a.v).slice(0, 3);
+    // threats: declining components vs previous semester, or ungraded parts
+    const threats = [];
+    if (prev) {
+      for (const k of COMPONENTS) {
+        const a = prev.parts[k], b = L[k];
+        if (a !== null && b !== null && b - a <= -8) threats.push({ k: k, v: b, d: b - a });
+      }
+    }
+    if (last.missing && last.missing.length) threats.push({ k: 'Ungraded: ' + last.missing.join(', '), v: null, d: null });
+    if (!threats.length && weaknesses.length) threats.push({ k: weaknesses[0].k + ' pulling the final down', v: weaknesses[0].v, d: weaknesses[0].d });
+
+    const best = byVal[0], worst = byVal[byVal.length - 1];
+    const clsFinal = (function () { const r = classSemesterRows(db).find((x) => x.semId === last.semId); return r ? r.final : null; })();
+    const delta = prev && prev.final !== null && last.final !== null ? last.final - prev.final : null;
+    const overallRag = ragOverall({ final: last.final }, delta);
+
+    const bullet = (x) => x.k + ' — ' + f1(x.v) + '%' + (x.d !== null && x.d !== undefined && x.k.indexOf('Ungraded') !== 0 ? ' (' + (x.d >= 0 ? '+' : '') + f1(x.d) + ' vs class)' : '');
+
+    let remark = name + ' finishes ' + last.semName + ' with a weighted final of ' + f1(last.final) + '% (' + (last.letter || '–') + ')';
+    remark += clsFinal !== null ? ', ' + (last.final >= clsFinal ? 'above' : 'below') + ' the class average of ' + f1(clsFinal) + '%.' : '.';
+    if (best && worst && best.k !== worst.k) remark += ' Strongest area: ' + best.k + ' (' + f1(best.v) + '%); most in need of support: ' + worst.k + ' (' + f1(worst.v) + '%).';
+    if (prev) {
+      if (delta === null) remark += ' No comparable final for ' + prev.semName + '.';
+      else if (delta > 1) remark += ' Since ' + prev.semName + ', the overall score has improved by ' + f1(delta) + ' points — well done.';
+      else if (delta < -1) remark += ' Since ' + prev.semName + ', the overall score has slipped by ' + f1(-delta) + ' points.';
+      else remark += ' The overall score has held steady since ' + prev.semName + '.';
+    }
+    if (last.rank) remark += ' Class rank: ' + last.rank + ' of ' + last.total + '.';
+    if (worst) remark += ' Next step: focus on ' + worst.k.toLowerCase() + ', where ' + name + ' is furthest from the class average.';
+    if (last.missing && last.missing.length) remark += ' Note: ' + last.missing.join(', ') + ' not yet graded.';
+
+    return {
+      sid: sid, name: name,
+      last: last, prev: prev, delta: delta, overallRag: overallRag,
+      ragName: overallRag ? RAG_NAME[overallRag] : null,
+      strengths: strengths.map(bullet), weaknesses: weaknesses.map(bullet),
+      opportunities: opportunities.map(bullet), threats: threats.map((t) =>
+        t.k.indexOf('Ungraded') === 0 ? t.k : t.k + ' — ' + f1(t.v) + '%' + (t.d !== null && t.d !== undefined ? ' (' + f1(t.d) + ' vs ' + (prev ? prev.semName : '') + ')' : '')),
+      remark: remark,
+    };
+  }
+
+  /* class SWOT text (compact) */
+  function classSwotText(db) {
+    const s = classSummary(db);
+    if (!s) return null;
+    let t = 'Class finishes ' + s.last.semName + ' with a final average of ' + f1(s.last.final) + '%';
+    if (s.delta !== null) t += s.delta >= 0 ? ' (up ' + f1(s.delta) + ' pts from ' + s.prev.semName + ')' : ' (down ' + f1(-s.delta) + ' pts from ' + s.prev.semName + ')';
+    t += '. Strongest: ' + s.best.join(', ') + '. Weakest: ' + s.worst.join(', ') + '.';
+    return t;
+  }
+
+  return {
+    COMPONENTS: COMPONENTS, SHORT: SHORT, RAG_NAME: RAG_NAME,
+    rag: rag, ragOverall: ragOverall,
+    classSemesterRows: classSemesterRows, classAvgParts: classAvgParts,
+    movers: movers, classSummary: classSummary, classSwotText: classSwotText,
+    studentSemesterRows: studentSemesterRows, studentMatrix: studentMatrix,
+    swot: swot, f1: f1, r1: r1,
+  };
+});
+
+</script>
+<script>
+/* =========================================================================
    P4C4 Markbook — UI application (requires: Calc, Util, ExcelBridge, XLSX,
    Chart, window.SEED)
    ========================================================================= */
 (function () {
   'use strict';
-  const C = window.Calc, U = window.Util, EB = window.ExcelBridge, XLSX = window.XLSX;
+  const C = window.Calc, U = window.Util, EB = window.ExcelBridge, XLSX = window.XLSX, A = window.Analysis;
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const SKILLS = C.SKILLS;
@@ -1222,7 +1468,7 @@ window.SEED = null;
   /* ================================ state ================================ */
   const LS_KEY = 'p4c4-markbook-v1';
   let DB = null, saveTimer = null;
-  const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null };
+  const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null, anMode: 'class', anStu: null };
 
   function acadRank(m) { const i = U.MONTHS.indexOf(m); return i < 0 ? 99 : ((i - 8 + 12) % 12) + 1; }
   function normalizeSemester(sem) {
@@ -1347,18 +1593,21 @@ window.SEED = null;
   }
 
   /* ============================ shell & router ============================ */
-  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['manage', 'Manage & setup']];
+  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['manage', 'Manage & setup']];
   function buildShell() {
     const sem = cur();
     $('#app').innerHTML =
       '<div class="app">' +
         '<nav class="rail">' +
-          '<div class="wordmark"><div class="wm-class">' + U.esc((sem && sem.className) || 'Class markbook') + '</div>' +
-          '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL performance tracker') + '</div></div>' +
+          '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
+          '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
           '<div class="nav">' + NAV.map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
           '<div class="rail-foot"><label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
-            '<div class="saved-dot" id="savedDot"></div></div>' +
+            '<div class="saved-dot" id="savedDot"></div>' +
+            '<span class="conf-tag">Confidential — student data</span>' +
+            '<div class="rail-privacy"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
+            '<div class="quote">Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div></div>' +
         '</nav>' +
         '<main class="page"><div id="content"></div></main>' +
       '</div>';
@@ -1389,6 +1638,7 @@ window.SEED = null;
       case 'student': renderStudent(decodeURIComponent(parts[1] || '')); break;
       case 'entry': renderEntry(parts[1] || 'sp'); break;
       case 'grading': renderGrading(); break;
+      case 'analysis': ui.anMode = parts[1] === 'student' ? 'student' : 'class'; renderAnalysis(); break;
       case 'manage': renderManage(); break;
       default: renderDashboard();
     }
@@ -1400,7 +1650,7 @@ window.SEED = null;
   function renderWelcome() {
     $('#app').innerHTML =
       '<div class="app"><main class="page" style="max-width:860px;margin:0 auto;width:100%">' +
-        pageHead('Class markbook', 'Track classroom observations, spelling, daily assignments, tests and grades — with live charts for every student.') +
+        pageHead('Student\'s Performance Report', 'Track classroom observations, spelling, daily assignments, tests and grades — with live charts, cross-semester analysis and auto-generated RAG / SWOT remarks for every student.') +
         '<div class="empty" style="padding:56px 30px">' +
           '<div class="big" style="font-family:var(--font-display);font-size:24px">Set up your first class</div>' +
           '<p>School and class details, students, then weekly scores — the app does all the averaging and grading.</p>' +
@@ -1409,7 +1659,9 @@ window.SEED = null;
             '<button class="btn" data-action="import-xlsx">Import SPR Excel file</button>' +
             '<button class="btn" data-action="load-sample">Load sample data</button>' +
           '</div>' +
-          '<p class="small muted" style="margin-top:22px">Everything stays in this browser and works offline. Use “Download backup” in Manage to move data between computers.</p>' +
+          '<p class="small muted" style="margin-top:22px">Everything stays in this browser and works offline — nothing is sent to any server. Use “Download backup” in Manage to move data between computers.</p>' +
+          '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
+          '<div class="rail-privacy" style="margin-top:14px;text-align:center"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
         '</div>' +
         '<input type="file" id="file-xlsx" accept=".xlsx,.xls" hidden>' +
         '<input type="file" id="file-json" accept=".json" hidden>' +
@@ -1640,6 +1892,7 @@ window.SEED = null;
         '<div class="panel"><h3>Tests</h3><div class="panel-sub">percentage vs class average</div><div class="chart-box" style="height:260px"><canvas id="ch-tests"></canvas></div></div>' +
       '</div>' +
       '<div class="panel mb"><h3>Observations by month</h3><div class="panel-sub">each line is one skill (month %)</div><div class="chart-box" style="height:240px"><canvas id="ch-obs"></canvas></div></div>' +
+      anFindingsPanel(sid) +
       '<div class="panel"><h3>How the final grade adds up</h3><div class="panel-sub">component % × weight — same formula as the SPR Excel</div>' + contribTable(g) + '</div>';
 
     const weeks = weekLabelList(sem);
@@ -2155,7 +2408,204 @@ window.SEED = null;
     saveDB(); renderManage(); toast(added + ' students added');
   }
 
-  /* ============================ wizard & dialogs ============================ */
+  /* ============================ comparative analysis ============================ */
+  const RAG_HEX = { G: '#1d7a4a', A: '#c9973b', R: '#c4453c' };
+  function ragChip(code, label) {
+    if (!code) return '<span class="g g-none">–</span>';
+    return '<span class="rag-chip ' + code + '"><span class="dotrag ' + code + '"></span>' + (label || A.RAG_NAME[code]) + '</span>';
+  }
+  function dSpan(d) {
+    if (d === null || d === undefined) return '<span class="muted">–</span>';
+    if (d > 1) return '<span class="delta-up">+' + A.f1(d) + '</span>';
+    if (d < -1) return '<span class="delta-down">' + A.f1(d) + '</span>';
+    return '<span class="muted">·</span>';
+  }
+  function anFindingsPanel(sid) {
+    const sw = A.swot(DB, sid);
+    if (!sw) return '';
+    return '<div class="panel mb"><h3>Findings — RAG &amp; SWOT (auto-generated)</h3>' +
+      '<div class="panel-sub">' + U.esc(sw.last.semName) + ' · overall ' + ragChip(sw.overallRag) +
+      ' · trend vs ' + U.esc(sw.prev ? sw.prev.semName : '—') + ' ' + dSpan(sw.delta) + '</div>' +
+      '<div class="swot-grid" style="margin-top:10px">' +
+        '<div class="swot-cell s"><h4>Strengths</h4><ul>' + sw.strengths.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+        '<div class="swot-cell w"><h4>Weaknesses</h4><ul>' + sw.weaknesses.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+        '<div class="swot-cell o"><h4>Opportunities</h4><ul>' + (sw.opportunities.length ? sw.opportunities.map((x) => '<li>' + U.esc(x) + '</li>').join('') : '<li>Close to the next band in several parts — keep pushing.</li>') + '</ul></div>' +
+        '<div class="swot-cell t"><h4>Threats / concerns</h4><ul>' + sw.threats.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
+      '</div>' +
+      '<div class="remark-box mt">' + U.esc(sw.remark) + '</div></div>';
+  }
+  function renderAnalysis() {
+    const n = DB.semesters.length;
+    const mode = ui.anMode || 'class';
+    const tabs = '<div class="tabs">' +
+      '<a class="tab' + (mode === 'class' ? ' on' : '') + '" data-accent="gr" href="#/analysis/class">Class progress</a>' +
+      '<a class="tab' + (mode === 'student' ? ' on' : '') + '" data-accent="obs" href="#/analysis/student">Student deep-dive</a></div>';
+    let body = '';
+    if (n === 0) body = '<div class="empty"><div class="big">No semesters yet</div><p>Import an SPR file or set up a class first.</p></div>';
+    else if (mode === 'student') body = anStudentView();
+    else body = anClassView();
+    $('#content').innerHTML = pageHead('Comparative analysis', n + (n === 1 ? ' semester' : ' semesters') +
+      (n > 1 ? ' — comparing ' + U.esc(DB.semesters[0].name) + ' → ' + U.esc(DB.semesters[n - 1].name) : ' — import a second SPR to compare progress'),
+      '<button class="btn" data-action="print">Print</button>') + tabs + body;
+    anCharts();
+  }
+  function anClassView() {
+    const rows = A.classSemesterRows(DB);
+    const mv = A.movers(DB);
+    const sum = A.classSummary(DB);
+    const single = DB.semesters.length < 2;
+    let moversHtml = '<p class="muted small">Import at least two semesters to see who improved and who slipped.</p>';
+    if (mv && mv.list.length) {
+      const up = mv.list.filter((m) => m.delta > 1).length, down = mv.list.filter((m) => m.delta < -1).length;
+      moversHtml =
+        '<div class="kpi-strip">' +
+        kpi(up, 'students improved', false) + kpi(down, 'students slipped', down > up) +
+        kpi(A.f1(mean(mv.list.map((m) => m.delta))), 'average change (pts)') +
+        '</div><div class="chart-box" style="height:' + Math.max(200, mv.list.length * 19) + 'px;margin-top:12px"><canvas id="ch-movers"></canvas></div>';
+    }
+    const matrix = '<div class="sheet"><table class="tbl matrix"><thead><tr><th>Semester</th>' +
+      A.COMPONENTS.map((k) => '<th class="c">' + A.SHORT[k] + '</th>').join('') +
+      '<th class="num">Final</th><th class="c">RAG</th></tr></thead><tbody>' +
+      rows.map((r) => '<tr><td>' + U.esc(r.semName) + '</td>' +
+        A.COMPONENTS.map((k) => '<td class="c"><span class="dotrag ' + A.rag(r.parts[k]) + '"></span>' + A.f1(r.parts[k]) + '</td>').join('') +
+        '<td class="num"><b>' + A.f1(r.final) + '</b></td><td class="c">' + ragChip(A.rag(r.final)) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+    return '<div class="grid-2">' +
+        '<div class="panel"><h3>Class average across semesters</h3><div class="panel-sub">final · observations · spelling · daily · written</div>' +
+          '<div class="chart-box" style="height:260px"><canvas id="ch-anTrend"></canvas></div></div>' +
+        '<div class="panel"><h3>Grade distribution per semester</h3><div class="panel-sub">A* → U counts</div>' +
+          '<div class="chart-box" style="height:260px"><canvas id="ch-anDist"></canvas></div></div>' +
+      '</div>' +
+      '<div class="panel mt"><h3>' + (single ? 'Component averages' : 'Progress by component (RAG)') + '</h3>' +
+        '<div class="panel-sub">green ≥ 75 · amber 55–74.9 · red &lt; 55</div>' + matrix + '</div>' +
+      '<div class="panel mt"><h3>Movers — ' + (mv ? U.esc(mv.from) + ' → ' + U.esc(mv.to) : '') + '</h3>' +
+        '<div class="panel-sub">change in weighted final per student</div>' + moversHtml + '</div>' +
+      (sum ? '<div class="panel mt"><h3>Class summary</h3><div class="remark-box">' + U.esc(A.classSwotText(DB)) + '</div></div>' : '');
+  }
+  function anStudentView() {
+    const map = new Map();
+    for (let i = DB.semesters.length - 1; i >= 0; i--) {
+      for (const s of DB.semesters[i].students) {
+        if (!map.has(s.id)) map.set(s.id, { id: s.id, name: (s.nameEn || s.nameCn) + (s.nameCn && s.nameEn ? ' ' + s.nameCn : ''), cnt: 0 });
+      }
+    }
+    for (const x of DB.semesters) for (const s of x.students) if (map.has(s.id)) map.get(s.id).cnt++;
+    const candidates = Array.from(map.values());
+    if (!ui.anStu || !candidates.some((c) => c.id === ui.anStu)) ui.anStu = candidates.length ? candidates[0].id : null;
+    if (!ui.anStu) return '<div class="empty"><div class="big">No students</div></div>';
+    const sid = ui.anStu;
+    const rows = A.studentSemesterRows(DB, sid);
+    const last = rows[rows.length - 1];
+    const sw = A.swot(DB, sid);
+    const stu = DB.semesters.find((x) => x.id === last.semId).students.find((x) => x.id === sid);
+    const labels = rows.map((r) => r.semName);
+    const matrix = A.studentMatrix(DB, sid);
+    const matrixHtml = '<div class="sheet"><table class="tbl matrix"><thead><tr><th>Component</th>' +
+      labels.map((l) => '<th class="c">' + U.esc(l) + '</th>').join('') +
+      (labels.length > 1 ? '<th class="c">Δ latest</th>' : '') + '<th class="c">RAG</th></tr></thead><tbody>' +
+      matrix.map((row) => '<tr><td>' + row.key + '</td>' +
+        row.values.map((v) => '<td class="c"><span class="dotrag ' + A.rag(v) + '"></span>' + A.f1(v) + '</td>').join('') +
+        (labels.length > 1 ? '<td class="c">' + dSpan(row.delta) + '</td>' : '') +
+        '<td class="c">' + ragChip(A.rag(row.values[row.values.length - 1])) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+    const stuSel = '<div class="sheet-toolbar"><div class="flex" style="width:100%;justify-content:flex-end">' +
+      '<label>Student <select class="inp" id="anStu">' + candidates.map((c) =>
+        '<option value="' + U.esc(c.id) + '"' + (c.id === sid ? ' selected' : '') + '>' + U.esc(c.name) +
+        (DB.semesters.length > 1 && c.cnt > 1 ? ' — ' + c.cnt + ' semesters' : '') + '</option>').join('') + '</select></label></div></div>';
+    return stuSel +
+      '<div class="profile-head"><div class="stu-id-block"><div class="avatar">' + U.esc((stu.nameCn || stu.nameEn || '?').charAt(0)) + '</div>' +
+      '<div><div class="stu-name">' + U.esc(stu.nameEn || stu.nameCn) + '</div>' +
+      '<div class="stu-meta">' + U.esc(stu.nameCn || '') + ' · ID ' + U.esc(sid) + ' · ' + rows.length + ' ' + (rows.length === 1 ? 'semester' : 'semesters') + ' of data</div></div></div>' +
+      '<div class="flex" style="align-items:center;gap:22px">' +
+        '<div class="right"><div class="final-num">' + A.f1(last.final) + '</div><div class="small muted">' + U.esc(last.semName) + ' final</div></div>' +
+        (rows.length > 1 ? '<div class="right"><div class="final-num" style="font-size:26px">' + dSpan(sw.delta) + '</div><div class="small muted">vs ' + U.esc(sw.prev.semName) + '</div></div>' : '') +
+        (last.rank ? '<div class="right"><div class="final-num" style="font-size:26px">' + last.rank + '<span class="small muted">/' + last.total + '</span></div><div class="small muted">rank</div></div>' : '') +
+        '<div class="stamp" style="color:' + (RAG_HEX[sw.overallRag] || '#9aa0a0') + '"><small>' + (sw.ragName || 'RAG').toUpperCase() + '</small>' + (sw.ragName || '–') + '</div>' +
+      '</div></div>' +
+      '<div class="grid-2">' +
+        '<div class="panel"><h3>Final score trajectory</h3><div class="panel-sub">student vs class average</div><div class="chart-box" style="height:250px"><canvas id="ch-anStu"></canvas></div></div>' +
+        '<div class="panel"><h3>' + (rows.length > 1 ? 'Latest vs previous semester' : 'Current semester') + '</h3><div class="panel-sub">all nine components (%)</div><div class="chart-box" style="height:250px"><canvas id="ch-anRadar"></canvas></div></div>' +
+      '</div>' +
+      '<div class="panel mt"><h3>Progress matrix</h3><div class="panel-sub">component × semester, RAG-coded, with semester-over-semester change</div>' + matrixHtml + '</div>' +
+      anFindingsPanel(sid) +
+      '<div class="print-only quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>';
+  }
+  function anCharts() {
+    const mode = ui.anMode || 'class';
+    if (mode === 'class') {
+      const rows = A.classSemesterRows(DB);
+      const labels = rows.map((r) => r.semName);
+      if (document.getElementById('ch-anTrend')) mkChart('ch-anTrend', { type: 'line',
+        data: { labels: labels, datasets: [
+          ds('Final', rows.map((r) => r1x(r.final)), '#22312c', { borderWidth: 3 }),
+          ds('Observations', rows.map((r) => r1x(r.obsAvg)), COLORS.obs),
+          ds('Spelling', rows.map((r) => r1x(r.parts.Spelling)), COLORS.sp),
+          ds('Daily', rows.map((r) => r1x(r.parts['Daily Assignments'])), COLORS.da),
+          ds('Written', rows.map((r) => r1x(r.parts.Written)), '#b2683f'),
+        ] }, options: lineOpts(0, 100) });
+      if (document.getElementById('ch-anDist')) {
+        const gl = ['A*', 'A', 'B', 'C', 'D', 'U'];
+        mkChart('ch-anDist', { type: 'bar',
+          data: { labels: labels, datasets: gl.map((g) => ({ label: g, data: rows.map((r) => r.dist[g]), backgroundColor: GRADE_HEX[g] })) },
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10 } } } } });
+      }
+      const mv = A.movers(DB);
+      if (mv && mv.list.length && document.getElementById('ch-movers')) {
+        const list = mv.list.slice().reverse();
+        mkChart('ch-movers', { type: 'bar',
+          data: { labels: list.map((m) => m.name), datasets: [{ data: list.map((m) => r1x(m.delta)),
+            backgroundColor: list.map((m) => m.delta > 1 ? '#1d7a4a' : m.delta < -1 ? '#c4453c' : '#c9973b') }] },
+          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            scales: { x: { ticks: { callback: (v) => (v > 0 ? '+' : '') + v } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => (c.parsed.x > 0 ? '+' : '') + c.parsed.x + ' pts' } } } } });
+      }
+    } else {
+      const sid = ui.anStu;
+      if (!sid) return;
+      const rows = A.studentSemesterRows(DB, sid);
+      const clsRows = A.classSemesterRows(DB).filter((r) => rows.some((x) => x.semId === r.semId));
+      if (document.getElementById('ch-anStu')) mkChart('ch-anStu', { type: 'line',
+        data: { labels: rows.map((r) => r.semName), datasets: [
+          ds('Student final', rows.map((r) => r1x(r.final)), '#2d5fa8', { borderWidth: 3 }),
+          ds('Class average', clsRows.map((r) => r1x(r.final)), '#9aa79f', { borderDash: [5, 4], pointRadius: 0, backgroundColor: 'transparent' }),
+        ] }, options: lineOpts(0, 100) });
+      if (document.getElementById('ch-anRadar')) {
+        const last = rows[rows.length - 1], prev = rows[rows.length - 2] || null;
+        const sets = [{ label: last.semName, data: A.COMPONENTS.map((k) => r1x(last.parts[k])), borderColor: '#2d5fa8', backgroundColor: 'rgba(45,95,168,0.15)', pointRadius: 3 }];
+        if (prev) sets.push({ label: prev.semName, data: A.COMPONENTS.map((k) => r1x(prev.parts[k])), borderColor: '#c9973b', backgroundColor: 'rgba(201,151,59,0.10)', pointRadius: 3 });
+        mkChart('ch-anRadar', { type: 'radar', data: { labels: A.COMPONENTS.map((k) => A.SHORT[k]), datasets: sets },
+          options: { responsive: true, maintainAspectRatio: false,
+            scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent' } } },
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10 } } } } });
+      }
+    }
+  }
+
+  /* ============================ privacy & data notice ============================ */
+  function privacyHtml() {
+    return '<h3>Privacy &amp; data protection notice</h3>' +
+      '<div class="privacy-body"><p>This app handles <b>real student data</b> — names, IDs and grades. Please read carefully:</p>' +
+      '<h4>Where the data lives</h4><ul>' +
+      '<li>All data is stored <b>only in this browser</b> (localStorage) on this device. Nothing is uploaded, transmitted or visible to anyone else.</li>' +
+      '<li>This website is a static page — no server, no database, no tracking, no internet needed after loading.</li></ul>' +
+      '<h4>Your responsibilities</h4><ul>' +
+      '<li>This browser profile contains confidential student information — protect the device (screen lock, no shared accounts).</li>' +
+      '<li>Backup files (JSON / Excel exports) contain full student data. Store them only on encrypted or school-approved storage, and delete them when no longer needed.</li>' +
+      '<li>Avoid entering student data on shared or public computers. If unavoidable, use “Erase everything” in Manage &amp; setup before leaving.</li>' +
+      '<li>Sharing student performance outside school (parents, other staff) should follow your school’s policy and applicable law (e.g. PIPL in China, GDPR elsewhere).</li></ul>' +
+      '<h4>Removing data</h4><ul>' +
+      '<li>“Erase everything” permanently deletes all data from this browser. Clearing the browser’s site data has the same effect.</li></ul>' +
+      '<p class="small muted">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</p></div>' +
+      '<div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">' +
+      (DB.settings.privacyAck ? 'Close' : 'I understand — data stays on this device') + '</button></div>';
+  }
+  function openPrivacy() { openDlg(privacyHtml()); }
+  function privacyAck() {
+    if (!DB.settings.privacyAck) { DB.settings.privacyAck = true; saveDB(true); }
+    closeDlg();
+  }
+
+
   function openWizard() {
     const years = [];
     for (let y = 2024; y <= 2035; y++) years.push(y);
@@ -2309,6 +2759,8 @@ window.SEED = null;
     if (!el) return;
     const a = el.dataset.action;
     const sem = cur();
+    if (a === 'privacy-open') { openPrivacy(); return; }
+    if (a === 'privacy-ack') { privacyAck(); return; }
     if (a === 'wiz-open') { openWizard(); return; }
     if (a === 'dlg-close') { closeDlg(); return; }
     if (a === 'wiz-create') { wizCreate(); return; }
@@ -2415,6 +2867,7 @@ window.SEED = null;
 
   document.addEventListener('change', function (e) {
     const t = e.target;
+    if (t.id === 'anStu') { ui.anStu = t.value; renderAnalysis(); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
     if (t.id === 'file-xlsx') { if (t.files && t.files[0]) importXlsxFile(t.files[0]); t.value = ''; return; }
     if (t.id === 'file-json') { if (t.files && t.files[0]) restoreJSONFile(t.files[0]); t.value = ''; return; }
@@ -2436,8 +2889,10 @@ window.SEED = null;
     loadDB();
     chartTheme();
     buildShell();
+    document.title = "Student's Performance Report";
     window.addEventListener('hashchange', route);
     route();
+    if (!DB.settings.privacyAck) openPrivacy();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
