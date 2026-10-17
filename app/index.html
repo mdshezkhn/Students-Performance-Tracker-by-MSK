@@ -504,7 +504,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 </script>
 <script>
-window.SEED = null;
+window.SEED = /*__SEED__*/null;
 </script>
 <script>
 /* =========================================================================
@@ -3121,6 +3121,12 @@ window.SEED = null;
     if (!el) return;
     const a = el.dataset.action;
     const sem = cur();
+    if (a === 'reset-auth') {
+      localStorage.removeItem(AUTH_KEY);
+      getAuth(); // re-initialize with default admin
+      location.reload();
+      return;
+    }
     if (a === 'do-login') {
       const u = $('#loginUser') ? $('#loginUser').value.trim() : '';
       const p = $('#loginPass') ? $('#loginPass').value : '';
@@ -3291,12 +3297,24 @@ window.SEED = null;
   }
 
   function getAuth() {
+    const ADMIN_HASH = hashPassword('spr2026');
     try {
       const d = JSON.parse(localStorage.getItem(AUTH_KEY));
-      if (d && Array.isArray(d.users) && d.users.length) return d;
+      if (d && Array.isArray(d.users) && d.users.length) {
+        /* always ensure admin 'mo' exists with correct hash — prevents lockout */
+        const admin = d.users.find(function(u) { return u.username === 'mo'; });
+        if (!admin) {
+          d.users.unshift({ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' });
+          localStorage.setItem(AUTH_KEY, JSON.stringify(d));
+        } else if (admin.hash !== ADMIN_HASH) {
+          admin.hash = ADMIN_HASH;
+          localStorage.setItem(AUTH_KEY, JSON.stringify(d));
+        }
+        return d;
+      }
     } catch(e) {}
     const auth = {
-      users: [{ username: 'mo', hash: hashPassword('spr2026'), name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' }],
+      users: [{ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' }],
       session: null
     };
     localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
@@ -3348,7 +3366,7 @@ window.SEED = null;
           '<div class="field"><label>Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
-          '<div class="login-foot">Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div>' +
+          '<div class="login-foot"><a href="#" data-action="reset-auth" style="color:var(--pri);font-size:11px;">Reset admin access</a><br>Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>' +
       '</div>';
     setTimeout(function() { var u = document.getElementById('loginUser'); if (u) u.focus(); }, 50);
