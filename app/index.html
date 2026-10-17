@@ -481,6 +481,24 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
 .login-btn:hover { background: var(--board-deep); }
 .login-foot { margin-top: 16px; text-align: center; font-size: 11px; color: var(--ink-40); line-height: 1.6; }
 
+/* =========================================================================
+   User chip + Sign out (rail footer) + login dialog fields + auth gate
+   ========================================================================= */
+.user-chip { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 10px; background: var(--paper-dim); border: 1px solid var(--rule-strong); border-radius: 8px; }
+.uc-avatar { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; background: var(--board); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.uc-info { flex: 1; min-width: 0; line-height: 1.25; text-align: left; }
+.uc-info b { display: block; font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc-info small { font-size: 10px; color: var(--ink-60); text-transform: uppercase; letter-spacing: 0.06em; }
+.uc-out { font: inherit; font-size: 10.5px; font-weight: 600; color: var(--ink-60); background: none; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+.uc-out:hover { color: #fff; background: var(--red); border-color: var(--red); }
+
+.login-card .login-field { margin-bottom: 12px; }
+.login-card .login-field label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-60); margin-bottom: 4px; }
+.login-card .login-field input { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 6px; background: #fff; color: var(--ink); }
+.login-card .login-field input:focus { outline: 2px solid var(--board-edge); border-color: var(--board); }
+
+body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none; }
+
 </style>
 </head>
 <body>
@@ -1806,7 +1824,7 @@ window.SEED = null;
               var ini = (u.name || u.username).charAt(0).toUpperCase();
               return '<div class="user-chip"><span class="uc-avatar">' + U.esc(ini) + '</span>' +
                 '<span class="uc-info"><b>' + U.esc(u.name || u.username) + '</b><small>' + (u.role === 'admin' ? 'Admin' : 'Teacher') + '</small></span>' +
-                '<button class="uc-out" data-action="logout" title="Sign out">×</button></div>'; })() +
+                '<button class="uc-out" data-action="logout" title="Sign out">Sign out</button></div>'; })() +
             '<span class="conf-tag">Confidential — student data</span>' +
             '<div class="rail-privacy"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
             '<div class="quote">Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div></div>' +
@@ -3165,7 +3183,7 @@ window.SEED = null;
       if (!u || !p) { $('#loginErr').textContent = 'Enter username and password.'; return; }
       const user = doLogin(u, p);
       if (!user) { $('#loginErr').textContent = 'Invalid username or password.'; return; }
-      closeDlg(); buildShell(); route(); toast('Welcome back, ' + user.name);
+      closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + user.name);
       if (!DB.settings.privacyAck) openPrivacy();
       return;
     }
@@ -3330,27 +3348,33 @@ window.SEED = null;
 
   function getAuth() {
     const ADMIN_HASH = hashPassword('spr2026');
-    try {
-      const d = JSON.parse(localStorage.getItem(AUTH_KEY));
-      if (d && Array.isArray(d.users) && d.users.length) {
-        /* always ensure admin 'mo' exists with correct hash — prevents lockout */
-        const admin = d.users.find(function(u) { return u.username === 'mo'; });
-        if (!admin) {
-          d.users.unshift({ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' });
-          localStorage.setItem(AUTH_KEY, JSON.stringify(d));
-        } else if (admin.hash !== ADMIN_HASH) {
-          admin.hash = ADMIN_HASH;
-          localStorage.setItem(AUTH_KEY, JSON.stringify(d));
-        }
-        return d;
+    /* built-in teacher accounts — added if missing; existing entries are never overwritten */
+    const BUILTIN = [
+      { username: 'ZFYBLS', hash: hashPassword('spr2026'), name: 'ZFYBLS', role: 'teacher' },
+      { username: 'XFLS', hash: hashPassword('spr2026'), name: 'XFLS', role: 'teacher' }
+    ];
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) {}
+    if (!d || !Array.isArray(d.users)) d = { users: [], session: null };
+    let changed = false;
+    /* always ensure admin 'mo' exists with correct hash — prevents lockout */
+    const admin = d.users.find(function(u) { return u.username === 'mo'; });
+    if (!admin) {
+      d.users.unshift({ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' });
+      changed = true;
+    } else if (admin.hash !== ADMIN_HASH) {
+      admin.hash = ADMIN_HASH;
+      changed = true;
+    }
+    /* ensure built-in teacher accounts exist */
+    BUILTIN.forEach(function(b) {
+      if (!d.users.some(function(u) { return u.username === b.username; })) {
+        d.users.push({ username: b.username, hash: b.hash, name: b.name, role: b.role });
+        changed = true;
       }
-    } catch(e) {}
-    const auth = {
-      users: [{ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' }],
-      session: null
-    };
-    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-    return auth;
+    });
+    if (changed) localStorage.setItem(AUTH_KEY, JSON.stringify(d));
+    return d;
   }
   function saveAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
 
@@ -3411,7 +3435,7 @@ window.SEED = null;
     document.title = "Student's Performance Report";
     window.addEventListener('hashchange', route);
     route();
-    if (!isLoggedIn()) renderLogin();
+    if (!isLoggedIn()) { document.body.classList.add('auth-gate'); renderLogin(); }
     else if (!DB.settings.privacyAck) openPrivacy();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
