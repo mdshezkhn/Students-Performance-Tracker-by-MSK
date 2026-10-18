@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; media-src https://designerstephen.github.io; font-src data:; base-uri 'none'; form-action 'none'">
 <title>Students Performance Report</title>
 <meta name="description" content="ESL student performance tracking with live analytics, RAG/SWOT insights, and report cards. Designed for teachers, by a teacher.">
 <meta name="theme-color" content="#0f172a">
@@ -530,10 +531,10 @@ img, svg, video { display: block; }
           <table class="dash-table">
             <thead><tr><th>Student</th><th>Final</th><th>Grade</th><th class="t-time">Last Updated</th></tr></thead>
             <tbody>
-              <tr><td>Amanda</td><td>98.4%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
+              <tr><td>Student A</td><td>98.4%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
               <tr><td>Miles</td><td>96.6%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
               <tr><td>David</td><td>96.9%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Timmy</td><td>57.9%</td><td><span class="badge badge--mid">C</span></td><td class="t-time">5 min ago</td></tr>
+              <tr><td>Student B</td><td>57.9%</td><td><span class="badge badge--mid">C</span></td><td class="t-time">5 min ago</td></tr>
               <tr><td>Zack</td><td>41.2%</td><td><span class="badge badge--low">U</span></td><td class="t-time">5 min ago</td></tr>
             </tbody>
           </table>
@@ -566,7 +567,7 @@ img, svg, video { display: block; }
       </a>
       <a class="module" href="app/#/manage">
         <span class="module__head"><h3>Excel Import / Export</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Import existing SPR workbooks with one click. Export back to the same format. Data stays in your browser &mdash; always.</p>
+        <p>Import existing SPR workbooks with one click. Export back to the same format. Your data stays in this browser until <em>you</em> choose to export it or use encrypted Share&nbsp;&amp;&nbsp;sync.</p>
       </a>
       <a class="module" href="app/#/manage">
         <span class="module__head"><h3>Privacy by Design</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
@@ -599,10 +600,10 @@ img, svg, video { display: block; }
       </ul>
     </div>
     <div class="protocols" data-ui>
-      <p class="protocols__alert"><span class="dot"></span> Data Breach: 0 incidents</p>
+      <p class="protocols__alert"><span class="dot"></span> No accounts. No tracking. No analytics.</p>
       <h3>Security Protocols</h3>
       <div class="proto-row"><span>Local-only data storage</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>No external data transmission</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
+      <div class="proto-row"><span>Offline-first &mdash; nothing leaves the device unless you export or use encrypted Share &amp; sync</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
       <div class="proto-row"><span>Offline capability</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
       <div class="proto-row"><span>Auto-save on every input</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
       <div class="proto-row"><span>Encrypted JSON backups</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
@@ -632,7 +633,7 @@ img, svg, video { display: block; }
     </div>
     <div class="footer__bottom">
       <span>&copy; 2026 Students Performance Report. All rights reserved.</span>
-      <span class="status"><span class="dot"></span> All systems operational</span>
+      <span class="status"><span class="dot"></span> Works offline &mdash; no server holds your data</span>
     </div>
     <p class="footer__credit">Designed for teachers, by a teacher &mdash; Mohammed Shehzad Khan (Teacher Mo)</p>
   </div>
