@@ -330,15 +330,19 @@
     /* ---- Grading ---- */
     const gHead = ['Index Number', 'ID Number', "Student's Name (Chinese)", "Student's Name (English)", 'Gender',
       'Listening', 'Speaking', 'Writing', 'Reading', 'Spelling', 'Daily Assignments',
-      'Mid-Term', 'Oral', 'Written', 'Final Score', 'Final Grade'];
+      'Mid-Term', 'Oral', 'Written', 'Final Score', 'Final Grade', 'Assessed'];
     const gRows = [['School', sem.school], ['Class', sem.className], [], gHead];
     sem.students.forEach((s, i) => {
       const g = G(s.id);
-      const L = (p) => (p === null ? 'U' : Calc.letter(p));
+      const n = Calc.assessedCount(g);                    /* completeness gate */
+      const ok = n >= Calc.FINAL_MIN_ASSESSED;
+      const L = (p) => (p === null ? '—' : Calc.letter(p)); /* ungraded is not a U */
       gRows.push([i + 1, s.id, s.nameCn, s.nameEn, s.gender,
         L(g.skills.Listening), L(g.skills.Speaking), L(g.skills.Writing), L(g.skills.Reading),
         L(g.spelling), L(g.daily), L(g.midterm), L(g.oral), L(g.written),
-        g.final === null ? null : Util.r2(g.final), g.letter]);
+        ok ? Util.r2(g.final) : null,
+        ok ? g.letter : null,
+        n + '/9' + (n >= Calc.FINAL_MIN_ASSESSED && n < 9 ? ' (provisional)' : '')]);
     });
     addCreditRow(gRows);
     const wsG = XLSX.utils.aoa_to_sheet(gRows);
@@ -376,22 +380,42 @@
       const w = name === 'Written' ? 20 : 10;
       rows.push([name, P(val), L(val), w + '%', val === null ? '—' : (Math.round(val * w) / 100).toFixed(2)]);
     }
-    rows.push(['FINAL SCORE', Math.round(g.final * 10) / 10 + '%', g.letter, '100%', '']);
-    rows.push([]);
-    rows.push(['RAG STATUS', g.final >= 75 ? 'GREEN' : g.final >= 55 ? 'AMBER' : 'RED', '', '', '']);
+    const nAssessed = Calc.assessedCount(g);
+    const ok = nAssessed >= Calc.FINAL_MIN_ASSESSED;
+    /* assessment status line (parent language, no RAG/rank in exports) */
+    rows.push(['ASSESSMENT STATUS', ok
+      ? (nAssessed >= 9 ? 'Final assessment complete' : 'Provisional — ' + nAssessed + ' of 9 components assessed')
+      : 'Not yet assessed — ' + nAssessed + ' of 9 components assessed', '', '', '']);
+    if (ok) {
+      rows.push(['OVERALL', Math.round(g.final * 10) / 10 + '%' + (nAssessed < 9 ? ' (provisional)' : ''), g.letter, '', '']);
+    } else {
+      rows.push(['', 'Final grades appear when at least 6 of 9 grading components have recorded assessment data.', '', '', '']);
+    }
     rows.push([]);
 
-    if (sw) {
-      rows.push(['SWOT ANALYSIS']);
-      rows.push(['Strengths']);
-      sw.strengths.forEach((x) => rows.push(['  • ' + x]));
-      rows.push(['Weaknesses']);
-      sw.weaknesses.forEach((x) => rows.push(['  • ' + x]));
-      rows.push(['Opportunities']);
-      (sw.opportunities.length ? sw.opportunities : ['Stable — maintain current approach']).forEach((x) => rows.push(['  • ' + x]));
-      rows.push(['Threats / Concerns']);
-      sw.threats.forEach((x) => rows.push(['  • ' + x]));
+    /* child-centred sections — teacher-edited wording (sem.reportNotes) wins */
+    const notes = (sem.reportNotes || {})[sid] || {};
+    const sections = analysis && analysis.reportSections ? analysis.reportSections(sem, sid) : null;
+    if (sections) {
+      const take = (field, generated) => (notes[field] !== undefined && notes[field] !== '' ? [notes[field]] : generated);
+      rows.push(['STRENGTHS']);
+      take('strengths', (sections.strengths || []).map((x) => x.text + (x.evidence ? ' (' + x.evidence + ')' : ''))).forEach((x) => rows.push(['  • ' + x]));
+      if (!sections.strengths || !sections.strengths.length) rows.push(['  • Not enough assessed work yet to identify a reliable strength.']);
       rows.push([]);
+      rows.push(['NEXT LEARNING STEPS']);
+      take('steps', (sections.steps || []).map((x) => x.text + (x.evidence ? ' (' + x.evidence + ')' : ''))).forEach((x) => rows.push(['  • ' + x]));
+      if (!sections.steps || !sections.steps.length) rows.push(['  • To be added once more assessment evidence is recorded.']);
+      rows.push([]);
+      rows.push(['TEACHER SUPPORT']);
+      rows.push([notes.support || sections.support || 'To be added once assessment is complete.']);
+      rows.push([]);
+      rows.push(['HOW HOME CAN HELP']);
+      rows.push([notes.home || sections.home || 'Optional — added by the teacher.']);
+      rows.push([]);
+      rows.push(['OVERALL COMMENT']);
+      rows.push([notes.overall || sections.overall || (sections.inProgress ? sections.note : '')]);
+      rows.push([]);
+    } else if (sw && sw.remark) {
       rows.push(['TEACHER REMARK']);
       rows.push([sw.remark]);
       rows.push([]);
@@ -455,10 +479,13 @@
 
     sem.students.forEach((s, i) => {
       const g = Calc.gradeStudent(sem, s.id);
+      const n = Calc.assessedCount(g); /* completeness gate: never export a zero-based final */
+      const ok = n >= Calc.FINAL_MIN_ASSESSED;
       rows.push([i + 1, s.id, s.nameEn || '', s.nameCn || '',
         L(g.skills.Listening), L(g.skills.Speaking), L(g.skills.Writing), L(g.skills.Reading),
         L(g.spelling), L(g.daily), L(g.midterm), L(g.oral), L(g.written),
-        Math.round(g.final * 10) / 10 + '%', g.letter]);
+        ok ? (Math.round(g.final * 10) / 10 + '%' + (n < 9 ? ' (provisional ' + n + '/9)' : '')) : 'Not yet assessed (' + n + '/9)',
+        ok ? g.letter : null]);
     });
 
     rows.push([]);

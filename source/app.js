@@ -13,6 +13,21 @@
   const COLORS = { obs: '#3e7c68', sp: '#8a5e86', da: '#4a7397', cls: '#9aa79f',
     Listening: '#3e7c68', Speaking: '#8a5e86', Writing: '#c9973b', Reading: '#b2683f' };
   const gBadge = (l) => (l ? '<span class="g ' + GC[l] + '">' + U.esc(l) + '</span>' : '<span class="g g-none">–</span>');
+  /* ---- assessment-completeness gate (single source of truth: Calc) ---- */
+  const nOf9 = (g) => C.assessedCount(g);
+  const gateOk = (g) => C.assessedCount(g) >= C.FINAL_MIN_ASSESSED;
+  const gateFinal = (g) => C.assessedCount(g) >= C.COMPONENTS_ALL.length;
+  function provChip(g) { /* neutral, text-first chip for records below the gate */
+    return '<span class="g prov" title="Final grades appear when at least 6 of 9 grading components have recorded assessment data.">' + nOf9(g) + '/9</span>';
+  }
+  function finalCell(g) { /* Grading table Final column */
+    if (!gateOk(g)) return '<span class="small muted">Not yet assessed</span>';
+    return '<b>' + fmt(g.final, 1) + '</b>' + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>');
+  }
+  function gradeCell(g) {
+    if (!gateOk(g)) return provChip(g);
+    return gBadge(g.letter) + (gateFinal(g) ? '' : '<span class="small muted"> ' + nOf9(g) + '/9</span>');
+  };
   const fmt = (v, d) => (v === null || v === undefined || isNaN(v)) ? '–' : Number(v).toFixed(d === undefined ? 1 : d);
   const r1x = (v) => (v === null ? null : Math.round(v * 10) / 10);
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -40,6 +55,7 @@
     sem.spelling = sem.spelling || {};
     sem.daily = sem.daily || {};
     sem.tests = sem.tests || {};
+    sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
     return sem;
   }
   function emptyDB() {
@@ -331,7 +347,7 @@
             '<button class="btn" data-action="import-xlsx">Import SPR Excel file</button>' +
             '<button class="btn" data-action="load-sample">Load sample data</button>' +
           '</div>' +
-          '<p class="small muted" style="margin-top:22px">Everything stays in this browser and works offline — nothing is sent to any server. Use “Download backup” in Manage to move data between computers.</p>' +
+          '<p class="small muted" style="margin-top:22px">Everything stays in this browser — nothing is sent to any server unless you use Share &amp; Sync. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Use “Download backup” in Manage to move data between computers.</p>' +
           '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
           '<div class="rail-privacy" style="margin-top:14px;text-align:center"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
         '</div>' +
@@ -350,28 +366,188 @@
     return '<div class="kpi"><div class="k-num">' + p + '<small>%</small></div><div class="k-label">' + label + ' recorded</div>' +
       '<div class="comp-bar"><i style="width:' + Math.min(p, 100) + '%;background:' + col + '"></i></div></div>';
   }
+  /* ========================= dashboard (Brief-2 redesign) ========================= */
+  const ACT_TXT = {
+    'Listening': 'Practise two-step instructions with short listening games.',
+    'Speaking': 'Use daily talking prompts and partner practice.',
+    'Writing': 'Run a small guided-writing group with one punctuation target each week.',
+    'Reading': 'Guided re-reading of short texts in a small group.',
+    'Spelling': 'Reteach common vowel patterns in a small group with short weekly checks.',
+    'Daily Assignments': 'Set a short daily checklist and review it together each week.',
+    'Mid-Term': 'Guided revision of this term\u2019s topics.',
+    'Oral': 'Regular paired speaking practice with sentence starters.',
+    'Written': 'Model short planning before written tasks.',
+  };
+  function worstEvidence(sem, sid) {
+    const g = C.gradeStudent(sem, sid);
+    let worst = null;
+    for (const k of A.COMPONENTS) {
+      const v = g.parts[k];
+      const ev = A.componentEvents(sem, sid, k);
+      if (v !== null && v < 55 && ev >= 1 && (!worst || v < worst.v)) worst = { k: k, v: v, ev: ev };
+    }
+    return worst;
+  }
+  function dashFilterStudents(sem) {
+    const f = ui.dash;
+    return sem.students.filter((s) => {
+      const g = C.gradeStudent(sem, s.id);
+      const n = nOf9(g);
+      if (f.ev === 'complete' && n < 9) return false;
+      if (f.ev === 'provisional' && (n < C.FINAL_MIN_ASSESSED || n >= 9)) return false;
+      if (f.ev === 'notyet' && n >= C.FINAL_MIN_ASSESSED) return false;
+      if (f.skill !== 'all' && g.parts[f.skill] === null) return false;
+      if (f.rag !== 'all') {
+        if (!gateOk(g)) return false;
+        if (A.rag(g.final) !== f.rag) return false;
+      }
+      if (f.q) {
+        const q = f.q.trim().toLowerCase();
+        if (!((s.nameEn + ' ' + s.nameCn + ' ' + s.id).toLowerCase().includes(q))) return false;
+      }
+      return true;
+    });
+  }
+  function priorityRow(sem, sid) {
+    const g = C.gradeStudent(sem, sid);
+    const fs = A.finalStatus(sem, sid);
+    const stu = sem.students.find((x) => x.id === sid);
+    const w = worstEvidence(sem, sid);
+    const status = fs.ragStatus === 'R' ? 'Priority support' : fs.ragStatus === 'A' ? 'Developing' : 'Review evidence';
+    const src = w ? A.SHORT[w.k] + ': ' + fmt(w.v, 0) + '% across ' + w.ev + ' recorded ' + (w.ev === 1 ? 'task' : 'tasks') : 'final ' + fmt(g.final, 1) + '%';
+    const act = w ? ACT_TXT[w.k] : 'Review this record with fresh assessment data.';
+    return '<tr><td><a class="stu-link" href="#/student/' + U.esc(sid) + '">' + U.esc((stu && (stu.nameEn || stu.nameCn)) || sid) + '</a></td>' +
+      '<td><span class="rag-chip ' + (fs.ragStatus || 'R') + '"><span class="dotrag ' + (fs.ragStatus || 'R') + '"></span>' + status + '</span></td>' +
+      '<td class="small">' + U.esc(src) + '</td>' +
+      '<td class="small">' + U.esc(act) + '</td></tr>';
+  }
+  function dashEvidenceRows(sem) {
+    const list = dashFilterStudents(sem);
+    if (!list.length) return '<tr><td colspan="4" class="muted">No students match the current filters.</td></tr>';
+    return list.map((s) => {
+      const g = C.gradeStudent(sem, s.id);
+      const c = C.getAssessmentCompleteness(sem, s.id);
+      const status = c.gate === 'final' ? '<span class="g g-A*">Complete</span>'
+        : c.gate === 'provisional' ? '<span class="g prov">' + c.assessedComponentCount + '/9 · provisional</span>'
+        : '<span class="g g-none">Not yet assessed</span>';
+      return '<tr><td><a class="stu-link" href="#/student/' + U.esc(s.id) + '">' + U.esc(s.nameEn || s.nameCn) + '</a> <span class="muted small">' + U.esc(s.nameCn || '') + '</span></td>' +
+        '<td>' + status + '</td>' +
+        '<td class="small">' + (c.missingComponentNames.length ? U.esc(c.missingComponentNames.map((k) => A.SHORT[k]).join(', ')) : '<span class="muted">—</span>') + '</td>' +
+        '<td class="small muted">' + c.assessedComponentCount + '/9</td></tr>';
+    }).join('');
+  }
+  function moverLabel(d) { return d > 3 ? 'Improving' : d < -3 ? 'Review' : 'Stable'; }
+
   function renderDashboard() {
     const sem = cur();
+    if (!DB.semesters.length) { renderWelcome(); return; }
     const gAll = C.gradeAll(sem);
     const dist = C.gradeDistribution(sem);
     const risk = C.atRisk(sem);
-    const comp = C.completeness(sem);
-    const stars = gAll.filter((g) => g.final !== null).sort((a, b) => b.final - a.final).slice(0, 5);
+    const tp = A.classTeachingPriorities(sem);
+    const mv = A.movers(DB);
+    const nComplete = gAll.filter(gateFinal).length;
+    const nProv = gAll.filter((g) => gateOk(g) && !gateFinal(g)).length;
+    const nNotYet = gAll.filter((g) => !gateOk(g)).length;
+    const f = ui.dash || (ui.dash = { view: 'overview', ev: 'all', skill: 'all', rag: 'all', q: '' });
     const now = new Date();
     const monthName = U.MONTHS[now.getMonth()];
     const inTerm = sem.months.includes(monthName);
 
-    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' · ' + sem.students.length + ' students',
-      '<a class="btn primary" href="#/entry/sp">Enter scores</a>' +
-      '<a class="btn" href="#/grading">Grading</a>' +
-      '<button class="btn" data-action="export-xlsx">Export SPR Excel</button>') +
+    const tabs = ['Overview', 'overview', 'Assessment evidence', 'evidence', 'Teaching priorities', 'teaching', 'Advanced analysis', 'advanced'];
+    let tabHtml = '<div class="tabs no-print">';
+    for (let i = 0; i < tabs.length; i += 2) {
+      tabHtml += '<a class="tab' + (f.view === tabs[i + 1] ? ' on' : '') + '" href="#" data-action="dash-view" data-view="' + tabs[i + 1] + '">' + tabs[i] + '</a>';
+    }
+    tabHtml += '</div>';
+    const filterBar = '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
+      '<label>Evidence <select class="inp" id="dashEv"><option value="all">All pupils</option><option value="complete"' + (f.ev === 'complete' ? ' selected' : '') + '>Complete evidence</option><option value="provisional"' + (f.ev === 'provisional' ? ' selected' : '') + '>Provisional evidence</option><option value="notyet"' + (f.ev === 'notyet' ? ' selected' : '') + '>Not yet assessed</option></select></label>' +
+      '<label>Skill <select class="inp" id="dashSkill"><option value="all">All skills</option>' + A.COMPONENTS.map((k) => '<option value="' + U.esc(k) + '"' + (f.skill === k ? ' selected' : '') + '>' + U.esc(A.SHORT[k]) + '</option>').join('') + '</select></label>' +
+      '<label>Status (teachers) <select class="inp" id="dashRag"><option value="all">All statuses</option><option value="G"' + (f.rag === 'G' ? ' selected' : '') + '>Secure / on track</option><option value="A"' + (f.rag === 'A' ? ' selected' : '') + '>Developing</option><option value="R"' + (f.rag === 'R' ? ' selected' : '') + '>Priority support</option></select></label>' +
+      '<label>Search <input class="inp" id="dashSearch" placeholder="Name or ID\u2026" value="' + U.esc(f.q) + '"></label>' +
+      '</div></div>';
+
+    let body = '';
+    if (f.view === 'overview') {
+      body =
+        '<div class="grid-2">' +
+          '<div class="panel"><h3>Assessment evidence</h3><div class="panel-sub">how complete are the records behind every grade?</div>' +
+            '<table class="tbl"><tbody>' +
+              '<tr><td>Fully assessed students</td><td class="num"><b>' + nComplete + '</b></td></tr>' +
+              '<tr><td>Provisional students</td><td class="num"><b>' + nProv + '</b></td></tr>' +
+              '<tr><td>Not yet assessed students</td><td class="num"><b>' + nNotYet + '</b></td></tr>' +
+            '</tbody></table>' +
+            '<div class="mt"><button class="btn" data-action="dash-view" data-view="evidence">View incomplete records</button></div>' +
+            '<p class="small muted" style="margin-top:8px">Missing data is never treated as low achievement — grades appear at 6 of 9 assessed components.</p>' +
+          '</div>' +
+          '<div class="panel"><h3>Class skill overview</h3><div class="panel-sub">valid class averages · number of assessed pupils</div>' +
+            '<div class="chart-box" style="height:' + Math.max(200, A.COMPONENTS.length * 28) + 'px"><canvas id="ch-skills" role="img" aria-label="Horizontal bar chart of class averages per skill with assessed pupil counts"></canvas></div>' +
+            '<table class="tbl mt" aria-label="Class skill overview data"><thead><tr><th scope="col">Skill</th><th scope="col" class="num">Average</th><th scope="col" class="num">Assessed</th></tr></thead><tbody id="skillTbl"></tbody></table>' +
+          '</div>' +
+        '</div>' +
+        '<div class="panel mt"><h3>Priority support</h3><div class="panel-sub">only students with sufficient evidence · specific source · suggested action</div>' +
+          '<table class="tbl"><thead><tr><th scope="col">Student</th><th scope="col">Status</th><th scope="col">Source</th><th scope="col">Suggested action</th></tr></thead><tbody>' +
+          (risk.length ? risk.slice(0, 6).map((r) => priorityRow(sem, r.sid)).join('')
+            : '<tr><td colspan="4" class="muted">No one needs focused support right now.</td></tr>') +
+          '</tbody></table></div>' +
+        '<div class="panel mt"><h3>Recent progress / review</h3><div class="panel-sub">' +
+          (mv && mv.list.length ? 'comparable weighted finals: ' + U.esc(mv.from) + ' \u2192 ' + U.esc(mv.to) : 'progress appears when two semesters have comparable records') + '</div>' +
+          (mv && mv.list.length
+            ? '<table class="tbl"><thead><tr><th scope="col">Student</th><th scope="col">Trend</th><th scope="col">Evidence</th></tr></thead><tbody>' +
+              mv.list.slice(0, 8).map((m) => '<tr><td>' + U.esc(m.name) + '</td><td>' + moverLabel(m.delta) + '</td><td class="small">' +
+                (m.delta >= 0 ? '+' : '') + A.f1(m.delta) + ' points across weighted finals</td></tr>').join('') + '</tbody></table>' +
+              '<p class="small muted" style="margin-top:6px">Scores are from different assessment types; review with caution.</p>'
+            : '<p class="muted small" style="padding:10px 2px">Not enough comparable evidence yet for progress conclusions.</p>') +
+        '</div>';
+    } else if (f.view === 'evidence') {
+      body = '<div class="panel"><h3>Assessment evidence</h3><div class="panel-sub">every record completeness at a glance — filters apply</div>' +
+        '<table class="tbl"><thead><tr><th scope="col">Student</th><th scope="col">Status</th><th scope="col">Missing components</th><th scope="col" class="num">Assessed</th></tr></thead>' +
+        '<tbody id="dashEvBody">' + dashEvidenceRows(sem) + '</tbody></table></div>';
+    } else if (f.view === 'teaching') {
+      body = '<div class="panel"><h3>Whole-class teaching priorities</h3>' +
+        '<div class="panel-sub">lowest valid averages first · needs ' + A.MIN_CLASS_N + '+ assessed pupils per component</div>' +
+        '<div class="remark-box">' + U.esc(tp.text) + '</div>' +
+        '<table class="tbl mt" aria-label="Class component averages"><thead><tr><th scope="col">Skill</th><th scope="col" class="num">Average</th><th scope="col" class="num">Assessed pupils</th><th scope="col">Evidence</th></tr></thead><tbody>' +
+        tp.list.map((r) => '<tr><td>' + U.esc(r.k) + '</td><td class="num">' + (r.avg === null ? '—' : A.f1(r.avg) + '%') + '</td><td class="num">' + r.n + '</td>' +
+          '<td class="small">' + (r.n >= A.MIN_CLASS_N ? 'sufficient for a class conclusion' : 'Insufficient evidence') + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<div class="panel mt"><h3>Students needing focused support</h3><div class="panel-sub">evidence + suggested action for every entry</div>' +
+        '<table class="tbl"><thead><tr><th scope="col">Student</th><th scope="col">Status</th><th scope="col">Source</th><th scope="col">Suggested action</th></tr></thead><tbody>' +
+        (risk.length ? risk.map((r) => priorityRow(sem, r.sid)).join('') : '<tr><td colspan="4" class="muted">No one needs focused support right now.</td></tr>') +
+        '</tbody></table></div>';
+    } else { /* advanced */
+      const scat = ui.scat || (ui.scat = 'delta');
+      body = '<div class="panel"><h3>Advanced analysis</h3><div class="panel-sub">This view helps identify patterns for teacher review. It does not measure ability and should not be used alone to make decisions about a pupil.</div>' +
+        '<div class="flex mt" style="align-items:center;gap:10px"><label>Scatter view <select class="inp" id="scatMode">' +
+          '<option value="delta"' + (scat === 'delta' ? ' selected' : '') + '>Current score vs progress change</option>' +
+          '<option value="comp"' + (scat === 'comp' ? ' selected' : '') + '>Score vs assessment completeness</option>' +
+          '<option value="spwr"' + (scat === 'spwr' ? ' selected' : '') + '>Spelling vs writing</option>' +
+        '</select></label></div>' +
+        '<div class="chart-box mt" style="height:320px"><canvas id="ch-scatter" role="img" aria-label="Scatter plot for teacher review"></canvas></div>' +
+        '<table class="tbl mt" id="scatTbl" aria-label="Scatter data table"></table>' +
+        '<p class="small muted" style="margin-top:6px">Patterns here are for investigation, not judgement — no causal claims.</p></div>' +
+        '<div class="grid-2 mt">' +
+          '<div class="panel"><h3>Class average by month</h3><div class="panel-sub">observations (monthly) \u00b7 spelling \u00b7 daily assignments (weekly)</div>' +
+            '<div class="chart-box" style="height:250px"><canvas id="ch-trend" role="img" aria-label="Class average by month line chart"></canvas></div></div>' +
+          '<div class="panel"><h3>Final grade distribution</h3><div class="panel-sub">weighted final score per student</div>' +
+            '<div class="chart-box" style="height:250px"><canvas id="ch-dist" role="img" aria-label="Final grade distribution bar chart"></canvas></div></div>' +
+        '</div>' +
+        '<div class="panel mt"><h3>Final score by student</h3><div class="panel-sub">sorted high to low \u2014 only students with sufficient evidence</div>' +
+          '<div class="chart-box" style="height:' + Math.max(220, Math.min(gAll.filter(gateOk).length, 30) * 20) + 'px"><canvas id="ch-byStu" role="img" aria-label="Final score by student bar chart"></canvas></div></div>';
+    }
+
+    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students',
+      '<a class="btn primary no-print" href="#/entry/sp">Enter scores</a>' +
+      '<a class="btn no-print" href="#/grading">Grading</a>' +
+      '<button class="btn no-print" data-action="export-xlsx">Export SPR Excel</button>') +
 
       '<section class="cover">' +
         '<div class="cover-main">' +
           '<div class="cover-school">' + U.esc(sem.school) + '</div>' +
-          '<div class="cover-line"><b>' + U.esc(sem.className || 'Class') + '</b> · ' + U.esc(sem.name) +
-            (sem.months.length ? ' · ' + U.esc(U.MONTH_ABBR[sem.months[0]] || sem.months[0]) + '–' + U.esc(U.MONTH_ABBR[sem.months[sem.months.length - 1]] || sem.months[sem.months.length - 1]) : '') + '</div>' +
-          '<div class="cover-teachers">Teachers: <b>' + (sem.teachers.length ? U.esc(sem.teachers.join(' · ')) : '–') + '</b></div>' +
+          '<div class="cover-line"><b>' + U.esc(sem.className || 'Class') + '</b> \u00b7 ' + U.esc(sem.name) +
+            (sem.months.length ? ' \u00b7 ' + U.esc(U.MONTH_ABBR[sem.months[0]] || sem.months[0]) + '\u2013' + U.esc(U.MONTH_ABBR[sem.months[sem.months.length - 1]] || sem.months[sem.months.length - 1]) : '') + '</div>' +
+          '<div class="cover-teachers">Teachers: <b>' + (sem.teachers.length ? U.esc(sem.teachers.join(' \u00b7 ')) : '\u2013') + '</b>' +
+            ' \u00b7 complete <b>' + nComplete + '</b> \u00b7 provisional <b>' + nProv + '</b> \u00b7 not yet assessed <b>' + nNotYet + '</b></div>' +
         '</div>' +
         '<div class="cover-date">' +
           '<div class="cover-month">' + monthName + ' ' + now.getFullYear() + '</div>' +
@@ -379,73 +555,79 @@
           (inTerm ? '<span class="in-term">current month of the term</span>' : '') +
         '</div>' +
       '</section>' +
+      tabHtml + filterBar + body;
 
-      '<div class="kpi-strip">' +
-        kpi(fmt(C.classFinalAvg(sem), 1), 'class final average') +
-        kpi(dist['A*'] + ' / ' + sem.students.length, 'final grade A*') +
-        kpi(risk.length, 'students need attention', risk.length > 0) +
-        compKpi('observations', comp.obs) +
-        compKpi('spelling', comp.spelling) +
-        compKpi('daily assignments', comp.daily) +
-      '</div>' +
-
-      '<div class="grid-2">' +
-        '<div class="panel"><h3>Class average by month</h3><div class="panel-sub">observations (monthly) · spelling · daily assignments (weekly)</div>' +
-          '<div class="chart-box" style="height:250px"><canvas id="ch-trend"></canvas></div></div>' +
-        '<div class="panel"><h3>Final grade distribution</h3><div class="panel-sub">weighted final score per student</div>' +
-          '<div class="chart-box" style="height:250px"><canvas id="ch-dist"></canvas></div></div>' +
-      '</div>' +
-
-      '<div class="panel mt"><h3>Final score by student</h3><div class="panel-sub">sorted high to low — click a bar to open the student profile</div>' +
-        '<div class="chart-box" style="height:' + Math.max(220, sem.students.length * 20) + 'px"><canvas id="ch-byStu"></canvas></div></div>' +
-
-      '<div class="grid-2 mt">' +
-        '<div class="panel"><h3>Needs attention</h3><div class="panel-sub">final below 50, ungraded parts, or core parts under 50</div>' +
-          '<table class="tbl"><tbody>' +
-          (risk.length
-            ? risk.map((r) => {
-                const stu = sem.students.find((s) => s.id === r.sid);
-                return '<tr><td><a class="stu-link" href="#/student/' + U.esc(r.sid) + '">' + U.esc((stu && (stu.nameEn || stu.nameCn)) || r.sid) + '</a></td>' +
-                  '<td class="small red-pen">' + U.esc(r.reasons.join(' · ')) + '</td></tr>';
-              }).join('')
-            : '<tr><td class="muted">No one needs attention right now.</td></tr>') +
-          '</tbody></table></div>' +
-        '<div class="panel"><h3>Top of the class</h3><div class="panel-sub">highest weighted final scores</div>' +
-          '<table class="tbl"><tbody>' +
-          stars.map((g, i) => {
-            const stu = sem.students.find((s) => s.id === g.sid);
-            return '<tr><td class="muted">' + (i + 1) + '</td>' +
-              '<td><a class="stu-link" href="#/student/' + U.esc(g.sid) + '">' + U.esc((stu && (stu.nameEn || stu.nameCn)) || g.sid) + '</a></td>' +
-              '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td></tr>';
-          }).join('') +
-          '</tbody></table></div>' +
-      '</div>';
-
-    const labels = sem.months.map((m) => U.MONTH_ABBR[m] || m);
-    mkChart('ch-trend', { type: 'line',
-      data: { labels: labels, datasets: [
-        ds('Observations', sem.months.map((m) => r1x(C.classMonthPct(sem, 'obs', m))), COLORS.obs),
-        ds('Spelling', sem.months.map((m) => r1x(C.classMonthPct(sem, 'spelling', m))), COLORS.sp),
-        ds('Daily assignments', sem.months.map((m) => r1x(C.classMonthPct(sem, 'daily', m))), COLORS.da),
-      ] }, options: lineOpts(0, 100) });
-    const gl = ['A*', 'A', 'B', 'C', 'D', 'U'];
-    mkChart('ch-dist', { type: 'bar',
-      data: { labels: gl, datasets: [{ data: gl.map((l) => dist[l]), backgroundColor: gl.map((l) => GRADE_HEX[l]), borderRadius: 3 }] },
-      options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } } });
-    const sorted = gAll.filter((g) => g.final !== null).sort((a, b) => a.final - b.final);
-    const sids = sorted.map((g) => g.sid);
-    mkChart('ch-byStu', { type: 'bar',
-      data: { labels: sorted.map((g) => { const s = sem.students.find((x) => x.id === g.sid); return (s && s.nameEn) || (s && s.nameCn) || g.sid; }),
-        datasets: [{ data: sorted.map((g) => r1x(g.final)),
-          backgroundColor: sorted.map((g) => GRADE_HEX[g.letter] || '#9aa0a0'), borderRadius: 3 }] },
-      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-        scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + '%' } } },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.parsed.x + '%' } } },
-        onClick: (e, els) => { if (els.length) location.hash = '#/student/' + sids[els[0].index]; },
-        onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; } } });
+    /* ---- charts & data tables ---- */
+    if (f.view === 'overview' || f.view === 'teaching') {
+      const stats = A.COMPONENTS.map((k) => ({ k: k, st: A.classComponentStats(sem, k) }));
+      const tbl = $('#skillTbl');
+      if (tbl) tbl.innerHTML = stats.map((r) => '<tr><td>' + U.esc(r.k) + '</td><td class="num">' +
+        (r.st.avg === null ? '—' : A.f1(r.st.avg) + '%') + '</td><td class="num">' + r.st.n + '</td></tr>').join('');
+      if (f.view === 'overview' && document.getElementById('ch-skills')) {
+        const ok = stats.filter((r) => r.st.n >= A.MIN_CLASS_N && r.st.avg !== null);
+        mkChart('ch-skills', { type: 'bar',
+          data: { labels: ok.map((r) => A.SHORT[r.k] + ' \u00b7 ' + r.st.n + ' assessed'),
+            datasets: [{ data: ok.map((r) => r1x(r.st.avg)), backgroundColor: '#4a7c6b', borderRadius: 3 }] },
+          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + '%' } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.parsed.x + '% \u00b7 ' + ok[c.dataIndex].st.n + ' assessed' } } } } });
+        if (!ok.length) { const box = document.getElementById('ch-skills').closest('.chart-box'); if (box) box.innerHTML = '<p class="muted small" style="padding:18px 8px">Not enough evidence for a class conclusion (needs ' + A.MIN_CLASS_N + '+ assessed pupils per component).</p>'; }
+      }
+    }
+    if (f.view === 'advanced') {
+      const labels = sem.months.map((m) => U.MONTH_ABBR[m] || m);
+      mkChart('ch-trend', { type: 'line',
+        data: { labels: labels, datasets: [
+          ds('Observations', sem.months.map((m) => r1x(C.classMonthPct(sem, 'obs', m))), COLORS.obs),
+          ds('Spelling', sem.months.map((m) => r1x(C.classMonthPct(sem, 'spelling', m))), COLORS.sp),
+          ds('Daily assignments', sem.months.map((m) => r1x(C.classMonthPct(sem, 'daily', m))), COLORS.da),
+        ] }, options: lineOpts(0, 100) });
+      const gl = ['A*', 'A', 'B', 'C', 'D', 'U'];
+      mkChart('ch-dist', { type: 'bar',
+        data: { labels: gl, datasets: [{ data: gl.map((l) => dist[l]), backgroundColor: gl.map((l) => GRADE_HEX[l]), borderRadius: 3 }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } } });
+      const sorted = gAll.filter(gateOk).sort((a, b) => a.final - b.final);
+      const sids = sorted.map((g) => g.sid);
+      if (!sorted.length && document.getElementById('ch-byStu')) {
+        const box = document.getElementById('ch-byStu').closest('.chart-box');
+        if (box) box.innerHTML = '<p class="muted small" style="padding:18px 8px">Not enough assessed work yet — finals appear when students have 6 of 9 components assessed.</p>';
+      }
+      mkChart('ch-byStu', { type: 'bar',
+        data: { labels: sorted.map((g) => { const st = sem.students.find((x) => x.id === g.sid); return (st && st.nameEn) || (st && st.nameCn) || g.sid; }),
+          datasets: [{ data: sorted.map((g) => r1x(g.final)),
+            backgroundColor: sorted.map((g) => GRADE_HEX[g.letter] || '#9aa0a0'), borderRadius: 3 }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + '%' } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.parsed.x + '%' } } },
+          onClick: (e, els) => { if (els.length) location.hash = '#/student/' + sids[els[0].index]; },
+          onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; } } });
+      /* scatter (teacher-only) */
+      const mode = ui.scat || 'delta';
+      let pts = [], xT = 'Current weighted final (%)', yT = '';
+      if (mode === 'delta') {
+        yT = 'Change since previous comparable semester (points)';
+        if (mv) pts = mv.list.map((m) => ({ x: m.final, y: r1x(m.delta), n: m.name }));
+      } else if (mode === 'comp') {
+        xT = 'Components assessed (of 9)'; yT = 'Current weighted final (%)';
+        pts = gAll.filter(gateOk).map((g) => { const st = sem.students.find((x) => x.id === g.sid); return { x: nOf9(g), y: r1x(g.final), n: (st && (st.nameEn || st.nameCn)) || g.sid }; });
+      } else {
+        xT = 'Spelling (%)'; yT = 'Writing (%)';
+        pts = gAll.map((g) => { const st = sem.students.find((x) => x.id === g.sid); return { x: r1x(g.parts.Spelling), y: r1x(g.parts.Writing), n: (st && (st.nameEn || st.nameCn)) || g.sid }; })
+          .filter((q) => q.x !== null && q.y !== null);
+      }
+      mkChart('ch-scatter', { type: 'scatter',
+        data: { datasets: [{ data: pts.map((q) => ({ x: q.x, y: q.y })), backgroundColor: '#2d5fa8', pointRadius: 5, pointHoverRadius: 7 }] },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { x: { title: { display: true, text: xT } }, y: { title: { display: true, text: yT } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => pts[c.dataIndex].n + ': ' + c.parsed.x + ' / ' + c.parsed.y } } } } });
+      const stbl = $('#scatTbl');
+      if (stbl) stbl.innerHTML = '<thead><tr><th scope="col">Student</th><th scope="col" class="num">' + U.esc(xT) + '</th><th scope="col" class="num">' + U.esc(yT) + '</th></tr></thead><tbody>' +
+        (pts.length ? pts.map((q) => '<tr><td>' + U.esc(q.n) + '</td><td class="num">' + q.x + '</td><td class="num">' + q.y + '</td></tr>').join('') : '<tr><td colspan="3" class="muted">Not enough paired evidence yet.</td></tr>') + '</tbody>';
+    }
   }
 
   /* ================================ students ================================ */
+
   function avatarChar(s) { const n = (s.nameCn || s.nameEn || '?').trim(); return n.charAt(0).toUpperCase(); }
   function weeklyCombined(sem, sid) {
     const out = [];
@@ -479,7 +661,7 @@
         '<div class="avatar">' + U.esc(avatarChar(s)) + '</div>' +
         '<div style="min-width:0;padding-right:56px"><div class="s-name">' + U.esc(s.nameEn || s.nameCn) + '</div>' +
         '<div class="s-meta">' + U.esc(s.nameCn || '') + (s.nameCn ? ' · ' : '') + U.esc(s.id) + '</div></div>' +
-        gBadge(g.letter) + spark(sem, s.id) + '</a>';
+        gradeCell(g) + spark(sem, s.id) + '</a>';
     }).join('');
   }
   function renderStudents() {
@@ -518,7 +700,7 @@
     const chips = DB.semesters.filter((s) => s.students.some((x) => x.id === sid)).map((s) => {
       const gg = C.gradeStudent(s, sid);
       return '<button class="month-pill' + (s.id === sem.id ? ' on' : '') + '" data-action="jump-sem" data-semid="' + U.esc(s.id) + '">' +
-        U.esc(s.name) + ' · ' + fmt(gg.final, 1) + '</button>';
+        U.esc(s.name) + ' · ' + (gateOk(gg) ? fmt(gg.final, 1) : nOf9(gg) + '/9') + '</button>';
     }).join('');
     return chips ? '<div class="month-pills" style="margin-top:8px">' + chips + '</div>' : '';
   }
@@ -528,8 +710,12 @@
       return '<tr><td>' + k + '</td><td class="num">' + fmt(p, 1) + '%</td><td class="c">' + gBadge(p === null ? null : C.letter(p)) + '</td>' +
         '<td class="num">' + w + '%</td><td class="num">' + (p === null ? '–' : fmt((p * w) / 100, 2)) + '</td></tr>';
     }).join('');
+    const ok = gateOk(g), full = gateFinal(g);
     return '<table class="tbl"><thead><tr><th>Component</th><th class="num">Score</th><th class="c">Grade</th><th class="num">Weight</th><th class="num">Contribution</th></tr></thead><tbody>' + rows +
-      '<tr><td><b>Final</b></td><td class="num"><b>' + fmt(g.final, 1) + '%</b></td><td class="c">' + gBadge(g.letter) + '</td><td class="num">100%</td><td></td></tr></tbody></table>';
+      (ok
+        ? '<tr><td><b>Final' + (full ? '' : ' <span class="small muted">(provisional, ' + nOf9(g) + '/9)</span>') + '</b></td><td class="num"><b>' + fmt(g.final, 1) + '%</b></td><td class="c">' + gBadge(g.letter) + '</td><td class="num">100%</td><td></td></tr>'
+        : '<tr><td><b>Final</b></td><td colspan="4" class="muted">Not yet assessed · ' + nOf9(g) + ' of 9 components — grades appear at 6 or more</td></tr>') +
+      '</tbody></table>';
   }
   function renderStudent(sid) {
     const sem = cur();
@@ -553,8 +739,13 @@
           '<div class="stu-meta">' + U.esc(s.nameCn || '') + (s.nameCn && s.gender ? ' · ' : '') + U.esc(s.gender || '') + (s.gender ? ' · ' : '') + 'ID ' + U.esc(s.id) + '</div>' +
           semChips(sid, sem) + '</div></div>' +
         '<div class="flex" style="align-items:center;gap:28px">' +
-          '<div class="right"><div class="final-num">' + fmt(g.final, 1) + '</div><div class="small muted">weighted final · ' + completenessCount(g) + ' assessments in</div></div>' +
-          '<div class="stamp" style="color:' + (GRADE_HEX[g.letter] || '#9aa0a0') + '"><small>FINAL GRADE</small>' + U.esc(g.letter || '–') + '</div>' +
+          '<div class="right"><div class="final-num">' + (gateOk(g) ? fmt(g.final, 1) : '–') + '</div><div class="small muted">' +
+            (gateFinal(g) ? 'weighted final · 9 assessments in'
+              : gateOk(g) ? 'Provisional grade based on ' + nOf9(g) + ' of 9 components'
+              : 'Not yet assessed · ' + nOf9(g) + ' of 9 components') + '</div></div>' +
+          (gateOk(g)
+            ? '<div class="stamp' + (gateFinal(g) ? '' : ' prov') + '" style="color:' + (GRADE_HEX[g.letter] || '#9aa0a0') + '"><small>' + (gateFinal(g) ? 'FINAL GRADE' : 'PROVISIONAL · ' + nOf9(g) + '/9') + '</small>' + U.esc(g.letter || '–') + '</div>'
+            : '<div class="stamp prov"><small>ASSESSMENT</small>In progress</div>') +
         '</div>' +
       '</section>' +
 
@@ -566,7 +757,15 @@
       '</div>' +
       '<div class="panel mb"><h3>Observations by month</h3><div class="panel-sub">each line is one skill (month %)</div><div class="chart-box" style="height:240px"><canvas id="ch-obs"></canvas></div></div>' +
       anFindingsPanel(sid) +
-      '<div class="panel"><h3>How the final grade adds up</h3><div class="panel-sub">component % × weight — same formula as the SPR Excel</div>' + contribTable(g) + '</div>';
+      '<div class="panel"><h3>How the final grade adds up</h3><div class="panel-sub">component % × weight — same formula as the SPR Excel</div>' + contribTable(g) + '</div>' +
+      '<div class="panel mt"><h3>Skill profile</h3><div class="panel-sub">' + U.esc(s.nameEn || s.nameCn) + '\u2019s skill profile \u2014 score vs class average (shown only with 5+ assessed pupils)</div>' +
+        '<div class="chart-box" style="height:300px"><canvas id="ch-profile" role="img" aria-label="Grouped bar chart comparing this student to the class average per skill"></canvas></div>' +
+        '<table class="tbl mt" id="profTbl" aria-label="Skill profile data"></table></div>' +
+      '<div class="panel mt"><h3>Progress over time</h3><div class="panel-sub">comparable scores only \u2014 gaps mean no recorded assessment</div>' +
+        '<div class="flex" style="gap:6px;flex-wrap:wrap;margin:8px 0" id="progSel">' +
+          A.COMPONENTS.map((k) => '<button class="btn sm' + ((ui.progSkill || 'Spelling') === k ? ' primary' : '') + '" data-action="prog-skill" data-skill="' + U.esc(k) + '">' + U.esc(A.SHORT[k]) + '</button>').join('') + '</div>' +
+        '<div class="chart-box" style="height:240px"><canvas id="ch-prog" role="img" aria-label="Progress over time line chart"></canvas></div>' +
+        '<p class="small" id="progVerdict" style="margin-top:8px"></p></div>';
 
     const weeks = weekLabelList(sem);
     mkChart('ch-week', { type: 'line',
@@ -599,6 +798,35 @@
       data: { labels: sem.months.map((m) => U.MONTH_ABBR[m] || m), datasets: SKILLS.map((sk) =>
         ds(sk, sem.months.map((m) => r1x(C.obsMonthPct(sem, sid, m, sk))), COLORS[sk])) },
       options: lineOpts(0, 100) });
+
+    /* skill profile: student vs class (class shown only with >=5 assessed) */
+    if (document.getElementById('ch-profile')) {
+      const rowsP = A.COMPONENTS.map((k) => { const st = A.classComponentStats(sem, k); return { k: k, v: g.parts[k], cls: st.n >= A.MIN_CLASS_N ? st.avg : null, n: st.n }; });
+      const sets = [{ label: 'Student', data: rowsP.map((r) => r1x(r.v)), backgroundColor: '#2d5fa8', borderRadius: 3 }];
+      if (rowsP.some((r) => r.cls !== null)) sets.push({ label: 'Class average', data: rowsP.map((r) => r1x(r.cls)), backgroundColor: '#c9c5b2', borderRadius: 3 });
+      mkChart('ch-profile', { type: 'bar',
+        data: { labels: rowsP.map((r) => A.SHORT[r.k]), datasets: sets },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + '%' } } },
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10 } } } } });
+      const pt = $('#profTbl');
+      if (pt) pt.innerHTML = '<thead><tr><th scope="col">Skill</th><th scope="col" class="num">Student</th><th scope="col" class="num">Class average</th><th scope="col" class="num">Class assessed</th></tr></thead><tbody>' +
+        rowsP.map((r) => '<tr><td>' + U.esc(r.k) + '</td><td class="num">' + (r.v === null ? 'Not yet assessed' : A.f1(r.v) + '%') + '</td>' +
+          '<td class="num">' + (r.cls === null ? '\u2014' : A.f1(r.cls) + '%') + '</td><td class="num">' + r.n + '</td></tr>').join('') + '</tbody>';
+    }
+    /* progress over time: selected component, comparable points, gaps preserved */
+    if (document.getElementById('ch-prog')) {
+      const kSel = ui.progSkill || 'Spelling';
+      const pts = A.componentPointList(sem, sid, kSel);
+      const verdict = A.trendVerdict(pts);
+      mkChart('ch-prog', { type: 'line',
+        data: { labels: pts.map((q) => q.label), datasets: [ds(kSel, pts.map((q) => r1x(q.pct)), '#2d5fa8', { borderWidth: 3, spanGaps: false })] },
+        options: lineOpts(0, 100) });
+      const vEl = $('#progVerdict');
+      if (vEl) vEl.innerHTML = pts.length === 0
+        ? '<span class="muted">No recorded ' + U.esc(kSel.toLowerCase()) + ' assessments yet \u2014 nothing to conclude.</span>'
+        : (verdict ? (verdict.label ? '<b>' + verdict.label + ':</b> ' : '') + U.esc(verdict.calc) + (pts.length > 2 ? '' : ' <span class="muted">Two points only \u2014 treat as an early indication.</span>') : '<span class="muted">One recorded task \u2014 a single point is not a trend.</span>');
+    }
   }
 
   /* ============================== enter scores ============================== */
@@ -789,8 +1017,8 @@
       }
       const g = C.gradeStudent(sem, s.id);
       for (const b of TEST_BLOCKS) tds += tdAvg('tp-' + b[0] + '-' + s.id, C.testPct(sem, s.id, b[0]));
-      tds += '<td class="avg sep" id="tfin-' + U.esc(s.id) + '"><strong>' + fmt(g.final, 1) + '</strong></td>';
-      tds += '<td class="avg" id="tgl-' + s.id + '">' + gBadge(g.letter) + '</td>';
+      tds += '<td class="avg sep" id="tfin-' + U.esc(s.id) + '">' + (gateOk(g) ? '<strong>' + fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') + '</strong>' : '<span class="muted small">' + nOf9(g) + '/9</span>') + '</td>';
+      tds += '<td class="avg" id="tgl-' + s.id + '">' + gradeCell(g) + '</td>';
       return '<tr>' + tds + '</tr>';
     }).join('');
 
@@ -805,9 +1033,9 @@
     for (const b of TEST_BLOCKS) setAvgCell('tp-' + b[0] + '-' + sid, C.testPct(sem, sid, b[0]));
     const g = C.gradeStudent(sem, sid);
     const fin = document.getElementById('tfin-' + sid);
-    if (fin) fin.innerHTML = '<strong>' + fmt(g.final, 1) + '</strong>';
+    if (fin) fin.innerHTML = gateOk(g) ? '<strong>' + fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') + '</strong>' : '<span class="muted small">' + nOf9(g) + '/9</span>';
     const gl = document.getElementById('tgl-' + sid);
-    if (gl) gl.innerHTML = gBadge(g.letter);
+    if (gl) gl.innerHTML = gradeCell(g);
   }
   function updateTestFooters(sem) {
     for (const b of TEST_BLOCKS) {
@@ -932,7 +1160,11 @@
     const idx = DB.semesters.findIndex((x) => x.id === sem.id);
     for (let i = idx - 1; i >= 0; i--) {
       const s2 = DB.semesters[i];
-      if (s2.students.some((x) => x.id === sid)) return C.gradeStudent(s2, sid).final;
+      if (s2.students.some((x) => x.id === sid)) {
+        const pg = C.gradeStudent(s2, sid);
+        /* trend comparisons need sufficient evidence on the earlier side too */
+        return C.assessedCount(pg) >= C.FINAL_MIN_ASSESSED ? pg.final : null;
+      }
     }
     return null;
   }
@@ -943,7 +1175,7 @@
     const k = ui.gsort.k, d = ui.gsort.d;
     rows.sort((a, b) => {
       if (k === 'name') return d * String(a.s.nameEn || '').localeCompare(String(b.s.nameEn || ''));
-      const av = a.g.final === null ? -1 : a.g.final, bv = b.g.final === null ? -1 : b.g.final;
+      const av = gateOk(a.g) ? a.g.final : -1, bv = gateOk(b.g) ? b.g.final : -1; /* below-gate rows sink */
       return d * (av - bv);
     });
     return rows.map((r) => {
@@ -951,7 +1183,7 @@
       const L = (p) => '<td class="c">' + gBadge(p === null ? null : C.letter(p)) + '</td>';
       const pf = prevFinal(sem, s.id);
       let trend = '<span class="muted">–</span>';
-      if (pf !== null && g.final !== null) {
+      if (pf !== null && gateOk(g)) {
         const dd = g.final - pf;
         if (dd > 0.5) trend = '<span style="color:#1d7a4a">↑ ' + fmt(dd, 1) + '</span>';
         else if (dd < -0.5) trend = '<span style="color:#c4453c">↓ ' + fmt(-dd, 1) + '</span>';
@@ -961,7 +1193,7 @@
         '</a> <span class="muted small">' + U.esc(s.nameCn || '') + '</span></td>' +
         L(g.parts.Listening) + L(g.parts.Speaking) + L(g.parts.Writing) + L(g.parts.Reading) +
         L(g.parts.Spelling) + L(g.parts['Daily Assignments']) + L(g.parts['Mid-Term']) + L(g.parts.Oral) + L(g.parts.Written) +
-        '<td class="num"><b>' + fmt(g.final, 1) + '</b></td><td class="c">' + gBadge(g.letter) + '</td>' +
+        '<td class="num">' + finalCell(g) + '</td><td class="c">' + gradeCell(g) + '</td>' +
         '<td class="num small">' + trend + '</td></tr>';
     }).join('');
   }
@@ -979,7 +1211,7 @@
       '<th class="num" data-action="gsort" data-k="final" style="cursor:pointer">Final' + arrow('final') + '</th>' +
       '<th class="c">Grade</th><th class="num">vs last term</th></tr></thead>' +
       '<tbody id="grBody">' + grRows(sem) + '</tbody></table></div>' +
-      '<div class="legend"><span class="small muted">Final = Listening 10% + Speaking 10% + Writing 10% + Reading 10% + Spelling 10% + Daily 10% + Mid-Term 10% + Oral 10% + Written 20%. Grades: A* &gt; 84, A &gt; 74, B &gt; 64, C &gt; 54, D &gt; 49, otherwise U.</span></div>';
+      '<div class="legend"><span class="small muted">Final = Listening 10% + Speaking 10% + Writing 10% + Reading 10% + Spelling 10% + Daily 10% + Mid-Term 10% + Oral 10% + Written 20%. Grades: A* &gt; 84, A &gt; 74, B &gt; 64, C &gt; 54, D &gt; 49, otherwise U.</span><br><span class="small muted">P n/9 = provisional grade based on n of 9 components (finals appear at 6 or more); fewer than 6 assessed components show Not yet assessed.</span></div>';
   }
 
   /* ================================= manage ================================= */
@@ -1024,9 +1256,10 @@
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
         '<button class="btn" data-action="export-xlsx">Export current semester to Excel</button>' +
-        '<button class="btn" data-action="backup">Download backup (JSON)</button>' +
+        '<button class="btn" data-action="backup">Download full backup (all semesters)</button>' +
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
+      '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
@@ -1074,8 +1307,34 @@
         if (c.lastPush) status.push('pushed by ' + U.esc(c.lastPushBy || '?') + ' · ' + new Date(c.lastPush).toLocaleString());
         if (c.lastPull) status.push('pulled ' + new Date(c.lastPull).toLocaleString());
         var link = shareLink();
+        var sb = SB();
+        if (sb.url && sb.key && (c.provider === 'sb' || c.channel)) {
+          var whenTxt = c.lastPush ? new Date(c.lastPush).toLocaleString() : 'never';
+          return '<div class="panel">' +
+            '<p class="small" style="margin-bottom:10px">Sharing <b>' + U.esc(c.shareName || 'one class') + '</b> — last saved ' + U.esc(whenTxt) + (c.lastPushBy ? ' by ' + U.esc(c.lastPushBy) : '') + '. After editing press <b>Save &amp; Share</b>; to get your co-teacher&rsquo;s newest version press <b>Open shared copy</b>. If they saved after your last sync, the app will offer it automatically. Only this one class is shared — your other classes never leave this browser.</p>' +
+            '<div class="flex">' +
+              '<button class="btn primary" data-action="share-push"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Save &amp; Share</button>' +
+              '<button class="btn" data-action="share-pull"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Open shared copy</button>' +
+              '<button class="btn" data-action="share-qr">Show link &amp; QR</button>' +
+            '</div>' +
+            (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Save &amp; Share needs the online version (https). Open the website in a browser to use it.</p>' : '') +
+            '</div>';
+        }
+        if (sb.url && sb.key) {
+          var sem = cur();
+          return '<div class="panel">' +
+            '<p class="small" style="margin-bottom:10px">Share <b>one class</b> with a co-teacher: pick the class, press the button, then send the link or QR code it gives you. The other teacher opens it and gets that class — everything is <b>encrypted</b> before upload, so the cloud never sees your data. After every editing session, press <b>Save &amp; Share</b> again to send them the latest version.</p>' +
+            '<div class="flex" style="align-items:center">' +
+              '<select class="inp" id="shareSem" style="width:auto">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === (sem && sem.id) ? ' selected' : '') + '>' + U.esc((s.className ? s.className + ' · ' : '') + s.name) + '</option>').join('') + '</select>' +
+              '<input class="inp" id="shareName" placeholder="Name shown to your co-teacher" style="width:250px" value="' + U.esc((sem && ((sem.className ? sem.className + ' · ' : '') + sem.name)) || 'My class') + '">' +
+              '<button class="btn primary" data-action="share-create"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Save &amp; Share</button>' +
+            '</div>' +
+            (status.length ? '<p class="small" style="margin-top:8px">' + status.join(' · ') + '</p>' : '') +
+            (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Save &amp; Share needs the online version (https).</p>' : '') +
+            '</div>';
+        }
         return '<div class="panel">' +
-          '<p class="small" style="margin-bottom:10px">Create one free bin at <b>npoint.io</b> (New JSON bin — content can stay <code>{}</code>), then paste its ID here. Data is <b>encrypted (AES-GCM)</b> before upload; the key travels only inside the share link, so the cloud never sees your data. Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins.</p>' +
+          '<p class="small" style="margin-bottom:10px"><b>Save &amp; Share is being set up</b> (one-time, by the administrator — see the note in Manage &amp; setup once configured). The classic npoint bin still works below if you already use one: paste its ID, then Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins — pull before you start, push when you finish.</p>' +
           '<div class="flex">' +
             '<input class="inp" id="shareBin" placeholder="npoint bin ID (e.g. a1b2c3d4)" style="width:230px" value="' + U.esc(c.bin || '') + '">' +
             '<button class="btn" data-action="share-save">Save bin ID</button>' +
@@ -1130,8 +1389,15 @@
   function anFindingsPanel(sid) {
     const sw = A.swot(DB, sid);
     if (!sw) return '';
+    if (sw.provisionalStub) {
+      /* below the evidence gate: no RAG, no SWOT, no conclusions — just the fact */
+      return '<div class="panel mb"><h3>Findings</h3>' +
+        '<div class="panel-sub">' + U.esc(sw.last.semName) + ' · assessment in progress</div>' +
+        '<div class="remark-box mt" style="border-left-color:#9aa0a0">' + U.esc(sw.remark) + '</div></div>';
+    }
     return '<div class="panel mb"><h3>Findings — RAG &amp; SWOT (auto-generated)</h3>' +
-      '<div class="panel-sub">' + U.esc(sw.last.semName) + ' · overall ' + ragChip(sw.overallRag) +
+      '<div class="panel-sub">' + U.esc(sw.last.semName) + (sw.provisional ? ' · provisional (' + sw.last.assessed + '/9)' : '') + ' · overall ' + ragChip(sw.overallRag) +
+      ' <button class="btn sm" data-action="rag-why" data-sid="' + U.esc(sid) + '">Why?</button>' +
       ' · trend vs ' + U.esc(sw.prev ? sw.prev.semName : '—') + ' ' + dSpan(sw.delta) + '</div>' +
       '<div class="swot-grid" style="margin-top:10px">' +
         '<div class="swot-cell s"><h4>Strengths</h4><ul>' + sw.strengths.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
@@ -1224,10 +1490,12 @@
       '<div><div class="stu-name">' + U.esc(stu.nameEn || stu.nameCn) + '</div>' +
       '<div class="stu-meta">' + U.esc(stu.nameCn || '') + ' · ID ' + U.esc(sid) + ' · ' + rows.length + ' ' + (rows.length === 1 ? 'semester' : 'semesters') + ' of data</div></div></div>' +
       '<div class="flex" style="align-items:center;gap:22px">' +
-        '<div class="right"><div class="final-num">' + A.f1(last.final) + '</div><div class="small muted">' + U.esc(last.semName) + ' final</div></div>' +
+        '<div class="right"><div class="final-num">' + (last.assessed >= C.FINAL_MIN_ASSESSED ? A.f1(last.final) : '–') + '</div><div class="small muted">' + U.esc(last.semName) + (last.assessed >= C.FINAL_MIN_ASSESSED ? ' final' : ' · ' + last.assessed + '/9 assessed') + '</div></div>' +
         (rows.length > 1 ? '<div class="right"><div class="final-num" style="font-size:26px">' + dSpan(sw.delta) + '</div><div class="small muted">vs ' + U.esc(sw.prev.semName) + '</div></div>' : '') +
-        (last.rank ? '<div class="right"><div class="final-num" style="font-size:26px">' + last.rank + '<span class="small muted">/' + last.total + '</span></div><div class="small muted">rank</div></div>' : '') +
-        '<div class="stamp" style="color:' + (RAG_HEX[sw.overallRag] || '#9aa0a0') + '"><small>' + (sw.ragName || 'RAG').toUpperCase() + '</small>' + (sw.ragName || '–') + '</div>' +
+        (last.rank ? '<div class="right"><div class="final-num" style="font-size:26px">' + last.rank + '<span class="small muted">/' + last.total + (last.rankProvisional ? ' · prov.' : '') + '</span></div><div class="small muted">rank' + (last.rankProvisional ? ' (provisional)' : '') + '</div></div>' : '') +
+        (sw.provisionalStub
+          ? '<div class="stamp prov"><small>ASSESSMENT</small>In progress</div>'
+          : '<div class="stamp' + (sw.provisional ? ' prov' : '') + '" style="color:' + (RAG_HEX[sw.overallRag] || '#9aa0a0') + '"><small>' + (sw.provisional ? 'PROVISIONAL' : (sw.ragName || 'RAG').toUpperCase()) + '</small>' + (sw.ragName || '–') + '</div>') +
       '</div></div>' +
       '<div class="grid-2">' +
         '<div class="panel"><h3>Final score trajectory</h3><div class="panel-sub">student vs class average</div><div class="chart-box" style="height:250px"><canvas id="ch-anStu"></canvas></div></div>' +
@@ -1309,7 +1577,7 @@
     const comp = C.completeness(sem);
     const risk = C.atRisk(sem);
     const gAll = C.gradeAll(sem);
-    const top = gAll.filter((g) => g.final !== null).sort((a, b) => b.final - a.final).slice(0, 5);
+    const top = gAll.filter(gateOk).sort((a, b) => b.final - a.final).slice(0, 5); /* evidence gate */
     return '<div class="kpi-strip">' +
         kpi(fmt(C.classFinalAvg(sem), 1), 'class average', false) +
         kpi(dist['A*'] + '/' + sem.students.length, 'grade A*') +
@@ -1330,16 +1598,17 @@
       '</div>' +
       '<div class="panel mt"><h3>Top performers</h3>' +
         '<table class="tbl"><thead><tr><th>#</th><th>Student</th><th class="num">Final</th><th class="c">Grade</th></tr></thead><tbody>' +
-        top.map((g, i) => { const s = sem.students.find((x) => x.id === g.sid);
+        (top.length ? top.map((g, i) => { const s = sem.students.find((x) => x.id === g.sid);
           return '<tr><td>' + (i + 1) + '</td>' +
             '<td><a class="stu-link" href="#/report/' + U.esc(g.sid) + '">' + U.esc(s ? (s.nameEn || s.nameCn) : g.sid) + '</a></td>' +
-            '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td></tr>'; }).join('') +
+            '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td></tr>'; }).join('')
+          : '<tr><td colspan="4" class="muted">Not enough assessed work yet (6 of 9 components needed for finals).</td></tr>') +
         '</tbody></table></div>' +
       '<div class="panel mt"><h3>All students</h3>' +
         '<table class="tbl"><thead><tr><th>Student</th><th class="c">Final</th><th class="c">Grade</th><th class="c">Report Card</th></tr></thead><tbody>' +
         sem.students.map((s) => { const g = C.gradeStudent(sem, s.id);
           return '<tr><td>' + U.esc(s.nameEn || s.nameCn) + ' <span class="muted small">' + U.esc(s.nameCn || '') + '</span></td>' +
-            '<td class="num">' + fmt(g.final, 1) + '</td><td class="c">' + gBadge(g.letter) + '</td>' +
+            '<td class="num">' + (gateOk(g) ? fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') : '<span class="small muted">' + nOf9(g) + '/9</span>') + '</td><td class="c">' + gradeCell(g) + '</td>' +
             '<td class="c"><a class="btn sm" href="#/report/' + U.esc(s.id) + '">View card</a></td></tr>'; }).join('') +
         '</tbody></table></div>' +
       '<div class="flex mt" style="justify-content:center;gap:16px">' +
@@ -1359,20 +1628,36 @@
       '<div class="empty"><div class="big">Select a student above</div><p>Choose a student and click "View Report Card" to preview, print, or download their individual card.</p></div>';
   }
 
+  function reportSectionsFinal(sem, sid, sections) {
+    /* merge teacher edits (sem.reportNotes) over the generated sections */
+    const notes = (sem.reportNotes || {})[sid] || {};
+    const gen = sections;
+    const val = (field, generated) => (notes[field] !== undefined && notes[field] !== '' ? notes[field] : generated);
+    const genList = (field, items) => (notes[field] !== undefined && notes[field] !== '' ? [{ k: '', text: notes[field], evidence: '' }] : items);
+    return {
+      strengths: genList('strengths', gen.strengths),
+      steps: genList('steps', gen.steps),
+      support: val('support', gen.support),
+      home: val('home', gen.home),
+      overall: val('overall', gen.overall),
+      inProgress: gen.inProgress,
+      note: gen.note,
+      edited: !!(notes.strengths || notes.steps || notes.support || notes.home || notes.overall),
+    };
+  }
+
   function renderReportCard(sid) {
     const sem = cur();
     const stu = sem.students.find((s) => s.id === sid);
     if (!stu) { location.hash = '#/reports/student'; return; }
     const g = C.gradeStudent(sem, sid);
-    const sw = A.swot(DB, sid);
-    const clsAvg = C.classFinalAvg(sem);
-    const ragCode = g.final >= 75 ? 'G' : g.final >= 55 ? 'A' : 'R';
-    const ragName = ragCode === 'G' ? 'Green' : ragCode === 'A' ? 'Amber' : 'Red';
-    const rank = (function () {
-      const sorted = C.gradeAll(sem).filter((x) => x.final !== null).sort((a, b) => b.final - a.final);
-      const i = sorted.findIndex((x) => x.sid === sid);
-      return i >= 0 ? (i + 1) + ' / ' + sorted.length : '—';
-    })();
+    const ok = gateOk(g), full = gateFinal(g), n9 = nOf9(g);
+    const c = C.getAssessmentCompleteness(sem, sid);
+    const sections = reportSectionsFinal(sem, sid, A.reportSections(sem, sid));
+    const notes = (sem.reportNotes || {})[sid] || {};
+    const statusLine = ok
+      ? (full ? 'Final assessment complete' : 'Provisional \u2014 ' + n9 + ' of 9 components assessed')
+      : 'Not yet assessed \u2014 ' + n9 + ' of 9 components assessed';
 
     const componentRows = [
       ['Listening', g.skills.Listening], ['Speaking', g.skills.Speaking],
@@ -1380,67 +1665,73 @@
       ['Spelling', g.spelling], ['Daily Assignments', g.daily],
       ['Mid-Term', g.midterm], ['Oral', g.oral], ['Written', g.written],
     ].map(([name, val]) => {
-      const w = name === 'Written' ? 20 : 10;
-      return '<tr><td>' + name + '</td><td class="num">' + fmt(val, 1) + '%</td>' +
-        '<td class="c">' + gBadge(val === null ? null : C.letter(val)) + '</td>' +
-        '<td class="num">' + w + '%</td>' +
-        '<td class="num">' + (val === null ? '—' : fmt(val * w / 100, 2)) + '</td></tr>';
+      const ev = A.componentEvents(sem, sid, name);
+      return '<tr><td>' + name + '</td><td class="num">' + (val === null ? '<span class="muted">Not yet assessed</span>' : fmt(val, 1) + '%') + '</td>' +
+        '<td class="small muted">' + (val === null || !ev ? '' : ev + ' recorded ' + (ev === 1 ? 'task' : 'tasks')) + '</td></tr>';
     }).join('');
 
-    $('#content').innerHTML = pageHead('Report Card', U.esc(stu.nameEn || stu.nameCn || '') + ' · ' + U.esc(sem.name),
+    const secEditor = (field, label, placeholder) =>
+      '<div class="panel no-print" style="padding:10px 14px"><label style="display:block;font-weight:700;font-size:12px;letter-spacing:.04em;color:var(--ink-60)">' + label + ' <span class="muted small">(editable \u2014 saved automatically)</span></label>' +
+      '<textarea class="inp" rows="2" style="width:100%;margin-top:6px" data-rn="' + field + '" data-sid="' + U.esc(sid) + '" data-gen="' + U.esc(placeholder) + '" placeholder="' + U.esc(placeholder) + '">' + U.esc(notes[field] || '') + '</textarea>' +
+      '<div class="mt" style="display:flex;gap:8px"><button class="btn sm" data-action="rn-reset" data-sid="' + U.esc(sid) + '" data-field="' + field + '">Reset to suggested wording</button></div></div>';
+
+    const secList = (items) => (items.length ? '<ul>' + items.map((x) => '<li>' + U.esc(x.text) + (x.evidence ? ' <span class="muted small">(' + U.esc(x.evidence) + ')</span>' : '') + '</li>').join('') + '</ul>' : '<p class="muted small">Not enough assessed work yet to identify a reliable area.</p>');
+
+    $('#content').innerHTML = pageHead('Report Card', U.esc(stu.nameEn || stu.nameCn || '') + ' \u00b7 ' + U.esc(sem.name),
       '<button class="btn primary" data-action="print">Print / Save PDF</button>' +
       '<button class="btn" data-action="dl-card" data-sid="' + U.esc(sid) + '">Download (Excel)</button>' +
       '<a class="btn" href="#/student/' + U.esc(sid) + '">Full profile</a>') +
 
+      /* teacher editor (screen only, never printed) */
+      '<div class="no-print" style="margin-bottom:6px">' +
+        secEditor('strengths', 'STRENGTHS', sections.strengths.map((x) => x.text).join(' ')) +
+        secEditor('steps', 'NEXT LEARNING STEPS', sections.steps.map((x) => x.text).join(' ')) +
+        secEditor('support', 'TEACHER SUPPORT', sections.support) +
+        secEditor('home', 'HOW HOME CAN HELP', sections.home) +
+        secEditor('overall', 'OVERALL COMMENT', sections.overall) +
+      '</div>' +
+
       '<div class="report-card">' +
         '<div class="rc-header">' +
           '<div class="rc-school">' + U.esc(sem.school) + '</div>' +
-          '<div class="rc-title">STUDENT PERFORMANCE REPORT CARD</div>' +
-          '<div class="rc-meta">' + U.esc(sem.className) + ' · ' + U.esc(sem.name) + '</div>' +
+          '<div class="rc-title">STUDENT PERFORMANCE REPORT</div>' +
+          '<div class="rc-meta">' + U.esc(sem.className) + ' \u00b7 ' + U.esc(sem.name) + '</div>' +
         '</div>' +
         '<div class="rc-stu">' +
           '<table class="tbl"><tbody>' +
             '<tr><th>Student Name</th><td>' + U.esc(stu.nameEn || '') + ' ' + U.esc(stu.nameCn || '') + '</td>' +
                 '<th>Student ID</th><td>' + U.esc(stu.id) + '</td></tr>' +
-            '<tr><th>Gender</th><td>' + U.esc(stu.gender || '') + '</td>' +
-                '<th>Class Rank</th><td>' + rank + '</td></tr>' +
+            '<tr><th>Assessment status</th><td colspan="3">' + U.esc(statusLine) + '</td></tr>' +
           '</tbody></table>' +
         '</div>' +
         '<div class="rc-scores">' +
-          '<table class="tbl"><thead><tr><th>Component</th><th class="num">Score</th><th class="c">Grade</th><th class="num">Weight</th><th class="num">Contribution</th></tr></thead>' +
+          '<h3 style="margin:8px 0 4px">Skill overview</h3>' +
+          '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Score</th><th scope="col" class="num">Evidence</th></tr></thead>' +
           '<tbody>' + componentRows +
-          '<tr style="border-top:2px solid var(--rule-strong)"><td><b>FINAL SCORE</b></td>' +
-            '<td class="num"><b>' + fmt(g.final, 1) + '%</b></td>' +
-            '<td class="c">' + gBadge(g.letter) + '</td><td class="num">100%</td><td></td></tr>' +
+          (ok
+            ? '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
+              '<td class="num"><b>' + fmt(g.final, 1) + '%</b> \u00b7 ' + U.esc(g.letter) + '</td><td class="small muted">' + n9 + ' of 9 components</td></tr>'
+            : '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
           '</tbody></table>' +
         '</div>' +
-        '<div class="rc-rag">' +
-          '<table class="tbl"><tr>' +
-            '<th>RAG Status</th><td>' + ragChip(ragCode, ragName) + '</td>' +
-            '<th>Class Average</th><td>' + fmt(clsAvg, 1) + '%</td>' +
-            '<th>vs Class</th><td>' + (g.final >= clsAvg ? '<span class="delta-up">+' : '<span class="delta-down">') + fmt(Math.abs(g.final - clsAvg), 1) + '</span></td>' +
-          '</tr></table>' +
+        '<div class="rc-swot">' +
+          '<h3>Strengths</h3><div id="rc-sec-strengths">' + secList(sections.strengths) + '</div>' +
+          '<h3>Next learning steps</h3><div id="rc-sec-steps">' + secList(sections.steps) + '</div>' +
+          '<h3>Teacher support</h3><div id="rc-sec-support">' + (sections.support ? '<p>' + U.esc(sections.support) + '</p>' : '<p class="muted small">To be added once assessment is complete.</p>') + '</div>' +
+          '<h3>How home can help</h3><div id="rc-sec-home">' + (sections.home ? '<p>' + U.esc(sections.home) + '</p>' : '<p class="muted small">Optional \u2014 added by the teacher.</p>') + '</div>' +
         '</div>' +
-        (sw ? '<div class="rc-swot">' +
-          '<h3>SWOT Analysis</h3>' +
-          '<div class="swot-grid">' +
-            '<div class="swot-cell s"><h4>Strengths</h4><ul>' + sw.strengths.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
-            '<div class="swot-cell w"><h4>Weaknesses</h4><ul>' + sw.weaknesses.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
-            '<div class="swot-cell o"><h4>Opportunities</h4><ul>' + (sw.opportunities.length ? sw.opportunities.map((x) => '<li>' + U.esc(x) + '</li>').join('') : '<li>Maintain current approach</li>') + '</ul></div>' +
-            '<div class="swot-cell t"><h4>Threats</h4><ul>' + sw.threats.map((x) => '<li>' + U.esc(x) + '</li>').join('') + '</ul></div>' +
-          '</div>' +
-        '</div>' : '') +
-        (sw ? '<div class="rc-remark"><h3>Teacher Remark</h3><div class="remark-box">' + U.esc(sw.remark) + '</div></div>' : '') +
+        '<div class="rc-remark"><h3>Overall comment</h3><div id="rc-sec-overall">' + (sections.overall ? '<div class="remark-box">' + U.esc(sections.overall) + '</div>' : (sections.inProgress ? '<div class="remark-box">' + U.esc(sections.note) + '</div>' : '')) + '</div></div>' +
         '<div class="rc-sign">' +
           '<div>Teacher Signature: ____________________</div>' +
           '<div>Date: ____________</div>' +
           '<div>Parent Signature: ____________________</div>' +
         '</div>' +
-        '<div class="rc-credit">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
+        '<div class="rc-credit">Designed for teachers, by a teacher \u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '</div>';
   }
 
   /* ============================ report download helpers ============================ */
+
   function dlClassReport() {
     const sem = cur(); if (!sem) return;
     const ws = EB.exportClassReport(sem);
@@ -1482,9 +1773,9 @@
       '<div class="privacy-body"><p>This app handles <b>real student data</b> — names, IDs and grades. Please read carefully:</p>' +
       '<h4>Where the data lives</h4><ul>' +
       '<li>Data lives in this browser — online, stored <b>encrypted</b> (your password unlocks it); the offline file version stores it unencrypted.</li>' +
-      '<li><b>Nothing leaves this device unless you use Share &amp; sync</b>, which uploads an <b>encrypted</b> copy to npoint.io (a free third-party bin service). The key stays in your share link, never on the server. Anyone with that full link can open the data — send it only to your co-teacher.</li>' +
+      '<li><b>Nothing leaves this device unless you use Save &amp; Share</b>, which uploads an <b>encrypted</b> copy of one class to a private cloud channel (Supabase, a hosted database service). The key stays inside your share link — the cloud stores only encrypted bytes. Anyone with that full link can open the class — send it only to your co-teacher.</li>' +
       '<li>Exported files (Excel / JSON backups) are <b>not encrypted</b>. Store them only on school-approved storage, and delete them when no longer needed.</li>' +
-      '<li>This website is a static page — no server, no database, no tracking, no internet needed after loading.</li></ul>' +
+      '<li>This website is a static page — no server, no database, no tracking. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Your student data remains stored in this browser unless you export a backup or use Share &amp; Sync.</li></ul>' +
       '<h4>Your responsibilities</h4><ul>' +
       '<li>This browser profile contains confidential student information — protect the device (screen lock, no shared accounts).</li>' +
       '<li>Backup files (JSON / Excel exports) contain full student data. Store them only on encrypted or school-approved storage, and delete them when no longer needed.</li>' +
@@ -1640,7 +1931,7 @@
     a.download = 'SPR-backup-by-Teacher-Mo-' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    toast('Backup downloaded');
+    toast('Full backup downloaded — use “Restore backup” on the other computer to load it');
   }
   function restoreJSONFile(file) {
     const reader = new FileReader();
@@ -1725,8 +2016,10 @@
       toast('Bin saved — you can Push to cloud now');
       renderManage(); return;
     }
+    if (a === 'share-create') { shareCreate(); return; }
     if (a === 'share-push') { sharePush(); return; }
     if (a === 'share-pull') { sharePull(); return; }
+    if (a === 'share-qr') { shareQrModal(); return; }
     if (a === 'share-copy') {
       const inp = $('#shareLink');
       if (!inp) return;
@@ -1836,6 +2129,24 @@
       const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = 'SPR-damaged-data.json';
       document.body.appendChild(a2); a2.click(); a2.remove(); return;
     }
+    if (a === 'dash-view') { (ui.dash = ui.dash || {}).view = el.dataset.view; if (el.dataset.view === 'evidence') ui.dash.ev = ui.dash.ev || 'all'; renderDashboard(); return; }
+    if (a === 'prog-skill') { ui.progSkill = el.dataset.skill; renderStudent(location.hash.split('/')[2] ? decodeURIComponent(location.hash.split('/')[2]) : null); return; }
+    if (a === 'rag-why') {
+      const why = A.ragWhy(cur(), el.dataset.sid, DB);
+      openDlg('<h3>' + U.esc(why.title) + ' \u2014 why?</h3><p class="small" style="line-height:1.6">' + U.esc(why.body) + '</p>' +
+        '<div class="dlg-actions"><button class="btn primary" data-action="dlg-close">Close</button></div>');
+      return;
+    }
+    if (a === 'rn-reset') {
+      const semR = cur();
+      if (semR && semR.reportNotes && semR.reportNotes[el.dataset.sid]) {
+        delete semR.reportNotes[el.dataset.sid][el.dataset.field];
+        saveDB();
+      }
+      renderReportCard(el.dataset.sid);
+      toast('Reset to suggested wording');
+      return;
+    }
     if (a === 'print') { window.print(); return; }
   });
 
@@ -1843,6 +2154,17 @@
     const t = e.target;
     if (t.classList && t.classList.contains('cell')) { onGridInput(t); return; }
     if (t.id === 'stuSearch') { ui.q = t.value; const el = $('#stuList'); if (el && cur()) el.innerHTML = stuCards(cur()); return; }
+    if (t.id === 'dashSearch') { (ui.dash = ui.dash || {}).q = t.value; const el = $('#dashEvBody'); if (el && cur()) el.innerHTML = dashEvidenceRows(cur()); return; }
+    if (t.dataset && t.dataset.rn) {
+      const semRn = cur(); if (!semRn) return;
+      semRn.reportNotes = semRn.reportNotes || {};
+      semRn.reportNotes[t.dataset.sid] = semRn.reportNotes[t.dataset.sid] || {};
+      semRn.reportNotes[t.dataset.sid][t.dataset.rn] = t.value;
+      saveDB();
+      const card = document.getElementById('rc-sec-' + t.dataset.rn);
+      if (card) card.innerHTML = t.value ? '<p>' + U.esc(t.value) + '</p>' : '<p class="muted small">\u2014</p>';
+      return;
+    }
     if (t.id === 'grSearch') { ui.grQ = t.value; const el = $('#grBody'); if (el && cur()) el.innerHTML = grRows(cur()); return; }
     if (t.dataset && t.dataset.semf) {
       const s = DB.semesters.find((x) => x.id === t.dataset.semid);
@@ -1868,6 +2190,10 @@
   document.addEventListener('change', function (e) {
     const t = e.target;
     if (t.id === 'anStu') { ui.anStu = t.value; renderAnalysis(); return; }
+    if (t.id === 'dashEv') { (ui.dash = ui.dash || {}).ev = t.value; renderDashboard(); return; }
+    if (t.id === 'dashSkill') { (ui.dash = ui.dash || {}).skill = t.value; renderDashboard(); return; }
+    if (t.id === 'dashRag') { (ui.dash = ui.dash || {}).rag = t.value; renderDashboard(); return; }
+    if (t.id === 'scatMode') { ui.scat = t.value; renderDashboard(); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
     if (t.id === 'file-xlsx') { if (t.files && t.files[0]) importXlsxFile(t.files[0]); t.value = ''; return; }
     if (t.id === 'file-json') { if (t.files && t.files[0]) restoreJSONFile(t.files[0]); t.value = ''; return; }
@@ -1904,6 +2230,19 @@
      Manual Push/Pull (last-save-wins). */
   const SHARE_KEY = 'spr-share-v1';
   const NP_API = 'https://api.npoint.io/';
+  const SUPABASE = { url: 'https://hvjswsedoapsskedrkoj.supabase.co', key: 'sb_publishable_kY2tUdMKmqOIUPYi0OtfNg_K_YqpDSh' }; /* publishable key only — RLS applies; see assets/supabase-setup.md */
+  function SB() {
+    try { const o = JSON.parse(localStorage.getItem('spr-sb-v1')); if (o && o.url && o.key) return o; } catch (e) {}
+    return SUPABASE;
+  }
+  function uuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+  }
+  function looksUuid(s) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || '')); }
   function getShare() { try { return JSON.parse(localStorage.getItem(SHARE_KEY)) || {}; } catch (e) { return {}; } }
   function setShare(cfg) { localStorage.setItem(SHARE_KEY, JSON.stringify(cfg)); }
   function b64uFromBytes(b) { let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
@@ -1937,14 +2276,140 @@
   }
   function shareLink() {
     const c = getShare();
-    if (!c.bin || !c.key) return null;
-    return location.origin + location.pathname + '#join=' + encodeURIComponent(c.bin) + '&k=' + encodeURIComponent(c.key);
+    const id = c.channel || c.bin;
+    if (!id || !c.key) return null;
+    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key);
+  }
+  /* ---------- Supabase channel (Save & Share, per-class) ---------- */
+  function sbHeaders(extra) {
+    const sb = SB();
+    return Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
+  }
+  async function sbGet(channel) {
+    const sb = SB();
+    const res = await fetch(sb.url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(channel) + '&select=*', { headers: sbHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    return rows.length ? rows[0] : null;
+  }
+  async function sbSave(channel, env, shareName, who, at, insert) {
+    const sb = SB();
+    if (insert) {
+      const res = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
+      if (res.status === 409) return 'conflict';
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return 'ok';
+    }
+    const res = await fetch(sb.url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(channel), { method: 'PATCH', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ payload: env, pushed_by: who, pushed_at: at, share_name: shareName }) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return 'ok';
+  }
+  async function sealSem(sem, keyB64, who, pushedAt) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ck = await subtle().importKey('raw', bytesFromB64u(keyB64), 'AES-GCM', false, ['encrypt']);
+    const pt = new TextEncoder().encode(JSON.stringify({ spr: 1, sem: sem }));
+    const ct = await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, pt);
+    return { sprEnc: 1, v: 2, pushedAt: pushedAt, pushedBy: who, iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
+  }
+  function mergeSharedSem(sem) {
+    validateDB({ semesters: [sem], settings: {} });
+    normalizeSemester(sem);
+    const i = DB.semesters.findIndex((s) => s.id === sem.id);
+    if (i >= 0) DB.semesters[i] = sem; else DB.semesters.push(sem);
+    DB.currentSemesterId = sem.id;
+    saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
+  }
+  function shareQrModal() {
+    const link = shareLink();
+    if (!link) { toast('Create the share first', true); return; }
+    openDlg(
+      '<h3>Share this class</h3>' +
+      '<p class="small">Send the link to your co-teacher, or let them scan the code with a phone camera. Anyone who has it can open this class — share it only with them.</p>' +
+      '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
+        '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
+        '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+        '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn" data-action="share-copy">Copy link</button>' +
+        '<button class="btn" data-x="close">Close</button></div></div>' +
+      '</div>',
+      (d) => {
+        try {
+          const q = qrcode(0, 'M'); q.addData(link); q.make();
+          const box = $('#qrbox'); if (box) box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 });
+        } catch (e) { const box = $('#qrbox'); if (box) box.textContent = 'QR unavailable — use the link'; }
+        d.onclick = (e) => { if (e.target.closest('[data-x="close"]')) closeDlg(); };
+      }
+    );
+  }
+  async function shareCreate() {
+    if (!subtle()) { toast('Save & Share needs the online (https) version of the app', true); return; }
+    const semId = $('#shareSem') ? $('#shareSem').value : (cur() || {}).id;
+    const name = ($('#shareName') ? $('#shareName').value : '').trim();
+    const sem = DB.semesters.find((s) => s.id === semId);
+    if (!sem) { toast('Pick the class to share first', true); return; }
+    const c = getShare();
+    c.provider = 'sb'; c.semId = semId; c.shareName = name || (sem.className || sem.name);
+    setShare(c);
+    await sharePush();
   }
   async function sharePush() {
-    if (!subtle()) { toast('Share & sync needs the online (https) version of the app', true); return; }
+    if (!subtle()) { toast('Save & Share needs the online (https) version of the app', true); return; }
     const c = getShare();
-    if (!c.bin) { toast('Save a npoint bin ID first (Manage → Share & sync)', true); return; }
+    const sb = SB();
+    /* ---------- Save & Share (Supabase, per class) ---------- */
+    if ((c.provider === 'sb' || c.channel) && sb.url && sb.key) {
+      const sem = DB.semesters.find((s) => s.id === c.semId);
+      if (!c.semId || !sem) { toast('Pick the class to share first', true); return; }
+      try {
+        /* freshness guard: never silently overwrite a co-teacher's newer copy */
+        let row = null;
+        try { row = await sbGet(c.channel); } catch (e) { /* the save below surfaces real errors */ }
+        if (row && row.pushed_at) {
+          const cloudAt = new Date(row.pushed_at).getTime();
+          const mineAt = Math.max(
+            c.lastPush ? new Date(c.lastPush).getTime() : 0,
+            c.lastPull ? new Date(c.lastPull).getTime() : 0
+          );
+          if (cloudAt - mineAt > 90000) { /* 90 s tolerance for clock skew between computers */
+            const act = await staleCloudDlg(row.pushed_by || 'your co-teacher', new Date(row.pushed_at).toLocaleString());
+            if (act === 'pull') { sharePull(); return; }
+            if (act !== 'push') { toast('Save cancelled — open the shared copy first'); return; }
+          }
+        }
+        toast('Saving & sharing…');
+        const who = (currentUser() || {}).username || 'teacher';
+        const pushedAt = new Date().toISOString();
+        if (!c.key) c.key = b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
+        if (!c.channel) c.channel = uuid();
+        const env = await sealSem(sem, c.key, who, pushedAt);
+        let out = await sbSave(c.channel, env, c.shareName || '', who, pushedAt, !row);
+        if (out === 'conflict') { out = await sbSave(c.channel, env, c.shareName || '', who, pushedAt, false); }
+        c.lastPush = pushedAt; c.lastPushBy = who; setShare(c);
+        toast('Saved & shared — send the link or QR to your co-teacher');
+        shareQrModal();
+        if (location.hash === '#/manage') renderManage();
+      } catch (e) { toast('Save & Share failed: ' + e.message, true); }
+      return;
+    }
+    /* ---------- legacy npoint whole-workbook channel ---------- */
+    if (!c.bin) { toast('Create the share first (Manage → Share & sync)', true); return; }
     try {
+      let env = null;
+      try {
+        const chk = await fetch(NP_API + encodeURIComponent(c.bin));
+        if (chk.ok) env = await chk.json();
+      } catch (e) { /* if the check cannot run, the push below surfaces errors */ }
+      if (env && env.pushedAt) {
+        const cloudAt = new Date(env.pushedAt).getTime();
+        const mineAt = Math.max(
+          c.lastPush ? new Date(c.lastPush).getTime() : 0,
+          c.lastPull ? new Date(c.lastPull).getTime() : 0
+        );
+        if (cloudAt - mineAt > 90000) {
+          const act = await staleCloudDlg(env.pushedBy || 'someone', new Date(env.pushedAt).toLocaleString());
+          if (act === 'pull') { sharePull(); return; }
+          if (act !== 'push') { toast('Push cancelled — pull first to get the newer copy'); return; }
+        }
+      }
       toast('Pushing…');
       const out = await cloudEnvelope(c);
       const res = await fetch(NP_API + encodeURIComponent(c.bin), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out.env) });
@@ -1954,9 +2419,67 @@
       if (location.hash === '#/manage') renderManage();
     } catch (e) { toast('Push failed: ' + e.message, true); }
   }
+  function staleCloudDlg(who, when) {
+    return new Promise((resolve) => {
+      openDlg(
+        '<h3>Cloud was updated after your last sync</h3>' +
+        '<p class="small">The cloud copy was pushed by <b>' + U.esc(who) + '</b> at ' + U.esc(when) + '. Pushing now would <b>overwrite their newer copy with your older one</b> — sync is last-save-wins.</p>' +
+        '<p class="small"><b>Pull first</b> to get their changes (a backup of your current data downloads too). Push anyway only if you are sure their copy is outdated.</p>' +
+        '<div class="dlg-actions">' +
+          '<button class="btn" data-x="2">Cancel</button>' +
+          '<button class="btn danger" data-x="1">Push anyway</button>' +
+          '<button class="btn primary" data-x="0">Pull first</button>' +
+        '</div>',
+        (d) => {
+          d.onclick = (e) => {
+            const b = e.target.closest('[data-x]');
+            if (!b) return;
+            resolve(b.dataset.x === '0' ? 'pull' : b.dataset.x === '1' ? 'push' : 'cancel');
+            closeDlg();
+          };
+          d.onclose = () => resolve('cancel');
+        }
+      );
+    });
+  }
   async function sharePull() {
     const c = getShare();
-    if (!c.bin) { toast('Save a npoint bin ID first', true); return; }
+    const sb = SB();
+    /* ---------- Save & Share: update just the shared class ---------- */
+    if ((c.provider === 'sb' || c.channel) && sb.url && sb.key) {
+      if (!c.channel || !c.key) { toast('No shared class on this browser yet — open the link or QR your co-teacher sent you', true); return; }
+      try {
+        toast('Checking cloud…');
+        const row = await sbGet(c.channel);
+        if (!row || !row.payload) { toast('Nothing has been saved to this channel yet', true); return; }
+        const obj = await applyCloudObj(row.payload, c.key);
+        if (obj.sem) {
+          validateDB({ semesters: [obj.sem], settings: {} });
+          normalizeSemester(obj.sem);
+          const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
+          const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
+          const okGo = await confirmDlg('Open shared copy?',
+            'This will update <b>' + U.esc(nm) + '</b> in this browser with the copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your other classes are untouched. A backup downloads first.', 'Open it');
+          if (!okGo) return;
+          downloadBackup();
+          c.lastPull = new Date().toISOString(); setShare(c);
+          mergeSharedSem(obj.sem);
+          toast('Shared copy loaded');
+        } else if (obj.db) {
+          validateDB(obj.db);
+          const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
+          const okGo = await confirmDlg('Open shared copy?',
+            'This shared channel carries a <b>whole workbook</b>. Opening it will <b>REPLACE all data in this browser</b> with the cloud copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. A backup of your current data downloads first.', 'Open & replace');
+          if (!okGo) return;
+          downloadBackup();
+          c.lastPull = new Date().toISOString(); setShare(c);
+          persistReplaced(obj.db);
+        } else throw new Error('cloud copy has no class data');
+      } catch (e) { toast('Open failed: ' + e.message, true); }
+      return;
+    }
+    /* ---------- legacy npoint whole-workbook channel ---------- */
+    if (!c.bin) { toast('Nothing to open yet — Save & Share first', true); return; }
     try {
       toast('Checking cloud…');
       const res = await fetch(NP_API + encodeURIComponent(c.bin));
@@ -1974,10 +2497,11 @@
       persistReplaced(obj.db);
     } catch (e) { toast('Pull failed: ' + e.message, true); }
   }
-  async function shareJoin(binId, keyB64) {
+  async function shareJoin(id, keyB64) {
+    if (looksUuid(id)) return joinSb(id, keyB64);
     try {
       toast('Joining shared workbook…');
-      const res = await fetch(NP_API + encodeURIComponent(binId));
+      const res = await fetch(NP_API + encodeURIComponent(id));
       if (!res.ok) throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (bin not found)' : ''));
       const env = await res.json();
       const obj = await applyCloudObj(env, keyB64);
@@ -1987,9 +2511,34 @@
         'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. A backup of your current data downloads first. Future Push/Pull uses this bin.', 'Join');
       if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
       downloadBackup();
-      setShare({ bin: binId, key: keyB64 || null, lastPull: new Date().toISOString() });
+      setShare({ bin: id, key: keyB64 || null, lastPull: new Date().toISOString() });
       history.replaceState(null, '', location.pathname + location.search);
       persistReplaced(obj.db);
+    } catch (e) {
+      toast('Join failed: ' + e.message, true);
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+  async function joinSb(channel, keyB64) {
+    const sb = SB();
+    try {
+      if (!(sb.url && sb.key)) throw new Error('Save & Share is not set up on this browser yet');
+      toast('Opening shared class…');
+      const row = await sbGet(channel);
+      if (!row || !row.payload) throw new Error('nothing saved under this link yet');
+      const obj = await applyCloudObj(row.payload, keyB64);
+      if (!obj.sem) throw new Error('this link uses a legacy whole-workbook format');
+      validateDB({ semesters: [obj.sem], settings: {} });
+      normalizeSemester(obj.sem);
+      const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
+      const okGo = await confirmDlg('Join shared class?',
+        'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. A backup downloads first.', 'Join');
+      if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
+      downloadBackup();
+      setShare({ provider: 'sb', channel: channel, key: keyB64 || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
+      history.replaceState(null, '', location.pathname + location.search);
+      mergeSharedSem(obj.sem);
+      toast('Joined — Save & Share now keeps this class in sync');
     } catch (e) {
       toast('Join failed: ' + e.message, true);
       history.replaceState(null, '', location.pathname + location.search);
@@ -2145,7 +2694,7 @@
     DB = emptyDB();
     buildShell();
     document.title = "Student's Performance Report";
-    window.addEventListener('hashchange', route);
+    window.addEventListener('hashchange', function () { route(); maybeJoin(); });
     window.addEventListener('storage', function (e) {
       if (e.key === V2_KEY || e.key === LS_KEY) toast('Data changed in another tab — reload this tab to see it.', true);
     });
@@ -2180,12 +2729,16 @@
     else {
       if (window.__SPR_CORRUPT) toast('A damaged data file was found and preserved — Manage → Data can download it.', true);
       if (!DB.settings.privacyAck) openPrivacy();
+      /* session was restored after the first paint: re-render with the real DB
+         so a reload lands on the current view instead of the empty welcome */
+      buildShell(); route();
     }
     maybeJoin();
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; };
+  window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
