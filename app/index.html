@@ -3340,7 +3340,21 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<input type="password" class="inp" id="cpNew" placeholder="New password (8+ chars)" autocomplete="new-password" style="width:180px">' +
           '<input type="password" class="inp" id="cpConf" placeholder="Repeat new password" autocomplete="new-password" style="width:180px">' +
           '<button class="btn primary" data-action="change-pass-save">Change password</button>' +
-        '</div><div class="login-err" id="cpErr"></div></div>'
+        '</div><div class="login-err" id="cpErr" aria-live="assertive"></div></div>'
+        : '') +
+      /* admin: dormant accounts from the default-password era are a side door until
+         rotated or removed — this panel makes that visible and fixable */
+      ((currentUser() || {}).role === 'admin' && getAuth().users.length ?
+        '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — accounts still on the old default password stay a way into this data until the person updates it at their next sign-in, or you remove the account.</p>' +
+        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
+        getAuth().users.map((u) => {
+          const legacy = u.hash === LEGACY_DEFAULT_HASH;
+          const selfNow = u.username === SESSION.user;
+          return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
+            '<td>' + (legacy ? '<span class="rag-chip R"><span class="dotrag R"></span>Old default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
+            '<td>' + (selfNow ? '' : '<button class="btn sm" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
+        }).join('') +
+        '</tbody></table></div>'
         : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
@@ -4059,6 +4073,24 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       return;
     }
     if (a === 'rotate-later') { closeDlg(); return; }
+    if (a === 'acct-del') {
+      (async () => {
+        const un = el.dataset.user;
+        if (!un || un === SESSION.user) return;
+        const okGo = await confirmDlg('Remove sign-in ' + U.esc(un) + '?',
+          'This deletes <b>' + U.esc(un) + '</b> and its unlock key <b>from this device only</b>. If this person still uses this browser, they will no longer be able to open the data here. Other devices are not affected.',
+          'Remove sign-in');
+        if (!okGo) return;
+        const auth = getAuth();
+        auth.users = auth.users.filter((u) => u.username !== un);
+        saveAuth(auth);
+        const v2 = readV2();
+        if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; localStorage.setItem(V2_KEY, JSON.stringify(v2)); }
+        toast('Sign-in removed: ' + un);
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
     if (a === 'do-login') {
       const u = $('#loginUser') ? $('#loginUser').value.trim() : '';
       const p = $('#loginPass') ? $('#loginPass').value : '';
