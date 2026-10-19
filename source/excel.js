@@ -330,15 +330,19 @@
     /* ---- Grading ---- */
     const gHead = ['Index Number', 'ID Number', "Student's Name (Chinese)", "Student's Name (English)", 'Gender',
       'Listening', 'Speaking', 'Writing', 'Reading', 'Spelling', 'Daily Assignments',
-      'Mid-Term', 'Oral', 'Written', 'Final Score', 'Final Grade'];
+      'Mid-Term', 'Oral', 'Written', 'Final Score', 'Final Grade', 'Assessed'];
     const gRows = [['School', sem.school], ['Class', sem.className], [], gHead];
     sem.students.forEach((s, i) => {
       const g = G(s.id);
-      const L = (p) => (p === null ? 'U' : Calc.letter(p));
+      const n = Calc.assessedCount(g);                    /* completeness gate */
+      const ok = n >= Calc.FINAL_MIN_ASSESSED;
+      const L = (p) => (p === null ? '—' : Calc.letter(p)); /* ungraded is not a U */
       gRows.push([i + 1, s.id, s.nameCn, s.nameEn, s.gender,
         L(g.skills.Listening), L(g.skills.Speaking), L(g.skills.Writing), L(g.skills.Reading),
         L(g.spelling), L(g.daily), L(g.midterm), L(g.oral), L(g.written),
-        g.final === null ? null : Util.r2(g.final), g.letter]);
+        ok ? Util.r2(g.final) : null,
+        ok ? g.letter : null,
+        n + '/9' + (n >= Calc.FINAL_MIN_ASSESSED && n < 9 ? ' (provisional)' : '')]);
     });
     addCreditRow(gRows);
     const wsG = XLSX.utils.aoa_to_sheet(gRows);
@@ -376,12 +380,21 @@
       const w = name === 'Written' ? 20 : 10;
       rows.push([name, P(val), L(val), w + '%', val === null ? '—' : (Math.round(val * w) / 100).toFixed(2)]);
     }
-    rows.push(['FINAL SCORE', Math.round(g.final * 10) / 10 + '%', g.letter, '100%', '']);
-    rows.push([]);
-    rows.push(['RAG STATUS', g.final >= 75 ? 'GREEN' : g.final >= 55 ? 'AMBER' : 'RED', '', '', '']);
+    const nAssessed = Calc.assessedCount(g);
+    const ok = nAssessed >= Calc.FINAL_MIN_ASSESSED;
+    if (ok) {
+      rows.push(['FINAL SCORE', Math.round(g.final * 10) / 10 + '%', g.letter, '100%', '']);
+      if (nAssessed < 9) rows.push(['', 'Provisional grade based on ' + nAssessed + ' of 9 components', '', '', '']);
+      rows.push([]);
+      rows.push(['RAG STATUS', g.final >= 75 ? 'GREEN' : g.final >= 55 ? 'AMBER' : 'RED', '', '', '']);
+    } else {
+      rows.push(['FINAL SCORE', 'Not yet assessed', '', '100%', '']);
+      rows.push([]);
+      rows.push(['', 'Final grades appear when at least 6 of 9 grading components have recorded assessment data. This student currently has ' + nAssessed + ' of 9 components assessed.', '', '', '']);
+    }
     rows.push([]);
 
-    if (sw) {
+    if (sw && !sw.provisionalStub) {
       rows.push(['SWOT ANALYSIS']);
       rows.push(['Strengths']);
       sw.strengths.forEach((x) => rows.push(['  • ' + x]));
@@ -455,10 +468,13 @@
 
     sem.students.forEach((s, i) => {
       const g = Calc.gradeStudent(sem, s.id);
+      const n = Calc.assessedCount(g); /* completeness gate: never export a zero-based final */
+      const ok = n >= Calc.FINAL_MIN_ASSESSED;
       rows.push([i + 1, s.id, s.nameEn || '', s.nameCn || '',
         L(g.skills.Listening), L(g.skills.Speaking), L(g.skills.Writing), L(g.skills.Reading),
         L(g.spelling), L(g.daily), L(g.midterm), L(g.oral), L(g.written),
-        Math.round(g.final * 10) / 10 + '%', g.letter]);
+        ok ? (Math.round(g.final * 10) / 10 + '%' + (n < 9 ? ' (provisional ' + n + '/9)' : '')) : 'Not yet assessed (' + n + '/9)',
+        ok ? g.letter : null]);
     });
 
     rows.push([]);

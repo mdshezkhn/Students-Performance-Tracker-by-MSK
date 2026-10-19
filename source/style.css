@@ -491,3 +491,16 @@ body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none
 /* share & sync */
 .panel code { background: var(--paper-dim); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 .panel input[readonly] { color: var(--ink-60); }
+
+/* ---------- completeness gate: neutral (non-RAG) provisional styling ---------- */
+.g.prov { background: #eef0ee; color: #5b6660; border: 1px solid #c9cfc9; font-weight: 700; }
+.stamp.prov { color: #5b6660 !important; border-color: #9aa79f !important; background: #f3f4f1; }
+.muted, .panel-sub { /* existing neutral tones reused */ }
+
+/* ---------- service-worker update banner (never auto-reloads) ---------- */
+#sw-update { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; align-items: center; gap: 10px;
+  max-width: 480px; background: #22312c; color: #f4f1ea; border-radius: 10px; padding: 12px 14px;
+  font-size: 13px; line-height: 1.45; box-shadow: 0 8px 28px rgba(20, 30, 26, 0.35); }
+#sw-update .btn { background: #f4f1ea; color: #22312c; border: none; }
+#sw-update .btn:hover { background: #ffffff; }
+@media print { #sw-update { display: none !important; } }

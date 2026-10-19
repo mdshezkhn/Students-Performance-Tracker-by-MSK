@@ -37,6 +37,29 @@
   }
   const RAG_NAME = { G: 'Green', A: 'Amber', R: 'Red' };
 
+  /* Centralised final-result state. Single source of truth for every screen:
+     <6/9 assessed => no numbers at all; 6-8 => existing formula + provisional
+     label; 9/9 => existing behaviour unchanged. */
+  function finalStatus(sem, sid) {
+    const c = Calc.getAssessmentCompleteness(sem, sid);
+    if (c.assessedComponentCount < Calc.FINAL_MIN_ASSESSED) {
+      return {
+        status: 'provisional', finalScore: null, letterGrade: null, ragStatus: null,
+        assessedComponentCount: c.assessedComponentCount, totalComponentCount: c.totalComponentCount,
+        displayLabel: 'Not yet assessed · ' + c.assessedComponentCount + ' of 9 components',
+        completeness: c,
+      };
+    }
+    const g = Calc.gradeStudent(sem, sid);
+    return {
+      status: c.gate, /* 'provisional' (6-8) | 'final' (9) */
+      finalScore: g.final, letterGrade: g.letter, ragStatus: rag(g.final),
+      assessedComponentCount: c.assessedComponentCount, totalComponentCount: c.totalComponentCount,
+      displayLabel: c.gate === 'provisional' ? 'Provisional grade based on ' + c.assessedComponentCount + ' of 9 components' : '',
+      completeness: c,
+    };
+  }
+
   /* ---------------- class-level series ---------------- */
   // one row per semester: part averages, final avg, distribution, at-risk count
   function classSemesterRows(db) {
@@ -68,6 +91,8 @@
       if (!a.students.some((x) => x.id === s.id)) continue;
       const ga = Calc.gradeStudent(a, s.id), gb = Calc.gradeStudent(b, s.id);
       if (ga.final === null || gb.final === null) continue;
+      // progress conclusions need sufficient evidence on both sides of the comparison
+      if (Calc.assessedCount(ga) < Calc.FINAL_MIN_ASSESSED || Calc.assessedCount(gb) < Calc.FINAL_MIN_ASSESSED) continue;
       out.push({ sid: s.id, name: s.nameEn || s.nameCn, from: a.name, to: b.name, delta: gb.final - ga.final, final: gb.final });
     }
     out.sort((x, y) => y.delta - x.delta);
@@ -93,14 +118,16 @@
     for (const sem of db.semesters) {
       if (!sem.students.some((x) => x.id === sid)) continue;
       const g = Calc.gradeStudent(sem, sid);
+      const assessed = Calc.assessedCount(g);
+      // ranks exist only among fully-assessed students (9/9); provisional records never rank
       const finals = sem.students
-        .map((s) => ({ id: s.id, f: Calc.gradeStudent(sem, s.id).final }))
-        .filter((x) => x.f !== null)
+        .map((s) => { const gg = Calc.gradeStudent(sem, s.id); return { id: s.id, f: gg.final, ok: Calc.assessedCount(gg) >= Calc.COMPONENTS_ALL.length }; })
+        .filter((x) => x.ok && x.f !== null)
         .sort((x, y) => y.f - x.f);
       const rank = finals.findIndex((x) => x.id === sid) + 1;
       out.push({
         semId: sem.id, semName: sem.name, parts: g.parts, final: g.final, letter: g.letter,
-        rank: rank || null, total: finals.length, missing: g.missing,
+        rank: rank || null, total: finals.length, missing: g.missing, assessed: assessed,
       });
     }
     return out;
@@ -109,6 +136,7 @@
   function studentMatrix(db, sid) {
     const rows = studentSemesterRows(db, sid);
     const prev = rows[rows.length - 2] || null, last = rows[rows.length - 1] || null;
+    const lastOk = last ? last.assessed >= Calc.FINAL_MIN_ASSESSED : false; /* final row evidence gate */
     return COMPONENTS.concat(['__final']).map((k) => {
       const vals = rows.map((r) => (k === '__final' ? r.final : r.parts[k]));
       const lv = vals[vals.length - 1], pv = vals.length > 1 ? vals[vals.length - 2] : null;
@@ -116,7 +144,7 @@
         key: k === '__final' ? 'Final' : k, short: k === '__final' ? 'Final' : SHORT[k],
         values: vals,
         delta: (lv !== null && pv !== null) ? lv - pv : null,
-        rag: k === '__final' ? rag(lv) : rag(lv),
+        rag: k === '__final' ? (lastOk ? rag(lv) : null) : rag(lv),
       };
     });
   }
@@ -127,6 +155,18 @@
     if (!rows.length) return null;
     const last = rows[rows.length - 1];
     const prev = rows[rows.length - 2] || null;
+    // evidence gate: no SWOT or remark from an incomplete record
+    if (last.assessed < Calc.FINAL_MIN_ASSESSED) {
+      const stu0 = db.semesters.find((s) => s.id === last.semId).students.find((x) => x.id === sid);
+      const nm = (stu0 && (stu0.nameEn || stu0.nameCn)) || sid;
+      return {
+        sid: sid, name: nm, last: last, prev: prev, delta: null, overallRag: null, ragName: null,
+        provisionalStub: true,
+        strengths: [], weaknesses: [], opportunities: [], threats: [],
+        remark: 'Not enough assessed work yet to report on ' + nm + ' — ' + last.assessed + ' of 9 components assessed.',
+      };
+    }
+    const provisional = last.assessed < Calc.COMPONENTS_ALL.length;
     const stu = db.semesters.find((s) => s.id === last.semId).students.find((x) => x.id === sid);
     const name = (stu && (stu.nameEn || stu.nameCn)) || sid;
     const cls = classAvgParts(db, last.semId);
@@ -176,10 +216,12 @@
     if (worst) remark += ' Next step: focus on ' + worst.k.toLowerCase() + ', where ' + name + ' is furthest from the class average.';
     if (last.missing && last.missing.length) remark += ' Note: ' + last.missing.join(', ') + ' not yet graded.';
 
+    if (provisional && remark) remark = 'Provisional — based on ' + last.assessed + ' of 9 components. ' + remark;
     return {
       sid: sid, name: name,
       last: last, prev: prev, delta: delta, overallRag: overallRag,
       ragName: overallRag ? RAG_NAME[overallRag] : null,
+      provisional: provisional,
       strengths: strengths.map(bullet), weaknesses: weaknesses.map(bullet),
       opportunities: opportunities.map(bullet), threats: threats.map((t) =>
         t.k.indexOf('Ungraded') === 0 ? t.k : t.k + ' — ' + f1(t.v) + '%' + (t.d !== null && t.d !== undefined ? ' (' + f1(t.d) + ' vs ' + (prev ? prev.semName : '') + ')' : '')),
@@ -199,7 +241,7 @@
 
   return {
     COMPONENTS: COMPONENTS, SHORT: SHORT, RAG_NAME: RAG_NAME,
-    rag: rag, ragOverall: ragOverall,
+    rag: rag, ragOverall: ragOverall, finalStatus: finalStatus,
     classSemesterRows: classSemesterRows, classAvgParts: classAvgParts,
     movers: movers, classSummary: classSummary, classSwotText: classSwotText,
     studentSemesterRows: studentSemesterRows, studentMatrix: studentMatrix,

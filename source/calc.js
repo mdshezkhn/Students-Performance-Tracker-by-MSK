@@ -143,6 +143,39 @@
     return (sc / tt) * 100;
   }
 
+
+  /* ---------- Assessment completeness (single source of truth) ----------
+     A component counts as assessed only when the existing validity rules
+     produced a component percentage (parts[k] !== null): e.g. a weekly
+     metric needs >=1 month with a positive total; a test needs valid score
+     AND total. A genuine teacher-entered score of 0 is valid evidence
+     (parts === 0) and is NEVER treated as missing. ------------------------- */
+  const COMPONENTS_ALL = ['Listening', 'Speaking', 'Writing', 'Reading', 'Spelling',
+    'Daily Assignments', 'Mid-Term', 'Oral', 'Written'];
+  const FINAL_MIN_ASSESSED = 6; // school rule: <6 of 9 assessed => no final result
+
+  function assessedCount(g) {
+    let n = 0;
+    for (const k of COMPONENTS_ALL) if (g.parts && g.parts[k] !== null && g.parts[k] !== undefined) n++;
+    return n;
+  }
+
+  function getAssessmentCompleteness(sem, sid) {
+    const g = gradeStudent(sem, sid);
+    const assessed = [], missing = [];
+    for (const k of COMPONENTS_ALL) (g.parts[k] === null || g.parts[k] === undefined ? missing : assessed).push(k);
+    const n = assessed.length, total = COMPONENTS_ALL.length;
+    return {
+      assessedComponentCount: n,
+      totalComponentCount: total,
+      isProvisional: n < total,
+      completionRatio: n / total,
+      assessedComponentNames: assessed,
+      missingComponentNames: missing,
+      gate: n < FINAL_MIN_ASSESSED ? 'not-assessed' : (n < total ? 'provisional' : 'final'),
+    };
+  }
+
   /* ---------- Full grading ---------- */
   function gradeStudent(sem, sid) {
     const skills = {};
@@ -188,9 +221,9 @@
     return mean(vals);
   }
 
-  // class average of final scores (students with any data)
+  // class average of final scores — only students meeting the >=6 assessed-components gate
   function classFinalAvg(sem) {
-    const vals = gradeAll(sem).filter((g) => g.missing.length < 9).map((g) => g.final);
+    const vals = gradeAll(sem).filter((g) => assessedCount(g) >= FINAL_MIN_ASSESSED).map((g) => g.final);
     return mean(vals);
   }
 
@@ -224,7 +257,7 @@
   // grade distribution {A*:n, A:n, ...}
   function gradeDistribution(sem) {
     const dist = { 'A*': 0, A: 0, B: 0, C: 0, D: 0, U: 0 };
-    for (const g of gradeAll(sem)) if (g.letter) dist[g.letter]++;
+    for (const g of gradeAll(sem)) if (g.letter && assessedCount(g) >= FINAL_MIN_ASSESSED) dist[g.letter]++;
     return dist;
   }
 
@@ -264,6 +297,7 @@
   function atRisk(sem) {
     const out = [];
     for (const g of gradeAll(sem)) {
+      if (assessedCount(g) < FINAL_MIN_ASSESSED) continue; // missing data is not low attainment
       const reasons = [];
       if (g.final !== null && g.final < 50) reasons.push('final ' + g.final);
       if (g.missing.length >= 2) reasons.push(g.missing.length + ' ungraded parts');
@@ -275,7 +309,8 @@
   }
 
   return {
-    SKILLS, TESTS,
+    SKILLS, TESTS, COMPONENTS_ALL, FINAL_MIN_ASSESSED,
+    assessedCount, getAssessmentCompleteness,
     letter, mean, round1, student,
     obsValue, obsMonthPct, obsMonthPctOverall, obsSkillPct,
     weeksWithData, weeklyMonthPct, weeklyPctList, weeklySemesterPct,
