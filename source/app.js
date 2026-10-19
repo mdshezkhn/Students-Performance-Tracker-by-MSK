@@ -1959,12 +1959,47 @@
     if (!el) return;
     const a = el.dataset.action;
     const sem = cur();
-    if (a === 'reset-auth') {
-      localStorage.removeItem(AUTH_KEY);
-      getAuth(); // re-initialize with default admin
-      location.reload();
+    if (a === 'first-run') {
+      const un = ($('#suUser') ? $('#suUser').value : '').trim();
+      const pw = ($('#suPass') ? $('#suPass').value : '') || '';
+      const cf = ($('#suConf') ? $('#suConf').value : '') || '';
+      const errEl = $('#suErr');
+      if (!un) { if (errEl) errEl.textContent = 'Choose a username.'; return; }
+      if (pw.length < 8) { if (errEl) errEl.textContent = 'Password must be at least 8 characters.'; return; }
+      if (pw !== cf) { if (errEl) errEl.textContent = 'Passwords do not match.'; return; }
+      (async () => {
+        try {
+          const res = await firstRunCreate(un, pw);
+          if (res.error) { if (errEl) errEl.textContent = res.error; return; }
+          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+          toast('Sign-in created — welcome to SPR');
+          if (!DB.settings.privacyAck) openPrivacy();
+        } catch (err) { if (errEl) errEl.textContent = 'Setup failed: ' + err.message; }
+      })();
       return;
     }
+    if (a === 'rotate-save') {
+      (async () => {
+        const err = $('#rtErr');
+        const nw = ($('#rtNew') || {}).value || '';
+        const cf = ($('#rtConf') || {}).value || '';
+        if (!SESSION.dk) { if (err) err.textContent = 'Sign in again first.'; return; }
+        if (nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
+        if (nw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
+        const auth = getAuth();
+        const me = auth.users.find((u) => u.username === SESSION.user);
+        const v2 = readV2();
+        if (!me || !v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found \u2014 sign out and in once first.'; return; }
+        try { v2.wraps[me.username] = await makeWrap(SESSION.dk, nw); }
+        catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
+        me.hash = hashPassword(nw);
+        saveAuth(auth);
+        localStorage.setItem(V2_KEY, JSON.stringify(v2));
+        closeDlg(); toast('Password updated \u2014 the old default no longer opens this browser.');
+      })();
+      return;
+    }
+    if (a === 'rotate-later') { closeDlg(); return; }
     if (a === 'do-login') {
       const u = $('#loginUser') ? $('#loginUser').value.trim() : '';
       const p = $('#loginPass') ? $('#loginPass').value : '';
@@ -1974,7 +2009,7 @@
         try {
           const res = await doLoginFull(u, p);
           if (res.error) { $('#loginErr').textContent = res.error; return; }
-          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
+          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin(); maybeForceRotate();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
       })();
@@ -2561,34 +2596,14 @@
     return (h >>> 0).toString(36);
   }
 
+  /* FNV-1a hash of the RETIRED public default password — kept only to detect
+   accounts still on it and force a rotation. No plaintext default ships. */
+  const LEGACY_DEFAULT_HASH = '1yby56e';
   function getAuth() {
-    const ADMIN_HASH = hashPassword('spr2026');
-    /* built-in teacher accounts — added if missing; existing entries are never overwritten */
-    const BUILTIN = [
-      { username: 'ZFYBLS', hash: hashPassword('spr2026'), name: 'ZFYBLS', role: 'teacher' },
-      { username: 'XFLS', hash: hashPassword('spr2026'), name: 'XFLS', role: 'teacher' }
-    ];
     let d = null;
     try { d = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) {}
     if (!d || !Array.isArray(d.users)) d = { users: [], session: null };
-    let changed = false;
-    /* ensure admin 'mo' exists. No forced hash reset: passwords are now real —
-       each user's password derives the key that unwraps the encrypted data
-       (see the wraps in p4c4-markbook-v2), so changing it must stick. */
-    const admin = d.users.find(function(u) { return u.username === 'mo'; });
-    if (!admin) {
-      d.users.unshift({ username: 'mo', hash: ADMIN_HASH, name: 'Mohammed Shehzad Khan (Teacher Mo)', role: 'admin' });
-      changed = true;
-    }
-    /* ensure built-in teacher accounts exist */
-    BUILTIN.forEach(function(b) {
-      if (!d.users.some(function(u) { return u.username === b.username; })) {
-        d.users.push({ username: b.username, hash: b.hash, name: b.name, role: b.role });
-        changed = true;
-      }
-    });
-    if (changed) localStorage.setItem(AUTH_KEY, JSON.stringify(d));
-    return d;
+    return d; /* fresh installs stay empty until first-run setup creates a user */
   }
   function saveAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
 
@@ -2608,7 +2623,7 @@
   }
   /* accounts still on their seeded password can be issued a data key at
      migration time; there is no password-change UI, so this is all accounts */
-  const SEEDED_PASSWORDS = { mo: 'spr2026', ZFYBLS: 'spr2026', XFLS: 'spr2026' };
+  /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
     const auth = getAuth();
     const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
@@ -2621,15 +2636,10 @@
     let v2 = readV2();
     let dk;
     if (!v2) {
-      /* first encrypted run: seal the current workbook and issue data keys to
-         every account still on its seeded password */
+      /* first encrypted run: seal the current workbook under this user's password */
       dk = crypto.getRandomValues(new Uint8Array(32));
       v2 = { fmt: 2, wraps: {}, ts: Date.now() };
-      for (const u of auth.users) {
-        const seeded = SEEDED_PASSWORDS[u.username];
-        if (seeded && u.hash === hashPassword(seeded)) v2.wraps[u.username] = await makeWrap(dk, seeded);
-      }
-      v2.wraps[username] = await makeWrap(dk, password);   // the signer always gets a key
+      v2.wraps[username] = await makeWrap(dk, password);
       DB = DB || emptyDB();
       v2.data = await sealDB(DB, dk);
       localStorage.setItem(V2_KEY, JSON.stringify(v2));
@@ -2673,19 +2683,66 @@
   }
 
   function renderLogin() {
-    openDlg(
-      '<div class="login-card">' +
-        '<div class="login-logo">SPR</div>' +
-        '<h2>Students Performance Report</h2>' +
-        '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + '</p>' +
-        '<div class="login-field"><label>Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
-        '<div class="login-field"><label>Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
-        '<div class="login-err" id="loginErr"></div>' +
-        '<button class="login-btn" data-action="do-login">Sign In</button>' +
-        '<div class="login-foot"><a href="#" data-action="reset-auth" style="color:var(--pri);font-size:11px;">Reset admin access</a><br>Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div>' +
-      '</div>'
-    );
-    setTimeout(function() { var u = document.getElementById('loginUser'); if (u) u.focus(); }, 50);
+    const firstRun = getAuth().users.length === 0;
+    const card = firstRun
+      ? '<div class="login-card">' +
+          '<div class="login-logo">SPR</div>' +
+          '<h2>Set up this browser</h2>' +
+          '<p>First time on this device. Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
+          '<div class="login-field"><label>Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
+          '<div class="login-field"><label>Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
+          '<div class="login-field"><label>Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
+          '<div class="login-err" id="suErr"></div>' +
+          '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
+          '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
+        '</div>'
+      : '<div class="login-card">' +
+          '<div class="login-logo">SPR</div>' +
+          '<h2>Students Performance Report</h2>' +
+          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + '</p>' +
+          '<div class="login-field"><label>Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
+          '<div class="login-field"><label>Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
+          '<div class="login-err" id="loginErr"></div>' +
+          '<button class="login-btn" data-action="do-login">Sign In</button>' +
+          '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
+        '</div>';
+    openDlg(card);
+    setTimeout(function() { var u = document.getElementById(firstRun ? 'suUser' : 'loginUser'); if (u) u.focus(); }, 50);
+  }
+  async function firstRunCreate(username, password) {
+    const auth = getAuth();
+    if (auth.users.some((u) => u.username === username)) return { error: 'That username already exists on this device.' };
+    if (!cryptoOK()) {
+      auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+      auth.session = { username: username, name: username, role: 'admin' };
+      saveAuth(auth);
+      return { user: auth.session };
+    }
+    const dk = crypto.getRandomValues(new Uint8Array(32));
+    const v2 = { fmt: 2, wraps: {}, ts: Date.now() };
+    v2.wraps[username] = await makeWrap(dk, password);
+    DB = DB || emptyDB();
+    v2.data = await sealDB(DB, dk);
+    localStorage.setItem(V2_KEY, JSON.stringify(v2));
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+    auth.session = { username: username, name: username, role: 'admin' };
+    saveAuth(auth);
+    SESSION = { user: username, dk: dk };
+    try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
+    return { user: auth.session };
+  }
+  /* legacy-default accounts (pre-hardening installs) must rotate at sign-in */
+  function maybeForceRotate() {
+    if (!cryptoOK() || !SESSION.user) return;
+    const me = getAuth().users.find((u) => u.username === SESSION.user);
+    if (!me || me.hash !== LEGACY_DEFAULT_HASH) return;
+    openDlg('<h3>Update your password</h3>' +
+      '<p class="small">This browser still signs in with the old default password, which was published in the app source. Choose a new password now \u2014 your data will be re-locked under it. Nothing leaves this device.</p>' +
+      '<div class="login-field"><label>New password (8+ characters)</label><input type="password" id="rtNew" autocomplete="new-password"></div>' +
+      '<div class="login-field"><label>Confirm new password</label><input type="password" id="rtConf" autocomplete="new-password"></div>' +
+      '<div class="login-err" id="rtErr"></div>' +
+      '<div class="dlg-actions"><button class="btn" data-action="rotate-later">Later</button><button class="btn primary" data-action="rotate-save">Update password</button></div>');
   }
 
 
@@ -2732,6 +2789,7 @@
       /* session was restored after the first paint: re-render with the real DB
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
+      maybeForceRotate();
     }
     maybeJoin();
   }

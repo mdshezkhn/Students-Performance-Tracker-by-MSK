@@ -41,9 +41,13 @@ for marker, path in [
     assert marker in app_html, 'missing marker ' + marker
     app_html = app_html.replace(marker, read(path), 1)
 
-# public build: no sample data ships
-app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = null;', 1)
-assert 'window.SEED = null;' in app_html and '__SEED__' not in app_html, 'seed strip failed'
+# public build: ship the SYNTHETIC demo class (source/seed_data.json contains
+# no real students) so 'Load sample data' works on production
+seed_obj = json.loads(read(SRC / 'seed_data.json'))
+assert seed_obj.get('meta', '').startswith('SYNTHETIC'), 'refusing to embed a non-synthetic seed'
+seed_json = json.dumps(seed_obj, ensure_ascii=False)
+app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = ' + seed_json + ';', 1)
+assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed injection failed'
 for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__APP__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
