@@ -3624,7 +3624,7 @@ window.SEED = null;
      Manual Push/Pull (last-save-wins). */
   const SHARE_KEY = 'spr-share-v1';
   const NP_API = 'https://api.npoint.io/';
-  const SUPABASE = { url: '', key: '' }; /* filled in after the Supabase project is created (see assets/supabase-setup.md) */
+  const SUPABASE = { url: 'https://hvjswsedoapsskedrkoj.supabase.co', key: 'sb_publishable_kY2tUdMKmqOIUPYi0OtfNg_K_YqpDSh' }; /* publishable key only — RLS applies; see assets/supabase-setup.md */
   function SB() {
     try { const o = JSON.parse(localStorage.getItem('spr-sb-v1')); if (o && o.url && o.key) return o; } catch (e) {}
     return SUPABASE;
