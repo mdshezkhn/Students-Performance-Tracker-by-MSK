@@ -1310,26 +1310,20 @@
         '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '" style="width:64px"></label>' +
         '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '" style="width:64px"></label>' +
       '</div></div>' +
-      '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Security — password</h3>' +
-      (cryptoOK() && SESSION.dk ?
-        '<div class="panel"><p class="small" style="margin-bottom:10px">Your password derives the key that encrypts the class data in this browser. Changing it re-keys your unlock key — use the new password on every device (each device signs in again with it).</p>' +
-        '<div class="flex">' +
-          '<input type="password" class="inp" id="cpCur" placeholder="Current password" autocomplete="current-password" style="width:180px">' +
-          '<input type="password" class="inp" id="cpNew" placeholder="New password (8+ chars)" autocomplete="new-password" style="width:180px">' +
-          '<input type="password" class="inp" id="cpConf" placeholder="Repeat new password" autocomplete="new-password" style="width:180px">' +
-          '<button class="btn primary" data-action="change-pass-save">Change password</button>' +
-        '</div><div class="login-err" id="cpErr" aria-live="assertive"></div></div>'
-        : '') +
+      /* password change UI removed for the shared-campus setup (owner decision):
+         one shared password per account; changing it on a shared machine locks
+         colleagues out. change-pass-save handler kept dormant in source. */
+
       /* admin: dormant accounts from the default-password era are a side door until
          rotated or removed — this panel makes that visible and fixable */
       ((currentUser() || {}).role === 'admin' && getAuth().users.length ?
-        '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — accounts still on the old default password stay a way into this data until the person updates it at their next sign-in, or you remove the account.</p>' +
+        '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — the accounts that can open this browser\u2019s data. Remove any account that should not be here.</p>' +
         '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
         getAuth().users.map((u) => {
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
-            '<td>' + (legacy ? '<span class="rag-chip R"><span class="dotrag R"></span>Old default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
+            '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
             '<td>' + (selfNow ? '' : '<button class="btn sm" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
         }).join('') +
         '</tbody></table></div>'
@@ -1804,7 +1798,7 @@
     toast('Report card downloaded for ' + (stu.nameEn || stu.nameCn));
   }
 
-  function privacyHtml() {
+  function privacyHtml(gate) {
     return '<h3>Privacy &amp; data protection notice</h3>' +
       '<div class="privacy-body"><p>This app handles <b>real student data</b> — names, IDs and grades. Please read carefully:</p>' +
       '<h4>Where the data lives</h4><ul>' +
@@ -1820,13 +1814,25 @@
       '<h4>Removing data</h4><ul>' +
       '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, or delete the bin at npoint.io.</li></ul>' +
       '<p class="small muted">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</p></div>' +
-      '<div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">' +
-      (DB.settings.privacyAck ? 'Close' : 'I understand') + '</button></div>';
+      '<div class="dlg-actions"><button class="btn primary" data-action="' + (gate ? 'privacy-gate-ack' : 'dlg-close') + '">' +
+      (gate ? 'I understand' : 'Close') + '</button></div>';
   }
-  function openPrivacy() { openDlg(privacyHtml()); }
-  function privacyAck() {
-    if (!DB.settings.privacyAck) { DB.settings.privacyAck = true; saveDB(true); }
-    closeDlg();
+  const PRIVACY_GATE_KEY = 'spr-privacy-ack-v1';
+  function openPrivacy() { openDlg(privacyHtml(false)); }   /* viewer mode (footer link) */
+  function privacyGateNeeded() {
+    try { return !localStorage.getItem(PRIVACY_GATE_KEY); } catch (e) { return false; }
+  }
+  function openPrivacyGate(onAck) {
+    /* must be agreed before the sign-in / setup card can be used */
+    openDlg(privacyHtml(true), function (d) {
+      d.addEventListener('cancel', function (e) { e.preventDefault(); }); /* no Esc-close */
+    });
+    const btn = document.querySelector('[data-action="privacy-gate-ack"]');
+    if (btn) btn.addEventListener('click', function () {
+      try { localStorage.setItem(PRIVACY_GATE_KEY, String(Date.now())); } catch (e) {}
+      closeDlg();
+      if (onAck) onAck();
+    });
   }
 
 
@@ -2008,6 +2014,9 @@
   document.addEventListener('click', function (e) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
+    /* pseudo-links (href='#') must not navigate: the hashchange re-route would
+       instantly close the very dialog this click just opened */
+    if (el.tagName === 'A' && el.getAttribute('href') === '#') e.preventDefault();
     const a = el.dataset.action;
     const sem = cur();
     if (a === 'first-run') {
@@ -2029,28 +2038,6 @@
       })();
       return;
     }
-    if (a === 'rotate-save') {
-      (async () => {
-        const err = $('#rtErr');
-        const nw = ($('#rtNew') || {}).value || '';
-        const cf = ($('#rtConf') || {}).value || '';
-        if (!SESSION.dk) { if (err) err.textContent = 'Sign in again first.'; return; }
-        if (nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
-        if (nw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
-        const auth = getAuth();
-        const me = auth.users.find((u) => u.username === SESSION.user);
-        const v2 = readV2();
-        if (!me || !v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found \u2014 sign out and in once first.'; return; }
-        try { v2.wraps[me.username] = await makeWrap(SESSION.dk, nw); }
-        catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
-        me.hash = hashPassword(nw);
-        saveAuth(auth);
-        localStorage.setItem(V2_KEY, JSON.stringify(v2));
-        closeDlg(); toast('Password updated \u2014 the old default no longer opens this browser.');
-      })();
-      return;
-    }
-    if (a === 'rotate-later') { closeDlg(); return; }
     if (a === 'acct-del') {
       (async () => {
         const un = el.dataset.user;
@@ -2078,7 +2065,7 @@
         try {
           const res = await doLoginFull(u, p);
           if (res.error) { $('#loginErr').textContent = res.error; return; }
-          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin(); maybeForceRotate();
+          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
       })();
@@ -2133,7 +2120,7 @@
       return;
     }
     if (a === 'privacy-open') { openPrivacy(); return; }
-    if (a === 'privacy-ack') { privacyAck(); return; }
+    if (a === 'privacy-ack') { closeDlg(); return; } /* legacy: viewer closes plainly */
     if (a === 'dl-class-report') { dlClassReport(); return; }
     if (a === 'dl-all-cards') { dlAllCards(); return; }
     if (a === 'dl-one-card') { dlOneCard(); return; }
@@ -2820,18 +2807,7 @@
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
     return { user: auth.session };
   }
-  /* legacy-default accounts (pre-hardening installs) must rotate at sign-in */
-  function maybeForceRotate() {
-    if (!cryptoOK() || !SESSION.user) return;
-    const me = getAuth().users.find((u) => u.username === SESSION.user);
-    if (!me || me.hash !== LEGACY_DEFAULT_HASH) return;
-    openDlg('<h3>Update your password</h3>' +
-      '<p class="small">This browser still signs in with the old default password, which was published in the app source. Choose a new password now \u2014 your data will be re-locked under it. Nothing leaves this device.</p>' +
-      '<div class="login-field"><label for="rtNew">New password (8+ characters)</label><input type="password" id="rtNew" autocomplete="new-password"></div>' +
-      '<div class="login-field"><label for="rtConf">Confirm new password</label><input type="password" id="rtConf" autocomplete="new-password"></div>' +
-      '<div class="login-err" id="rtErr" aria-live="assertive"></div>' +
-      '<div class="dlg-actions"><button class="btn" data-action="rotate-later">Later</button><button class="btn primary" data-action="rotate-save">Update password</button></div>');
-  }
+
 
 
   async function init() {
@@ -2870,14 +2846,17 @@
       DB = legacy || seedFromWindow();
       ready = isLoggedIn();
     }
-    if (!ready) { document.body.classList.add('auth-gate'); renderLogin(); }
+    if (!ready) {
+      document.body.classList.add('auth-gate');
+      if (privacyGateNeeded()) openPrivacyGate(function () { renderLogin(); });
+      else renderLogin();
+    }
     else {
       if (window.__SPR_CORRUPT) toast('A damaged data file was found and preserved — Manage → Data can download it.', true);
-      if (!DB.settings.privacyAck) openPrivacy();
+      if (privacyGateNeeded()) openPrivacyGate(null);
       /* session was restored after the first paint: re-render with the real DB
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
-      maybeForceRotate();
       /* gentle backup nudge: monthly reminder, at most once a week */
       (function nudgeBackup() {
         if (!DB.semesters.length) return;
