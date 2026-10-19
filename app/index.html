@@ -2764,7 +2764,7 @@ window.SEED = null;
         if (c.lastPull) status.push('pulled ' + new Date(c.lastPull).toLocaleString());
         var link = shareLink();
         return '<div class="panel">' +
-          '<p class="small" style="margin-bottom:10px">Create one free bin at <b>npoint.io</b> (New JSON bin — content can stay <code>{}</code>), then paste its ID here. Data is <b>encrypted (AES-GCM)</b> before upload; the key travels only inside the share link, so the cloud never sees your data. Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins.</p>' +
+          '<p class="small" style="margin-bottom:10px">Create one free bin at <b>npoint.io</b> (New JSON bin — content can stay <code>{}</code>) for <b>one shared class</b>, then paste its ID here. Data is <b>encrypted (AES-GCM)</b> before upload; the key travels only inside the share link, so the cloud never sees your data. The <b>whole workbook</b> syncs (every semester + settings) and the last push wins, so keep the rhythm: <b>Pull before you start, Push when you finish</b>. One bin per class — never share a bin between different classes.</p>' +
           '<div class="flex">' +
             '<input class="inp" id="shareBin" placeholder="npoint bin ID (e.g. a1b2c3d4)" style="width:230px" value="' + U.esc(c.bin || '') + '">' +
             '<button class="btn" data-action="share-save">Save bin ID</button>' +
@@ -3634,6 +3634,25 @@ window.SEED = null;
     const c = getShare();
     if (!c.bin) { toast('Save a npoint bin ID first (Manage → Share & sync)', true); return; }
     try {
+      /* freshness guard: sync is last-save-wins, so never silently overwrite
+         a cloud copy that is newer than this browser's last push/pull */
+      let env = null;
+      try {
+        const chk = await fetch(NP_API + encodeURIComponent(c.bin));
+        if (chk.ok) env = await chk.json();
+      } catch (e) { /* if the check cannot run, the push below surfaces errors */ }
+      if (env && env.pushedAt) {
+        const cloudAt = new Date(env.pushedAt).getTime();
+        const mineAt = Math.max(
+          c.lastPush ? new Date(c.lastPush).getTime() : 0,
+          c.lastPull ? new Date(c.lastPull).getTime() : 0
+        );
+        if (cloudAt - mineAt > 90000) { /* 90 s tolerance for clock skew between computers */
+          const act = await staleCloudDlg(env.pushedBy || 'someone', new Date(env.pushedAt).toLocaleString());
+          if (act === 'pull') { sharePull(); return; }
+          if (act !== 'push') { toast('Push cancelled — pull first to get the newer copy'); return; }
+        }
+      }
       toast('Pushing…');
       const out = await cloudEnvelope(c);
       const res = await fetch(NP_API + encodeURIComponent(c.bin), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out.env) });
@@ -3642,6 +3661,29 @@ window.SEED = null;
       toast('Pushed — copy the share link to your co-teacher');
       if (location.hash === '#/manage') renderManage();
     } catch (e) { toast('Push failed: ' + e.message, true); }
+  }
+  function staleCloudDlg(who, when) {
+    return new Promise((resolve) => {
+      openDlg(
+        '<h3>Cloud was updated after your last sync</h3>' +
+        '<p class="small">The cloud copy was pushed by <b>' + U.esc(who) + '</b> at ' + U.esc(when) + '. Pushing now would <b>overwrite their newer copy with your older one</b> — sync is last-save-wins.</p>' +
+        '<p class="small"><b>Pull first</b> to get their changes (a backup of your current data downloads too). Push anyway only if you are sure their copy is outdated.</p>' +
+        '<div class="dlg-actions">' +
+          '<button class="btn" data-x="2">Cancel</button>' +
+          '<button class="btn danger" data-x="1">Push anyway</button>' +
+          '<button class="btn primary" data-x="0">Pull first</button>' +
+        '</div>',
+        (d) => {
+          d.onclick = (e) => {
+            const b = e.target.closest('[data-x]');
+            if (!b) return;
+            resolve(b.dataset.x === '0' ? 'pull' : b.dataset.x === '1' ? 'push' : 'cancel');
+            closeDlg();
+          };
+          d.onclose = () => resolve('cancel');
+        }
+      );
+    });
   }
   async function sharePull() {
     const c = getShare();
