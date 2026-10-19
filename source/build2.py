@@ -64,12 +64,9 @@ assert '%%POSTER%%' not in landing and '__FONTS__' not in landing and '__LANDING
 
 # ---------- write dist + deploy ----------
 if DIST.exists(): shutil.rmtree(DIST)
-(DIST / 'app' / 'icons').mkdir(parents=True)
+(DIST / 'app').mkdir(parents=True)
 (DIST / 'app' / 'index.html').write_text(app_html, encoding='utf-8')
 (DIST / 'app' / 'sw.js').write_text(sw, encoding='utf-8')
-shutil.copy(SRC / 'manifest.webmanifest', DIST / 'app' / 'manifest.webmanifest')
-for icon in ('icon-192.png', 'icon-512.png'):
-    shutil.copy(SRC / 'icons' / icon, DIST / 'app' / 'icons' / icon)
 (DIST / 'index.html').write_text(landing, encoding='utf-8')
 
 if DEPLOY.exists(): shutil.rmtree(DEPLOY)

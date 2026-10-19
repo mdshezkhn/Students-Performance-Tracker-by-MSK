@@ -119,15 +119,17 @@
       if (!sem.students.some((x) => x.id === sid)) continue;
       const g = Calc.gradeStudent(sem, sid);
       const assessed = Calc.assessedCount(g);
-      // ranks exist only among fully-assessed students (9/9); provisional records never rank
+      /* owner decision: students at the evidence gate (>=6/9) rank among
+         gate-qualified students; provisional ranks are tagged downstream */
       const finals = sem.students
-        .map((s) => { const gg = Calc.gradeStudent(sem, s.id); return { id: s.id, f: gg.final, ok: Calc.assessedCount(gg) >= Calc.COMPONENTS_ALL.length }; })
+        .map((s) => { const gg = Calc.gradeStudent(sem, s.id); return { id: s.id, f: gg.final, ok: Calc.assessedCount(gg) >= Calc.FINAL_MIN_ASSESSED }; })
         .filter((x) => x.ok && x.f !== null)
         .sort((x, y) => y.f - x.f);
       const rank = finals.findIndex((x) => x.id === sid) + 1;
       out.push({
         semId: sem.id, semName: sem.name, parts: g.parts, final: g.final, letter: g.letter,
         rank: rank || null, total: finals.length, missing: g.missing, assessed: assessed,
+        rankProvisional: !!(rank && assessed < Calc.COMPONENTS_ALL.length),
       });
     }
     return out;

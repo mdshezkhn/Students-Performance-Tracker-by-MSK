@@ -1291,7 +1291,7 @@
       '<div class="flex" style="align-items:center;gap:22px">' +
         '<div class="right"><div class="final-num">' + (last.assessed >= C.FINAL_MIN_ASSESSED ? A.f1(last.final) : '–') + '</div><div class="small muted">' + U.esc(last.semName) + (last.assessed >= C.FINAL_MIN_ASSESSED ? ' final' : ' · ' + last.assessed + '/9 assessed') + '</div></div>' +
         (rows.length > 1 ? '<div class="right"><div class="final-num" style="font-size:26px">' + dSpan(sw.delta) + '</div><div class="small muted">vs ' + U.esc(sw.prev.semName) + '</div></div>' : '') +
-        (last.rank ? '<div class="right"><div class="final-num" style="font-size:26px">' + last.rank + '<span class="small muted">/' + last.total + '</span></div><div class="small muted">rank</div></div>' : '') +
+        (last.rank ? '<div class="right"><div class="final-num" style="font-size:26px">' + last.rank + '<span class="small muted">/' + last.total + (last.rankProvisional ? ' · prov.' : '') + '</span></div><div class="small muted">rank' + (last.rankProvisional ? ' (provisional)' : '') + '</div></div>' : '') +
         (sw.provisionalStub
           ? '<div class="stamp prov"><small>ASSESSMENT</small>In progress</div>'
           : '<div class="stamp' + (sw.provisional ? ' prov' : '') + '" style="color:' + (RAG_HEX[sw.overallRag] || '#9aa0a0') + '"><small>' + (sw.provisional ? 'PROVISIONAL' : (sw.ragName || 'RAG').toUpperCase()) + '</small>' + (sw.ragName || '–') + '</div>') +
@@ -1437,12 +1437,13 @@
     const ok = gateOk(g), full = gateFinal(g), n9 = nOf9(g);
     const ragCode = ok ? (g.final >= 75 ? 'G' : g.final >= 55 ? 'A' : 'R') : null;
     const ragName = ragCode === 'G' ? 'Green' : ragCode === 'A' ? 'Amber' : 'Red';
-    /* ranks exist only among fully-assessed students (9/9) */
+    /* ranks: students at the evidence gate (>=6/9) rank among qualified
+       students; provisional ranks carry a tag (owner decision) */
     const rank = (function () {
-      if (!full) return '—';
-      const sorted = C.gradeAll(sem).filter(gateFinal).sort((a, b) => b.final - a.final);
+      if (!ok) return '—';
+      const sorted = C.gradeAll(sem).filter(gateOk).sort((a, b) => b.final - a.final);
       const i = sorted.findIndex((x) => x.sid === sid);
-      return i >= 0 ? (i + 1) + ' / ' + sorted.length : '—';
+      return i >= 0 ? (i + 1) + ' / ' + sorted.length + (full ? '' : ' (provisional)') : '—';
     })();
 
     const componentRows = [

@@ -91,7 +91,9 @@ const FULL = { L: 8, S: 8, W: 8, R: 8, Sp: 16, Da: 8, M: 40, O: 40, Wr: 40 }; //
   // formula unchanged: skills 80 each, Sp 80, Da 8/20=40 => 0.1*(80*5+40) = 44
   eq(Math.round(fs.finalScore * 100) / 100, 44, 'C.formula preserved');
   const rows = A.studentSemesterRows({ semesters: [sem] }, 'C6');
-  eq(rows[0].rank, null, 'C.no rank (not 9/9)');
+  eq(rows[0].rank, 1, 'C.ranks at gate (>=6/9)');
+  eq(rows[0].total, 1, 'C.rank pool = gate-qualified only');
+  eq(rows[0].rankProvisional, true, 'C.rank tagged provisional');
   const sw = A.swot({ semesters: [sem] }, 'C6');
   ok(sw.remark.indexOf('Provisional — based on 6 of 9 components') === 0, 'C.remark prefix');
   ok(Calc.atRisk(sem).length === 1, 'C.intervention allowed (final 44 < 50)');
@@ -103,7 +105,8 @@ const FULL = { L: 8, S: 8, W: 8, R: 8, Sp: 16, Da: 8, M: 40, O: 40, Wr: 40 }; //
   const fs = A.finalStatus(sem, 'D8');
   ok(/Provisional grade based on 8 of 9 components/.test(fs.displayLabel), 'D.label');
   // skills 80x4, Sp 80, Da 40, M 80, O 80 => 0.1*(80*7+40) = 60
-  eq(A.studentSemesterRows({ semesters: [sem] }, 'D8')[0].rank, null, 'D.no rank');
+  eq(A.studentSemesterRows({ semesters: [sem] }, 'D8')[0].rank, 1, 'D.ranks at gate');
+  eq(A.studentSemesterRows({ semesters: [sem] }, 'D8')[0].rankProvisional, true, 'D.tagged provisional');
 }
 
 /* ============ E: nine components, genuine zero everywhere ============ */
@@ -116,6 +119,7 @@ const FULL = { L: 8, S: 8, W: 8, R: 8, Sp: 16, Da: 8, M: 40, O: 40, Wr: 40 }; //
   eq(fs.letterGrade, 'U', 'E.grade U kept');
   eq(fs.ragStatus, 'R', 'E.RAG red kept');
   eq(A.studentSemesterRows({ semesters: [sem] }, 'E9')[0].rank, 1, 'E.ranked');
+  eq(A.studentSemesterRows({ semesters: [sem] }, 'E9')[0].rankProvisional, false, 'E.rank final (no tag)');
   ok(Calc.atRisk(sem).length === 1, 'E.intervention');
   eq(Calc.gradeDistribution(sem)['U'], 1, 'E.distribution U');
 }
@@ -158,8 +162,8 @@ const FULL = { L: 8, S: 8, W: 8, R: 8, Sp: 16, Da: 8, M: 40, O: 40, Wr: 40 }; //
   eq(risk[0].sid, 'G6', 'G.risk sid');
   // rank: only 9/9 students ranked
   const rows = A.studentSemesterRows({ semesters: [sem] }, 'G9');
-  eq(rows[0].rank, 1, 'G.rank among 9/9 only');
-  eq(rows[0].total, 1, 'G.rank denominator');
+  eq(rows[0].rank, 1, 'G.rank among gate-qualified');
+  eq(rows[0].total, 2, 'G.rank denominator = >=6 students (G6+G9)');
   eq(A.studentSemesterRows({ semesters: [sem] }, 'G0')[0].rank, null, 'G.no rank for 0/9');
   // movers: G6 excluded on the earlier side if other sem has it incomplete
   const sem2 = mkSem([{ id: 'G6', comp: {} }, { id: 'G9', comp: FULL }]);
