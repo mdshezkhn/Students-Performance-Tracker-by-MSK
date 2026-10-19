@@ -530,7 +530,7 @@ body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none
 </head>
 <body>
 <div id="app"></div>
-<div id="toast-root"></div>
+<div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
 /**
@@ -2262,6 +2262,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     root.appendChild(t);
     setTimeout(() => t.remove(), err ? 5200 : 2600);
   }
+  /* toast with a single action (e.g. Undo) — auto-dismisses */
+  function toastAction(msg, label, fn, ms) {
+    const root = $('#toast-root'); if (!root) return;
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = '<span>' + U.esc(msg) + '</span> <button type="button" class="btn sm">' + U.esc(label) + '</button>';
+    root.appendChild(t);
+    let done = false;
+    const fin = () => { if (!done) { done = true; try { t.remove(); } catch (e) {} } };
+    t.querySelector('button').addEventListener('click', () => { fin(); fn(); });
+    setTimeout(fin, ms || 10000);
+  }
   function openDlg(html, onmount) {
     const d = $('#dlg');
     d.innerHTML = html;
@@ -2883,9 +2895,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function monthPills(sem, metric) {
     const sel = ui.entryMonth[metric] || sem.months[sem.months.length - 1];
     ui.entryMonth[metric] = sel;
-    return '<div class="sheet-toolbar"><div class="month-pills">' +
-      sem.months.map((m) => '<button class="month-pill' + (m === sel ? ' on' : '') + '" data-action="entry-month" data-metric="' + metric + '" data-month="' + U.esc(m) + '">' +
-        '<span class="dot ' + monthDot(sem, metric, m) + '"></span>' + (U.MONTH_ABBR[m] || m) + '</button>').join('') +
+    const dotTxt = { full: 'all recorded', part: 'partly recorded', '': 'nothing recorded yet' };
+    return '<div class="sheet-toolbar"><div class="month-pills" role="group" aria-label="Months">' +
+      sem.months.map((m) => {
+        const d = monthDot(sem, metric, m);
+        return '<button class="month-pill' + (m === sel ? ' on' : '') + '" data-action="entry-month" data-metric="' + metric + '" data-month="' + U.esc(m) + '" title="' + m + ' — ' + dotTxt[d] + '" aria-label="' + m + ': ' + dotTxt[d] + '">' +
+          '<span class="dot ' + d + '" aria-hidden="true"></span>' + (U.MONTH_ABBR[m] || m) + '</button>';
+      }).join('') +
       '</div></div>';
   }
   function tdAvg(id, v, cls) {
@@ -3279,6 +3295,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
         '<button class="btn" data-action="export-xlsx">Export current semester to Excel</button>' +
         '<button class="btn" data-action="backup">Download full backup (all semesters)</button>' +
+        '<span class="small muted" style="align-self:center">' + (function () {
+          const DAY = 86400000, last = DB.settings.lastBackupAt || 0;
+          if (!last) return 'No backup downloaded yet.';
+          const d = Math.round((Date.now() - last) / DAY);
+          return 'Last backup: ' + (d === 0 ? 'today' : d + ' day' + (d === 1 ? '' : 's') + ' ago');
+        })() + '</span>' +
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
@@ -3915,7 +3937,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function sanitizeFn(s) { return String(s).replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '') || 'markbook'; }
   function importXlsxFile(file) {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
         const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
@@ -3925,6 +3947,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         validateDB({ semesters: [sem], settings: {} });
         const tm = String(file.name).match(/\(([^)]+)\)/);
         if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+        /* plain-language confirmation before anything is added */
+        const sameName = DB.semesters.find((x) => x.name === sem.name);
+        const okGo = await confirmDlg('Add this class?',
+          '<b>' + U.esc(sem.name) + '</b> — ' + sem.students.length + ' students · months: ' + U.esc(sem.months.join(', ')) + '.' +
+          (sameName ? '<br><br>A semester with this name already exists in this browser — both will be kept; you can rename or delete either one in Manage &amp; setup.' : '') +
+          '<br><br>Nothing is overwritten — your existing classes stay exactly as they are.',
+          'Add class');
+        if (!okGo) { toast('Import cancelled — nothing was changed'); return; }
         DB.semesters.push(sem);
         DB.currentSemesterId = sem.id;
         saveDB(); buildShell();
@@ -3947,6 +3977,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       credit: 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)',
       author: 'Mohammed Shehzad Khan (Teacher Mo)',
     });
+    DB.settings.lastBackupAt = Date.now();   /* powers the gentle backup reminder */
+    try { saveDB(true); } catch (e) {}
     const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -3957,11 +3989,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function restoreJSONFile(file) {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const d = JSON.parse(reader.result);
         if (!d || !Array.isArray(d.semesters)) throw new Error('not a markbook backup file');
         validateDB(d);
+        /* replacing everything deserves a clear question first */
+        const okRestore = await confirmDlg('Replace everything with this backup?',
+          'This backup holds <b>' + d.semesters.length + ' semester(s)</b> and will <b>replace all classes currently in this browser</b> (' + DB.semesters.length + ' now).<br><br>Your current data is saved to a file (SPR-backup-before-replace.json) as a safety copy — keep it somewhere you can find it.',
+          'Replace');
+        if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
         downloadBackup();
         d.semesters.forEach(normalizeSemester);
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
@@ -4127,9 +4164,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const okGo = await confirmDlg('Delete ' + U.esc(s.name) + '?',
           'All scores for this semester will be removed. Export Excel or download a backup first if you need a copy.', 'Delete semester');
         if (!okGo) return;
+        const idx = DB.semesters.findIndex((x) => x.id === s.id);
         DB.semesters = DB.semesters.filter((x) => x.id !== s.id);
         if (DB.currentSemesterId === s.id) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
-        saveDB(); buildShell(); route(); toast('Semester deleted');
+        saveDB(); buildShell(); route();
+        toastAction('Semester deleted', 'Undo', () => {
+          DB.semesters.splice(Math.min(idx, DB.semesters.length), 0, s);
+          DB.currentSemesterId = s.id;
+          saveDB(); buildShell(); route(); toast('Semester restored');
+        });
       })();
       return;
     }
@@ -4141,9 +4184,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const okGo = await confirmDlg('Remove ' + U.esc(stu.nameEn || stu.nameCn || sid) + '?',
           'Their scores in ' + U.esc(sem.name) + ' will be deleted.', 'Remove student');
         if (!okGo) return;
+        const obs = sem.observations[sid] || null, spl = sem.spelling[sid] || null, dal = sem.daily[sid] || null, tst = sem.tests[sid] || null;
+        const stuIdx = sem.students.findIndex((s) => s.id === sid);
         sem.students = sem.students.filter((s) => s.id !== sid);
         delete sem.observations[sid]; delete sem.spelling[sid]; delete sem.daily[sid]; delete sem.tests[sid];
-        saveDB(); route(); toast('Student removed');
+        saveDB(); route();
+        toastAction('Student removed', 'Undo', () => {
+          sem.students.splice(Math.min(stuIdx, sem.students.length), 0, stu);
+          if (obs) sem.observations[sid] = obs;
+          if (spl) sem.spelling[sid] = spl;
+          if (dal) sem.daily[sid] = dal;
+          if (tst) sem.tests[sid] = tst;
+          saveDB(); route(); toast('Student restored');
+        });
       })();
       return;
     }
@@ -4361,12 +4414,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return 'ok';
   }
-  async function sealSem(sem, keyB64, who, pushedAt) {
+  async function sealSem(sem, keyB64, who, pushedAt, shareName) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', bytesFromB64u(keyB64), 'AES-GCM', false, ['encrypt']);
-    const pt = new TextEncoder().encode(JSON.stringify({ spr: 1, sem: sem }));
+    /* class name and username travel INSIDE the ciphertext — the host stores only
+       an opaque channel id, a timestamp and encrypted bytes */
+    const pt = new TextEncoder().encode(JSON.stringify({ spr: 1, sem: sem, name: shareName || '', by: who }));
     const ct = await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, pt);
-    return { sprEnc: 1, v: 2, pushedAt: pushedAt, pushedBy: who, iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
+    return { sprEnc: 1, v: 2, pushedAt: pushedAt, iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
   }
   function mergeSharedSem(sem) {
     validateDB({ semesters: [sem], settings: {} });
@@ -4437,9 +4492,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const pushedAt = new Date().toISOString();
         if (!c.key) c.key = b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
         if (!c.channel) c.channel = uuid();
-        const env = await sealSem(sem, c.key, who, pushedAt);
-        let out = await sbSave(c.channel, env, c.shareName || '', who, pushedAt, !row);
-        if (out === 'conflict') { out = await sbSave(c.channel, env, c.shareName || '', who, pushedAt, false); }
+        const env = await sealSem(sem, c.key, who, pushedAt, c.shareName);
+        /* '' keeps NOT NULL columns happy without sending real names (privacy) */
+        let out = await sbSave(c.channel, env, '', '', pushedAt, !row);
+        if (out === 'conflict') { out = await sbSave(c.channel, env, '', '', pushedAt, false); }
         c.lastPush = pushedAt; c.lastPushBy = who; setShare(c);
         toast('Saved & shared — send the link or QR to your co-teacher');
         shareQrModal();
@@ -4711,10 +4767,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="login-logo">SPR</div>' +
           '<h2>Set up this browser</h2>' +
           '<p>First time on this device. Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
-          '<div class="login-field"><label>Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
-          '<div class="login-field"><label>Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
-          '<div class="login-field"><label>Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
-          '<div class="login-err" id="suErr"></div>' +
+          '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
+          '<div class="login-field"><label for="suPass">Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
+          '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
+          '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>'
@@ -4722,9 +4778,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="login-logo">SPR</div>' +
           '<h2>Students Performance Report</h2>' +
           '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + '</p>' +
-          '<div class="login-field"><label>Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
-          '<div class="login-field"><label>Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
-          '<div class="login-err" id="loginErr"></div>' +
+          '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
+          '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
+          '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
@@ -4761,9 +4817,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!me || me.hash !== LEGACY_DEFAULT_HASH) return;
     openDlg('<h3>Update your password</h3>' +
       '<p class="small">This browser still signs in with the old default password, which was published in the app source. Choose a new password now \u2014 your data will be re-locked under it. Nothing leaves this device.</p>' +
-      '<div class="login-field"><label>New password (8+ characters)</label><input type="password" id="rtNew" autocomplete="new-password"></div>' +
-      '<div class="login-field"><label>Confirm new password</label><input type="password" id="rtConf" autocomplete="new-password"></div>' +
-      '<div class="login-err" id="rtErr"></div>' +
+      '<div class="login-field"><label for="rtNew">New password (8+ characters)</label><input type="password" id="rtNew" autocomplete="new-password"></div>' +
+      '<div class="login-field"><label for="rtConf">Confirm new password</label><input type="password" id="rtConf" autocomplete="new-password"></div>' +
+      '<div class="login-err" id="rtErr" aria-live="assertive"></div>' +
       '<div class="dlg-actions"><button class="btn" data-action="rotate-later">Later</button><button class="btn primary" data-action="rotate-save">Update password</button></div>');
   }
 
@@ -4812,6 +4868,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
       maybeForceRotate();
+      /* gentle backup nudge: monthly reminder, at most once a week */
+      (function nudgeBackup() {
+        if (!DB.semesters.length) return;
+        const DAY = 86400000, now = Date.now();
+        const last = DB.settings.lastBackupAt || 0;
+        const lastNudge = DB.settings.lastBackupNudgeAt || 0;
+        if ((now - lastNudge) < 7 * DAY) return;
+        if (last && (now - last) < 30 * DAY) return;
+        const days = last ? Math.round((now - last) / DAY) : null;
+        toast(days ? 'It has been ' + days + ' days since your last backup — download a fresh copy in Manage & setup.' : 'You have never downloaded a backup — keep a copy of your classes in Manage & setup.');
+        DB.settings.lastBackupNudgeAt = now; saveDB(true);
+      })();
     }
     maybeJoin();
   }
