@@ -35,7 +35,10 @@
     if (delta !== null && delta >= 8 && base !== 'G') return base === 'R' ? 'A' : 'G';  // sharp rise
     return base;
   }
-  const RAG_NAME = { G: 'Green', A: 'Amber', R: 'Red' };
+  const RAG_NAME = { G: 'Secure / on track', A: 'Developing', R: 'Priority support' }; /* teacher triage language */
+  const RAG_PARENT = { G: 'Secure', A: 'Developing', R: 'Needs focused support' };
+  const MIN_CLASS_N = 5;      /* pupils with valid data before a class-level conclusion */
+  const MIN_TREND_EVENTS = 3; /* comparable events for a labelled student trend */
 
   /* Centralised final-result state. Single source of truth for every screen:
      <6/9 assessed => no numbers at all; 6-8 => existing formula + provisional
@@ -57,6 +60,200 @@
       assessedComponentCount: c.assessedComponentCount, totalComponentCount: c.totalComponentCount,
       displayLabel: c.gate === 'provisional' ? 'Provisional grade based on ' + c.assessedComponentCount + ' of 9 components' : '',
       completeness: c,
+    };
+  }
+
+  /* ---------------- evidence thresholds & child-centred reporting ---------------- */
+  const OBS_SKILLS = ['Listening', 'Speaking', 'Writing', 'Reading'];
+
+  /* number of distinct recorded assessment events behind one component
+     (obs: months with >=1 LO value; weekly: weeks with a valid score/total;
+     tests: 1 when present). A single number is a data point, not a pattern. */
+  function componentEvents(sem, sid, k) {
+    if (OBS_SKILLS.indexOf(k) >= 0) {
+      let n = 0;
+      for (const m of sem.months) {
+        let any = false;
+        for (const lo of [1, 2]) if (Calc.obsValue(sem, sid, m, k, lo) !== null) any = true;
+        if (any) n++;
+      }
+      return n;
+    }
+    if (k === 'Spelling' || k === 'Daily Assignments') {
+      const met = k === 'Spelling' ? 'spelling' : 'daily';
+      return Calc.weeklyPctList(sem, sid, met).filter((w) => w.pct !== null).length;
+    }
+    const kind = k === 'Mid-Term' ? 'midterm' : k === 'Oral' ? 'oral' : 'written';
+    return Calc.testPct(sem, sid, kind) !== null ? 1 : 0;
+  }
+
+  /* class average for one component, with the evidence count — means never
+     include missing data as zero (existing parts rule) */
+  function classComponentStats(sem, k) {
+    const vals = Calc.gradeAll(sem).map((g) => g.parts[k]).filter((v) => v !== null);
+    return { n: vals.length, avg: vals.length ? mean(vals) : null };
+  }
+
+  /* chronological comparable points for the per-student progress line */
+  function componentPointList(sem, sid, k) {
+    const pts = [];
+    if (OBS_SKILLS.indexOf(k) >= 0) {
+      for (const m of sem.months) {
+        const v = Calc.obsMonthPct(sem, sid, m, k);
+        if (v !== null) pts.push({ label: U.MONTH_ABBR[m] || m, pct: v });
+      }
+    } else if (k === 'Spelling' || k === 'Daily Assignments') {
+      const met = k === 'Spelling' ? 'spelling' : 'daily';
+      for (const w of Calc.weeklyPctList(sem, sid, met)) if (w.pct !== null) pts.push(w);
+    } else {
+      const kind = k === 'Mid-Term' ? 'midterm' : k === 'Oral' ? 'oral' : 'written';
+      const v = Calc.testPct(sem, sid, kind);
+      if (v !== null) pts.push({ label: k, pct: v });
+    }
+    return pts;
+  }
+
+  /* trend verdict from comparable points: >=3 => Improving/Stable/Review with
+     the calculation; 2 => cautious early-indication wording; never a claim
+     from one point */
+  function trendVerdict(points) {
+    const pts = points.filter((x) => x.pct !== null);
+    if (pts.length < 2) return null;
+    const d = pts[pts.length - 1].pct - pts[0].pct;
+    const words = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+    const nTxt = pts.length <= 10 ? words[pts.length] : String(pts.length);
+    if (pts.length === 2) {
+      return { label: null, calc: 'Early indication: ' + (d >= 0 ? '+' : '') + f1(d) + ' points across two comparable checks.' };
+    }
+    let label = 'Stable';
+    if (d > 3) label = 'Improving';
+    else if (d < -3) label = 'Review';
+    return { label: label, calc: (d >= 0 ? '+' : '') + f1(d) + ' points across ' + nTxt + ' comparable checks.' };
+  }
+
+  /* explain a student's overall RAG: rule, evidence, trend influence, action */
+  function ragWhy(sem, sid, db) {
+    const fs = finalStatus(sem, sid);
+    if (fs.finalScore === null) {
+      return { title: 'Not yet assessed', body: 'This student has ' + fs.assessedComponentCount + ' of 9 components with recorded assessment data. Final grades and status colours appear once at least 6 components are assessed. Missing data is never treated as low achievement.' };
+    }
+    const c = sem.students.find((x) => x.id === sid);
+    const name = c ? (c.nameEn || c.nameCn) : sid;
+    const rowsSem = db ? studentSemesterRows(db, sid) : null;
+    const prev = rowsSem && rowsSem.length > 1 ? rowsSem[rowsSem.length - 2] : null;
+    let trendTxt = '';
+    if (prev && prev.assessed >= Calc.FINAL_MIN_ASSESSED) {
+      const d = fs.finalScore - prev.final;
+      if (d <= -8 || d >= 8) {
+        trendTxt = ' Trend rule: ' + (d >= 0 ? '+' : '') + f1(d) + ' points vs ' + prev.semName + ' adjusted the label one step (' + (d >= 0 ? 'rise' : 'decline') + ' of 8+ points).';
+      }
+    }
+    let action = '';
+    let worst = null;
+    for (const k of COMPONENTS) {
+      const v = Calc.gradeStudent(sem, sid).parts[k];
+      const ev = componentEvents(sem, sid, k);
+      if (v !== null && v < 55 && ev >= 1 && (!worst || v < worst.v)) worst = { k: k, v: v, ev: ev };
+    }
+    if (fs.ragStatus !== 'G' && worst) {
+      action = ' Next step: focus on ' + worst.k.toLowerCase() + ' (' + f1(worst.v) + '% across ' + worst.ev + ' recorded ' + (worst.ev === 1 ? 'task' : 'tasks') + ').';
+    }
+    return {
+      title: RAG_NAME[fs.ragStatus],
+      body: f1(fs.finalScore) + '% across ' + fs.assessedComponentCount + ' of 9 assessed components. Bands: Secure 75+, Developing 55-74.9, Priority support below 55.' + trendTxt + action,
+    };
+  }
+
+  /* whole-class reteaching priorities: lowest valid averages, n>=5 rule */
+  function classTeachingPriorities(sem) {
+    const rows = COMPONENTS.map((k) => { const st = classComponentStats(sem, k); return { k: k, avg: st.avg, n: st.n }; })
+      .filter((r) => r.avg !== null)
+      .sort((a, b) => a.avg - b.avg);
+    const ready = rows.filter((r) => r.n >= MIN_CLASS_N);
+    if (!ready.length) return { list: rows, focus: [], text: 'Not enough evidence for a class conclusion (needs at least ' + MIN_CLASS_N + ' pupils assessed in a component).' };
+    const focus = ready.slice(0, 2);
+    return {
+      list: rows, focus: focus,
+      text: focus.map((r) => 'Whole-class focus: ' + r.k + ' — ' + f1(r.avg) + '% across ' + r.n + ' assessed pupils.').join(' '),
+    };
+  }
+
+  /* ---- child-centred report sections (evidence-based, editable upstream) ---- */
+  const STRENGTH_TXT = {
+    'Listening': 'Follows classroom instructions and spoken texts with confidence.',
+    'Speaking': 'Participates confidently in familiar speaking activities.',
+    'Writing': 'Produces written work with growing confidence and accuracy.',
+    'Reading': 'Reads short familiar texts accurately and identifies key details.',
+    'Spelling': 'Spells high-frequency words accurately in weekly checks.',
+    'Daily Assignments': 'Completes daily assignments consistently well.',
+    'Mid-Term': 'Performed strongly in the Mid-Term assessment.',
+    'Oral': 'Spoke clearly and confidently in the Oral assessment.',
+    'Written': 'Produced a strong Written assessment paper.',
+  };
+  const STEP_TXT = {
+    'Listening': 'Practise following multi-step spoken instructions.',
+    'Speaking': 'Build confidence when answering questions using complete sentences.',
+    'Writing': 'Practise using capital letters and full stops consistently in short sentences.',
+    'Reading': 'Re-read short texts and retell the main events.',
+    'Spelling': 'Review common vowel patterns in weekly spelling practice.',
+    'Daily Assignments': 'Build a careful routine for completing daily assignments.',
+    'Mid-Term': 'Review this term\u2019s topics before the next assessment.',
+    'Oral': 'Practise short spoken answers with a partner.',
+    'Written': 'Plan short written answers before starting to write.',
+  };
+  const SUPPORT_TXT = {
+    'Listening': 'The teacher will use short listening games with clear step-by-step instructions.',
+    'Speaking': 'The teacher will provide daily talking prompts and partner practice.',
+    'Writing': 'The teacher will provide sentence frames during guided writing and review one punctuation target each week.',
+    'Reading': 'The teacher will use guided reading in a small group.',
+    'Spelling': 'The teacher will use small-group phonics practice and short weekly spelling checks.',
+    'Daily Assignments': 'The teacher will provide a short daily checklist and check in each week.',
+    'Mid-Term': 'The teacher will provide guided revision of this term\u2019s work.',
+    'Oral': 'The teacher will give regular opportunities to speak in pairs and small groups.',
+    'Written': 'The teacher will model short planning before written tasks.',
+  };
+  const HOME_TXT = {
+    'Listening': 'Ask your child to follow two short instructions in English each day, e.g. during play or cooking.',
+    'Speaking': 'Encourage your child to describe one part of their day using a complete English sentence.',
+    'Writing': 'Write two or three short English sentences together, checking capital letters and full stops.',
+    'Reading': 'Read a short English story together and ask your child to retell three key events.',
+    'Spelling': 'Practise five high-frequency words for a few minutes, three times a week.',
+    'Daily Assignments': 'Check the daily assignment together each evening and praise careful work.',
+    'Mid-Term': 'Chat briefly about what your child is learning in English this term.',
+    'Oral': 'Ask your child one or two simple questions in English each day.',
+    'Written': 'Encourage your child to write one true sentence about their day.',
+  };
+
+  function reportSections(sem, sid) {
+    const g = Calc.gradeStudent(sem, sid);
+    const nAssessed = Calc.assessedCount(g);
+    const evidence = COMPONENTS.map((k) => ({ k: k, pct: g.parts[k], ev: componentEvents(sem, sid, k) }))
+      .filter((x) => x.pct !== null && x.ev >= 1);
+    const evidenceRich = evidence.filter((x) => x.ev >= 2);
+    const empty = {
+      strengths: [], steps: [], support: '', home: '', overall: '',
+      inProgress: true, note: 'Assessment is still in progress — ' + nAssessed + ' of 9 components assessed.',
+    };
+    if (nAssessed < Calc.FINAL_MIN_ASSESSED || evidenceRich.length < 2) return empty;
+    /* strengths: strong + at least two recorded events; never reused as a step */
+    const strengths = evidenceRich.filter((x) => x.pct >= 80).sort((a, b) => b.pct - a.pct).slice(0, 3)
+      .map((x) => ({ k: x.k, text: STRENGTH_TXT[x.k], evidence: f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks') }));
+    if (!strengths.length && evidenceRich.length) {
+      const best = evidenceRich.slice().sort((a, b) => b.pct - a.pct)[0];
+      strengths.push({ k: best.k, text: STRENGTH_TXT[best.k], evidence: f1(best.pct) + '% across ' + best.ev + ' recorded ' + (best.ev === 1 ? 'task' : 'tasks') });
+    }
+    const used = strengths.map((x) => x.k);
+    const steps = evidence.filter((x) => used.indexOf(x.k) < 0 && x.pct < 70).sort((a, b) => a.pct - b.pct).slice(0, 2)
+      .map((x) => ({ k: x.k, text: STEP_TXT[x.k], evidence: f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks') }));
+    const first = steps[0] || strengths[0];
+    return {
+      inProgress: false,
+      strengths: strengths,
+      steps: steps,
+      support: first ? SUPPORT_TXT[first.k] : 'The teacher will keep monitoring progress and provide support as needed.',
+      home: first ? HOME_TXT[first.k] : 'Keep encouraging regular short English practice at home.',
+      overall: '',
+      note: '',
     };
   }
 
@@ -244,6 +441,11 @@
   return {
     COMPONENTS: COMPONENTS, SHORT: SHORT, RAG_NAME: RAG_NAME,
     rag: rag, ragOverall: ragOverall, finalStatus: finalStatus,
+    RAG_PARENT: RAG_PARENT, MIN_CLASS_N: MIN_CLASS_N, MIN_TREND_EVENTS: MIN_TREND_EVENTS,
+    componentEvents: componentEvents, classComponentStats: classComponentStats,
+    componentPointList: componentPointList, trendVerdict: trendVerdict,
+    ragWhy: ragWhy, classTeachingPriorities: classTeachingPriorities,
+    reportSections: reportSections,
     classSemesterRows: classSemesterRows, classAvgParts: classAvgParts,
     movers: movers, classSummary: classSummary, classSwotText: classSwotText,
     studentSemesterRows: studentSemesterRows, studentMatrix: studentMatrix,
