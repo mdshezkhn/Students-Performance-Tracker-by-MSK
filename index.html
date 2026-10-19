@@ -344,6 +344,16 @@ img, svg, video { display: block; }
   text-wrap: balance;
 }
 .hero h1 em { font-style: italic; color: var(--cyan-soft); }
+.hero h1 .hero-sub {
+  display: block;
+  margin-top: 22px;
+  font-family: var(--font-body);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.3px;
+  color: rgba(255, 255, 255, 0.92);
+}
 .hero__lede {
   max-width: 670px;
   margin: 28px auto 0;
@@ -630,6 +640,7 @@ img, svg, video { display: block; }
   .hero-badge__chip { height: 22px; padding: 0 9px; font-size: 11.5px; }
   .hero-badge__text { font-size: 12.5px; }
   .hero h1 { font-size: 48px; }
+  .hero h1 .hero-sub { font-size: 17px; margin-top: 14px; }
   .hero__lede { font-size: 16px; }
   .hero__actions { margin-top: 40px; gap: 20px; }
   .pill--hero { padding: 16px 40px; font-size: 15px; }
@@ -693,7 +704,7 @@ img, svg, video { display: block; }
   <header class="hero">
     <div class="hero__inner">
       <div class="hero-badge rise rise--1"><span class="hero-badge__chip">New</span><span class="hero-badge__text">No server &middot; no tracking &middot; private by design</span></div>
-      <h1 class="rise rise--2">Every mark tells a <em>story</em></h1>
+      <h1 class="rise rise--2">Every score tells a <em>story</em>.<span class="hero-sub">Help every learner write a brighter next chapter.</span></h1>
       <p class="hero__lede rise rise--3">
         Complete ESL performance tracking &mdash; classroom observations, spelling,
         assignments, tests, auto&#8209;grading, cross&#8209;semester analytics, and
