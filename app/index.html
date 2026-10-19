@@ -2712,9 +2712,10 @@ window.SEED = null;
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
         '<button class="btn" data-action="export-xlsx">Export current semester to Excel</button>' +
-        '<button class="btn" data-action="backup">Download backup (JSON)</button>' +
+        '<button class="btn" data-action="backup">Download full backup (all semesters)</button>' +
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
+      '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
@@ -3328,7 +3329,7 @@ window.SEED = null;
     a.download = 'SPR-backup-by-Teacher-Mo-' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    toast('Backup downloaded');
+    toast('Full backup downloaded — use “Restore backup” on the other computer to load it');
   }
   function restoreJSONFile(file) {
     const reader = new FileReader();
