@@ -285,7 +285,11 @@
   }
 
   /* ============================ shell & router ============================ */
-  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['manage', 'Manage & setup']];
+  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['ranking', 'Ranking'], ['manage', 'Manage & setup']];
+  /* roles: admin (Mo) sees & controls everything; management sees Ranking too;
+     teacher = the everyday markbook tools, exactly as before */
+  function roleLabel(r) { return r === 'admin' ? 'Admin' : r === 'management' ? 'Management' : 'Teacher'; }
+  function isMgmt() { const r = (currentUser() || {}).role; return r === 'admin' || r === 'management'; }
   function buildShell() {
     const sem = cur();
     $('#app').innerHTML =
@@ -293,14 +297,14 @@
         '<nav class="rail">' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
-          '<div class="nav">' + NAV.map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
+          '<div class="nav">' + NAV.filter((n) => n[0] !== 'ranking' || isMgmt()).map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
           '<div class="rail-foot"><label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
             (function() { var u = currentUser(); if (!u) return '';
               var ini = (u.name || u.username).charAt(0).toUpperCase();
               return '<div class="user-chip"><span class="uc-avatar">' + U.esc(ini) + '</span>' +
-                '<span class="uc-info"><b>' + U.esc(u.name || u.username) + '</b><small>' + (u.role === 'admin' ? 'Admin' : 'Teacher') + '</small></span>' +
+                '<span class="uc-info"><b>' + U.esc(u.name || u.username) + '</b><small>' + roleLabel(u.role) + '</small></span>' +
                 '<button class="uc-out" data-action="logout" title="Sign out">Sign out</button></div>'; })() +
             '<span class="conf-tag">Confidential — student data</span>' +
             '<div class="rail-privacy"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
@@ -330,7 +334,9 @@
     if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
-    const view = parts[0] || 'dashboard';
+    let view = parts[0] || 'dashboard';
+    if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
+    const navView = view;
     switch (view) {
       case 'students': renderStudents(); break;
       case 'student': renderStudent(decodeURIComponent(parts[1] || '')); break;
@@ -339,10 +345,11 @@
       case 'analysis': ui.anMode = parts[1] === 'student' ? 'student' : 'class'; renderAnalysis(); break;
       case 'reports': ui.rptMode = parts[1] === 'student' ? 'student' : 'class'; renderReports(); break;
       case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
+      case 'ranking': renderRanking(); break;
       case 'manage': renderManage(); break;
       default: renderDashboard();
     }
-    railActive(view);
+    railActive(navView);
     window.scrollTo(0, 0);
   }
 
@@ -363,7 +370,7 @@
           '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
           '<div class="rail-privacy" style="margin-top:14px;text-align:center"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
         '</div>' +
-        '<input type="file" id="file-xlsx" accept=".xlsx,.xls" hidden>' +
+        '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
         '<input type="file" id="file-json" accept=".json" hidden>' +
       '</main></div>';
   }
@@ -1264,6 +1271,119 @@
       '</div>' +
       '<div class="small muted mt">' + s.students.length + ' students · months: ' + U.esc(s.months.join(', ')) + '</div></div>';
   }
+  /* ================= ranking — multi-workbook comparison (Admin + Management) ================= */
+  /* One row per imported workbook. Class average follows the same rule as the
+     rest of the app: only pupils meeting the >=6-components gate count, so an
+     incomplete workbook is never punished with a fake low average. */
+  function rkRows() {
+    const prevAvg = {}; /* 'school · class' -> previous average, in workbook order */
+    return DB.semesters.map((sem) => {
+      const gAll = C.gradeAll(sem);
+      const ok = gAll.filter((g) => C.assessedCount(g) >= C.FINAL_MIN_ASSESSED);
+      const avg = ok.length ? ok.reduce((t, g) => t + g.final, 0) / ok.length : null;
+      const key = (sem.school || 'School') + ' · ' + (sem.className || sem.name);
+      const prev = (prevAvg[key] === undefined) ? null : prevAvg[key];
+      if (avg !== null) prevAvg[key] = avg;
+      const dist = C.gradeDistribution(sem);
+      const comp = C.completeness(sem);
+      const compAvg = (comp.obs + comp.spelling + comp.daily + comp.tests) / 4;
+      return {
+        sem: sem, key: key, avg: avg, n: sem.students.length, nOk: ok.length,
+        distTop: dist['A*'] + dist.A, prev: prev,
+        delta: (avg !== null && prev !== null) ? avg - prev : null,
+        comp: compAvg, compParts: comp,
+      };
+    });
+  }
+  function rkSortCmp(k) {
+    const dir = (ui.rk || {}).dir || -1;
+    return function (a, b) {
+      const va = a[k], vb = b[k];
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;            /* no evidence always sinks, whatever the direction */
+      if (vb === null) return -1;
+      if (typeof va === 'string' || typeof vb === 'string')
+        return dir * String(va).localeCompare(String(vb));
+      return dir * (va - vb);
+    };
+  }
+  function renderRanking() {
+    if (!DB.semesters.length) { renderWelcome(); return; }
+    if (!ui.rk) ui.rk = { school: '', teacher: '', k: 'avg', dir: -1 };
+    const f = ui.rk;
+    const all = rkRows();
+    const schools = [...new Set(all.map((r) => r.sem.school || 'School'))].sort();
+    const teachers = [...new Set(DB.semesters.reduce((t, s) => t.concat(s.teachers || []), []))].sort((a, b) => a.localeCompare(b));
+    const rows = all.filter((r) =>
+      (!f.school || (r.sem.school || 'School') === f.school) &&
+      (!f.teacher || (r.sem.teachers || []).some((t) => t.toLowerCase() === f.teacher.toLowerCase()))
+    ).sort(rkSortCmp(f.k));
+    const ranked = rows.slice().sort(rkSortCmp('avg'));
+    const rankOf = {}; ranked.forEach((r, i) => { if (r.avg !== null && rankOf[r.sem.id] === undefined) rankOf[r.sem.id] = i + 1; });
+    const classes = new Set(all.map((r) => r.key)).size;
+    const avgVals = all.map((r) => r.avg).filter((v) => v !== null);
+    const overall = avgVals.length ? avgVals.reduce((x, y) => x + y, 0) / avgVals.length : null;
+
+    const arrow = (k) => (f.k === k ? (f.dir === -1 ? ' ↓' : ' ↑') : '');
+    const th = (k, label, extra) => '<th scope="col"' + (extra || '') + '><a href="#" data-action="rk-sort" data-k="' + k + '" class="th-sort">' + label + arrow(k) + '</a></th>';
+    $('#content').innerHTML =
+      pageHead('Ranking', all.length + (all.length === 1 ? ' workbook' : ' workbooks') + ' · ' + schools.length + (schools.length === 1 ? ' school' : ' schools') + ' · ' + classes + ' classes — comparative view for Admin &amp; Management') +
+      '<div class="flex mb">' +
+        '<label>School <select class="inp" id="rkSchool"><option value="">All schools</option>' + schools.map((s) => '<option value="' + U.esc(s) + '"' + (f.school === s ? ' selected' : '') + '>' + U.esc(s) + '</option>').join('') + '</select></label>' +
+        '<label>Teacher <select class="inp" id="rkTeacher"><option value="">All teachers</option>' + teachers.map((t) => '<option value="' + U.esc(t) + '"' + (f.teacher === t ? ' selected' : '') + '>' + U.esc(t) + '</option>').join('') + '</select></label>' +
+        '<span class="small muted" style="align-self:center">Average = weighted final, pupils with at least 6 assessed components only.</span>' +
+      '</div>' +
+      '<div class="kpi-strip">' +
+        kpi(all.length, all.length === 1 ? 'workbook' : 'workbooks') +
+        kpi(classes, classes === 1 ? 'class' : 'classes') +
+        kpi(DB.semesters.reduce((t, s) => t + s.students.length, 0), 'students total') +
+        kpi(overall === null ? '–' : fmt(overall, 1) + '%', 'overall average') +
+      '</div>' +
+      '<div class="sheet"><table class="tbl"><thead><tr>' +
+        th('rank', '#') + th('school', 'School') + th('class', 'Class') + th('teacher', 'Teacher(s)') +
+        th('avg', 'Class average') + th('distTop', 'A*/A') + th('delta', 'vs previous') +
+        th('n', 'Students') + th('comp', 'Data recorded') + '<th scope="col"></th>' +
+      '</tr></thead><tbody>' +
+      (rows.length ? rows.map((r) => {
+        const s = r.sem;
+        const provisional = (r.comp < 0.6 || r.nOk < A.MIN_CLASS_N);
+        const dTxt = r.delta === null ? '<span class="muted">–</span>'
+          : r.delta > 0.5 ? '<span style="color:var(--green,#1d7a4a)">▲ +' + fmt(r.delta, 1) + '</span>'
+          : r.delta < -0.5 ? '<span style="color:var(--red,#c4453c)">▼ ' + fmt(r.delta, 1) + '</span>'
+          : '<span class="muted">· stable</span>';
+        return '<tr>' +
+          '<td class="num">' + (rankOf[s.id] ? '#' + rankOf[s.id] : '<span class="muted">–</span>') + '</td>' +
+          '<td>' + U.esc(s.school || 'School') + '</td>' +
+          '<td>' + U.esc(s.className || '–') + '</td>' +
+          '<td>' + U.esc((s.teachers || []).join(', ') || '–') + '</td>' +
+          '<td class="num"><b>' + (r.avg === null ? '<span class="muted">not enough data</span>' : fmt(r.avg, 1) + '%') + '</b>' +
+            (provisional && r.avg !== null ? ' <span class="g g-none" title="Provisional: ' + (r.nOk < A.MIN_CLASS_N ? 'fewer than ' + A.MIN_CLASS_N + ' pupils with enough assessed components' : 'less than 60% of expected scores recorded') + '">provisional</span>' : '') + '</td>' +
+          '<td class="num">' + (r.nOk ? r.distTop + '/' + r.nOk : '–') + '</td>' +
+          '<td class="num">' + dTxt + '</td>' +
+          '<td class="num">' + r.n + '</td>' +
+          '<td class="num" title="Observations ' + Math.round(r.compParts.obs * 100) + '% · Spelling ' + Math.round(r.compParts.spelling * 100) + '% · Daily ' + Math.round(r.compParts.daily * 100) + '% · Tests ' + Math.round(r.compParts.tests * 100) + '%">' + Math.round(r.comp * 100) + '%</td>' +
+          '<td><button class="btn sm" data-action="rk-open" data-sem="' + U.esc(s.id) + '">Open</button></td></tr>';
+      }).join('') : '<tr><td colspan="10" class="muted">No workbooks match these filters.</td></tr>') +
+      '</tbody></table></div>' +
+      '<div class="panel"><h3>Class averages — every workbook</h3><div class="panel-sub">weighted final · ranked high to low</div>' +
+        '<div class="chart-box" style="height:' + Math.max(200, Math.min(ranked.length, 30) * 26) + 'px"><canvas id="ch-rank" role="img" aria-label="Horizontal bar chart of class averages per workbook"></canvas></div></div>';
+
+    chartTheme();
+    const top = ranked.filter((r) => r.avg !== null).slice(0, 30);
+    if (top.length) mkChart('ch-rank', {
+      type: 'bar',
+      data: {
+        labels: top.map((r) => (r.sem.school || 'School') + ' · ' + (r.sem.className || r.sem.name) + ' — ' + r.sem.name),
+        datasets: [ds('Class average', top.map((r) => r1x(r.avg)), '#2f7d5c', { borderWidth: 1 })],
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + '%' } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.parsed.x.toFixed(1) + '% average weighted final' } } },
+      },
+    });
+  }
+
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
@@ -1316,17 +1436,23 @@
 
       /* admin: dormant accounts from the default-password era are a side door until
          rotated or removed — this panel makes that visible and fixable */
-      ((currentUser() || {}).role === 'admin' && getAuth().users.length ?
-        '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — the accounts that can open this browser\u2019s data. Remove any account that should not be here.</p>' +
-        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
+      ((currentUser() || {}).role === 'admin' ?
+        '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — the accounts that can open this browser\u2019s data. <b>Admin</b> sees and controls everything; <b>Management</b> also sees the Ranking view; <b>Teachers</b> get the everyday markbook tools. Add a sign-in to give someone their own password here.</p>' +
+        (getAuth().users.length ?
+        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col"></th></tr></thead><tbody>' +
         getAuth().users.map((u) => {
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
+            '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
-            '<td>' + (selfNow ? '' : '<button class="btn sm" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
+            '<td>' + (selfNow ? '' :
+              '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
+              '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
         }).join('') +
-        '</tbody></table></div>'
+        '</tbody></table>' : '') +
+        '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
+        '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook — no data copying needed.</span></div></div>'
         : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
@@ -1383,7 +1509,7 @@
         (window.__SPR_CORRUPT ? '<button class="btn" data-action="dl-corrupt">Download damaged data file</button>' : '') +
         '<button class="btn danger" data-action="wipe">Erase everything</button>' +
       '</div>' +
-      '<input type="file" id="file-xlsx" accept=".xlsx,.xls" hidden>' +
+      '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
       '<input type="file" id="file-json" accept=".json" hidden>';
   }
   function rosterAdd() {
@@ -1933,36 +2059,54 @@
 
   /* ========================= import / export / backup ========================= */
   function sanitizeFn(s) { return String(s).replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '') || 'markbook'; }
-  function importXlsxFile(file) {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
-        const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
-        sem.students.forEach((st) => { st.id = String(st.id == null ? '' : st.id).replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || U.uid('stu'); });
-        const dup = sem.students.filter((st, i) => sem.students.findIndex((x) => x.id === st.id) !== i);
-        if (dup.length) throw new Error('duplicate student IDs after sanitising: ' + dup[0].id);
-        validateDB({ semesters: [sem], settings: {} });
-        const tm = String(file.name).match(/\(([^)]+)\)/);
-        if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
-        /* plain-language confirmation before anything is added */
-        const sameName = DB.semesters.find((x) => x.name === sem.name);
-        const okGo = await confirmDlg('Add this class?',
-          '<b>' + U.esc(sem.name) + '</b> — ' + sem.students.length + ' students · months: ' + U.esc(sem.months.join(', ')) + '.' +
-          (sameName ? '<br><br>A semester with this name already exists in this browser — both will be kept; you can rename or delete either one in Manage &amp; setup.' : '') +
-          '<br><br>Nothing is overwritten — your existing classes stay exactly as they are.',
-          'Add class');
-        if (!okGo) { toast('Import cancelled — nothing was changed'); return; }
-        DB.semesters.push(sem);
-        DB.currentSemesterId = sem.id;
-        saveDB(); buildShell();
-        toast('Imported ' + sem.students.length + ' students · ' + sem.months.join(', '));
-        if (location.hash === '#/dashboard') route();
-        else location.hash = '#/dashboard';
-      } catch (err) { toast('Import failed: ' + err.message, true); }
-    };
-    reader.readAsArrayBuffer(file);
+  /* parse one SPR workbook file -> semester (no dialogs, no side effects) */
+  function parseWorkbookFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
+          sem.students.forEach((st) => { st.id = String(st.id == null ? '' : st.id).replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || U.uid('stu'); });
+          const dup = sem.students.filter((st, i) => sem.students.findIndex((x) => x.id === st.id) !== i);
+          if (dup.length) throw new Error('duplicate student IDs after sanitising: ' + dup[0].id);
+          validateDB({ semesters: [sem], settings: {} });
+          const tm = String(file.name).match(/\(([^)]+)\)/);
+          if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+          resolve(sem);
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = () => reject(new Error('could not read the file'));
+      reader.readAsArrayBuffer(file);
+    });
   }
+  /* import one or many SPR workbooks — one shared confirmation for the whole batch */
+  async function importXlsxFiles(files) {
+    const sems = [], failed = [];
+    for (const file of files) {
+      try { sems.push(await parseWorkbookFile(file)); }
+      catch (err) { failed.push(file.name + ' — ' + err.message); }
+    }
+    if (!sems.length) { toast('Import failed — ' + (failed[0] || 'no file readable'), true); return; }
+    const MAX_LIST = 15;
+    const listed = sems.slice(0, MAX_LIST).map((s) => '<b>' + U.esc(s.name) + '</b> — ' + s.students.length + ' students · ' + U.esc(s.months.join(', '))).join('<br>') +
+      (sems.length > MAX_LIST ? '<br>…and ' + (sems.length - MAX_LIST) + ' more' : '');
+    const dupNames = sems.filter((s) => DB.semesters.some((x) => x.name === s.name)).length;
+    const okGo = await confirmDlg('Add ' + (sems.length === 1 ? 'this class' : 'these ' + sems.length + ' classes') + '?',
+      listed +
+      (dupNames ? '<br><br>' + (dupNames === 1 ? 'A semester with' : dupNames + ' semesters with') + ' a matching name already exist in this browser — both will be kept; you can rename or delete either one in Manage &amp; setup.' : '') +
+      (failed.length ? '<br><br><b>Not imported:</b><br>' + failed.map(U.esc).join('<br>') : '') +
+      '<br><br>Nothing is overwritten — your existing classes stay exactly as they are.',
+      'Add');
+    if (!okGo) { toast('Import cancelled — nothing was changed'); return; }
+    for (const s of sems) DB.semesters.push(s);
+    DB.currentSemesterId = sems[sems.length - 1].id;
+    saveDB(); buildShell();
+    toast('Imported ' + sems.length + ' workbook' + (sems.length > 1 ? 's' : '') + (failed.length ? ' · ' + failed.length + ' could not be read' : ''));
+    if (location.hash === '#/dashboard') route();
+    else location.hash = '#/dashboard';
+  }
+  function importXlsxFile(file) { importXlsxFiles([file]); }
   function exportXlsx() {
     const sem = cur();
     if (!sem) return;
@@ -2054,6 +2198,103 @@
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
+      return;
+    }
+    if (a === 'acct-add-open') {
+      openDlg('<h3>Add a sign-in</h3>' +
+        '<p class="small">Creates an account with its own password that opens this same markbook on this device. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
+        '<label>Username <input class="inp" id="naUser" placeholder="e.g. ZFYBLS" autocomplete="off"></label>' +
+        '<label>Display name <input class="inp" id="naName" placeholder="shown on the sidebar (optional)"></label>' +
+        '<label>Role <select class="inp" id="naRole"><option value="teacher">Teacher</option><option value="management">Management</option></select></label>' +
+        '<label>Password <input class="inp" type="password" id="naPass" autocomplete="new-password"></label>' +
+        '<label>Repeat password <input class="inp" type="password" id="naConf" autocomplete="new-password"></label>' +
+        '<div class="login-err" id="naErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+        '<button class="btn primary" data-action="acct-add">Create sign-in</button></div>');
+      return;
+    }
+    if (a === 'acct-add') {
+      (async () => {
+        const err = $('#naErr');
+        const un = ($('#naUser') ? $('#naUser').value : '').trim();
+        const name = ($('#naName') ? $('#naName').value : '').trim();
+        const role = ($('#naRole') ? $('#naRole').value : 'teacher');
+        const pw = ($('#naPass') ? $('#naPass').value : '') || '';
+        const cf = ($('#naConf') ? $('#naConf').value : '') || '';
+        if (!un || /[^A-Za-z0-9_.-]/.test(un)) { if (err) err.textContent = 'Username: letters, numbers, dot, dash or underscore.'; return; }
+        if (getAuth().users.some((u) => u.username.toLowerCase() === un.toLowerCase())) { if (err) err.textContent = 'That username is already on this device.'; return; }
+        if (pw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
+        if (pw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
+        const addErr = addUser(un, pw, name || un, role);
+        if (addErr) { if (err) err.textContent = addErr; return; }
+        /* share the encrypted markbook with the new account: wrap this browser's
+           master key under the new password so their sign-in can unlock it */
+        const v2 = readV2();
+        if (SESSION.dk && v2 && v2.wraps) {
+          try {
+            v2.wraps[un] = await makeWrap(SESSION.dk, pw);
+            localStorage.setItem(V2_KEY, JSON.stringify(v2));
+          } catch (e2) { if (err) err.textContent = 'Account created, but key wrapping failed: ' + e2.message; return; }
+        }
+        closeDlg();
+        toast('Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
+    if (a === 'acct-reset-open') {
+      const un = el.dataset.user;
+      openDlg('<h3>Reset password — ' + U.esc(un) + '</h3>' +
+        '<p class="small">Sets a new password for this sign-in. Tell the person their new password — they will need it next time they sign in here.</p>' +
+        '<label>New password <input class="inp" type="password" id="rpPass" autocomplete="new-password"></label>' +
+        '<label>Repeat password <input class="inp" type="password" id="rpConf" autocomplete="new-password"></label>' +
+        '<div class="login-err" id="rpErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+        '<button class="btn primary" data-action="acct-reset" data-user="' + U.esc(un) + '">Save password</button></div>');
+      return;
+    }
+    if (a === 'acct-reset') {
+      (async () => {
+        const err = $('#rpErr');
+        const un = el.dataset.user;
+        const nw = ($('#rpPass') ? $('#rpPass').value : '') || '';
+        const cf = ($('#rpConf') ? $('#rpConf').value : '') || '';
+        const auth = getAuth();
+        const u = auth.users.find((x) => x.username === un);
+        if (!u) { closeDlg(); return; }
+        if (nw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
+        if (nw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
+        u.hash = hashPassword(nw);
+        saveAuth(auth);
+        const v2 = readV2();
+        if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
+          try {
+            v2.wraps[un] = await makeWrap(SESSION.dk, nw);
+            localStorage.setItem(V2_KEY, JSON.stringify(v2));
+          } catch (e2) { if (err) err.textContent = 'Saved, but re-keying failed: ' + e2.message; return; }
+        }
+        closeDlg();
+        toast('Password updated for ' + un);
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
+    if (a === 'rk-sort') {
+      if (!ui.rk) ui.rk = { school: '', teacher: '', k: 'avg', dir: -1 };
+      const k = el.dataset.k;
+      const key = (k === 'rank') ? 'avg' : k;
+      if (ui.rk.k === key) ui.rk.dir = -ui.rk.dir;
+      else { ui.rk.k = key; ui.rk.dir = (key === 'avg' || key === 'delta' || key === 'distTop') ? -1 : 1; }
+      renderRanking();
+      return;
+    }
+    if (a === 'rk-open') {
+      const id = el.dataset.sem;
+      if (!DB.semesters.some((s) => s.id === id)) return;
+      DB.currentSemesterId = id;
+      saveDB(true); buildShell();
+      if (location.hash === '#/dashboard') route();
+      else location.hash = '#/dashboard';
       return;
     }
     if (a === 'do-login') {
@@ -2302,7 +2543,9 @@
     if (t.id === 'dashRag') { (ui.dash = ui.dash || {}).rag = t.value; renderDashboard(); return; }
     if (t.id === 'scatMode') { ui.scat = t.value; renderDashboard(); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
-    if (t.id === 'file-xlsx') { if (t.files && t.files[0]) importXlsxFile(t.files[0]); t.value = ''; return; }
+    if (t.id === 'file-xlsx') { if (t.files && t.files.length) importXlsxFiles(Array.from(t.files)); t.value = ''; return; }
+    if (t.id === 'rkSchool') { (ui.rk = ui.rk || { k: 'avg', dir: -1 }).school = t.value; renderRanking(); return; }
+    if (t.id === 'rkTeacher') { (ui.rk = ui.rk || { k: 'avg', dir: -1 }).teacher = t.value; renderRanking(); return; }
     if (t.id === 'file-json') { if (t.files && t.files[0]) restoreJSONFile(t.files[0]); t.value = ''; return; }
     if (t.id === 'wiz-year' || t.id === 'wiz-period') { ui.wizMonths = null; wizSync(true); return; }
     if (t.name === 'wizm') { ui.wizMonths = $$('#wiz-months input[name="wizm"]:checked').map((i) => i.value); return; }

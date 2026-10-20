@@ -84,10 +84,12 @@
     const roster = studentRows(rosterSrc.rows);
     if (!roster.length) throw new Error('No student rows found (columns: Index, ID, Chinese name, English name, Gender).');
 
-    /* school / class from first available sheet rows 1-2 col B */
+    /* school / class / teachers from first available sheet rows 1-2 (col B; teachers in col E) */
     const metaSrc = obsS || spS || daS || teS;
     const school = String(cell(metaSrc.rows, 0, 1) ?? '').trim() || 'School';
     const className = String(cell(metaSrc.rows, 1, 1) ?? '').trim() || '';
+    const splitNames = (raw) => String(raw || '').split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+    const teachers = splitNames(cell(metaSrc.rows, 1, 4));
 
     /* months: prefer Observations sheet (8-col blocks), else Spelling (11-col blocks) */
     let months = [];
@@ -101,6 +103,7 @@
       name: opts.name || 'Imported semester',
       school, className, months,
       students: roster.map((r) => ({ id: r.id, nameCn: r.nameCn, nameEn: r.nameEn, gender: r.gender })),
+      teachers,
       observations: {}, spelling: {}, daily: {}, tests: {},
     };
     const sidByRow = new Map(roster.map((r) => [r.row, r.id]));
@@ -218,7 +221,7 @@
     /* ---- Classroom Observations ---- */
     const nM = sem.months.length;
     const obsHead0 = ['School', sem.school, null, null, null];
-    const obsHead1 = ['Class', sem.className, null, null, null];
+    const obsHead1 = ['Class', sem.className, null, 'Teachers', (sem.teachers || []).join(', ')];
     const obsHead2 = [], obsHead3 = ['Index Number', 'ID Number', "Student's Name (Chinese)", "Student's Name (English)", 'Gender'];
     const merges = [];
     sem.months.forEach((m, mi) => {
@@ -514,8 +517,15 @@
   }
 
   function suggestNameFromFilename(fn, fallback) {
-    const m = String(fn || '').match(/(20\d{2})[\s._-]*(fall|spring)/i);
-    if (m) return m[1] + ' ' + (m[2][0].toUpperCase() + m[2].slice(1).toLowerCase());
+    const f = String(fn || '');
+    let m = f.match(/(20\d{2})[\s._-]*(fall|spring)/i);
+    let yearFirst = true;
+    if (!m) { m = f.match(/(fall|spring)[\s._-]*(20\d{2})/i); yearFirst = false; }
+    if (m) {
+      const year = yearFirst ? m[1] : m[2];
+      const word = yearFirst ? m[2] : m[1];
+      return year + ' ' + (word[0].toUpperCase() + word.slice(1).toLowerCase());
+    }
     return fallback || 'Imported semester';
   }
 
