@@ -24,6 +24,25 @@ DIST, DEPLOY = REPO / 'dist', REPO / 'deploy'
 def read(p):
     return pathlib.Path(p).read_text(encoding='utf-8')
 
+# ---------- guard: never silently clobber hand-edited published files ----
+# The published site (repo root) must always equal the last committed build
+# (deploy/). If someone hand-edited a root file (e.g. re-themed the landing
+# directly in index.html), a rebuild would quietly OVERWRITE their work —
+# that is exactly how the azure AEROFOLD landing was lost on 2026-10-21.
+# Port such edits into the templates under source/ first, or use --force.
+import sys
+if '--force' not in sys.argv:
+    for published, mirror in [(REPO / 'index.html', DEPLOY / 'index.html'),
+                              (REPO / 'app' / 'index.html', DEPLOY / 'app' / 'index.html')]:
+        if published.exists() and mirror.exists() and read(published) != read(mirror):
+            sys.exit(
+                "ABORT: " + str(published.relative_to(REPO)) + " differs from "
+                + str(mirror.relative_to(REPO)) + " (the last committed build).\n"
+                "A rebuild would OVERWRITE those hand edits.\n"
+                "  keep them    -> port the changes into the matching source/ template\n"
+                "                 (landing: source/landing.template.html + landing.css\n"
+                "                 + landing-fonts.css), then rerun\n"
+                "  discard them -> rerun with --force")
 # ---------- app ----------
 app_html = read(SRC / 'index.template.html')
 for marker, path in [

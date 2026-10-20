@@ -1,26 +1,31 @@
 <!doctype html>
+<!--
+  SOURCE OF TRUTH for the published landing page (repo-root index.html).
+  Root index.html is GENERATED from this file + landing.css + landing-fonts.css
+  by source/build2.py. NEVER hand-edit root index.html — edit this template,
+  then rebuild. build2.py refuses to run if root index.html has drifted from
+  the last committed build.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; media-src https://designerstephen.github.io; font-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; media-src 'self'; font-src data:; base-uri 'none'; form-action 'none'">
 <title>Students Performance Report</title>
 <meta name="description" content="ESL student performance tracking with live analytics, RAG/SWOT insights, and report cards. Designed for teachers, by a teacher.">
-<meta name="theme-color" content="#0f172a">
-<style>
-/*__FONTS__*/
-</style>
-<style>
-/*__LANDING_CSS__*/
-</style>
+<meta name="theme-color" content="#0b8ed2">
+<style>/*__FONTS__*/</style>
+<style>/*__LANDING_CSS__*/</style>
 </head>
 <body>
 
 <div class="stage" id="platform">
   <div class="stage__media" aria-hidden="true">
     <video autoplay muted loop playsinline preload="auto"
-           poster="%%POSTER%%"
-           src="https://designerstephen.github.io/public-assets/videos/asme-hero.mp4"></video>
+           poster="media/aerofold-paper-bloom-poster.png">
+      <source media="(max-aspect-ratio: 1/1)" src="media/aerofold-paper-bloom-portrait.mp4" type="video/mp4">
+      <source src="media/aerofold-paper-bloom-landscape.mp4" type="video/mp4">
+    </video>
   </div>
   <div class="stage__tint" aria-hidden="true"></div>
   <div class="stage__scrim" aria-hidden="true"></div>
@@ -39,13 +44,14 @@
 
   <header class="hero">
     <div class="hero__inner">
-      <h1 class="rise rise--1">Every mark tells a <em>story</em></h1>
-      <p class="hero__lede rise rise--2">
+      <div class="hero-badge rise rise--1"><span class="hero-badge__chip">New</span><span class="hero-badge__text">No server &middot; no tracking &middot; private by design</span></div>
+      <h1 class="rise rise--2">Every score tells a <em>story</em>.<span class="hero-sub">Help every learner write a brighter next chapter.</span></h1>
+      <p class="hero__lede rise rise--3">
         Complete ESL performance tracking &mdash; classroom observations, spelling,
         assignments, tests, auto&#8209;grading, cross&#8209;semester analytics, and
         professional report cards.
       </p>
-      <div class="hero__actions rise rise--3">
+      <div class="hero__actions rise rise--4">
         <a class="pill pill--hero" href="app/">Open the App</a>
         <a class="quiet-link" href="#modules">Explore features
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
@@ -214,9 +220,20 @@ document.addEventListener('DOMContentLoaded', function() {
   }, { threshold: 0.3 });
   nums.forEach(function(n) { numObs.observe(n); });
 
-  /* if the film cannot load, the poster already painted the scene */
-  var v = document.querySelector('.stage__media video');
-  if (v) v.addEventListener('error', function() { v.remove(); });
+  /* paper-bloom video lifecycle: fade in on play, poster underlay on failure.
+     NB: Chromium fires a harmless error on <source> skipped by its media query —
+     never remove the element, just drop the class so the poster underlay shows. */
+  var mediaEl = document.querySelector('.stage__media');
+  var v = mediaEl && mediaEl.querySelector('video');
+  if (v) {
+    v.addEventListener('playing', function() { mediaEl.classList.add('is-playing'); });
+    v.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
+    Array.prototype.forEach.call(v.querySelectorAll('source'), function(s) {
+      s.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
+    });
+    /* autoplay may have started before this script ran: sync the class */
+    if (!v.paused) { mediaEl.classList.add('is-playing'); }
+  }
 });
 </script>
 </body>
