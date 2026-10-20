@@ -2839,11 +2839,14 @@
       } catch (e) { try { sessionStorage.removeItem('spr-session'); } catch (e2) {} }
       if (!ready) {
         const legacy = loadDBLegacy();
-        DB = legacy || seedFromWindow();   // shown behind the gate; sealed on first sign-in
+        /* first run stays EMPTY — the teacher lands on the welcome screen and
+           chooses how to start (new class / import / load sample). The demo
+           class is only loaded on demand via "Load sample data". */
+        DB = legacy || emptyDB();
       }
     } else {
       const legacy = loadDBLegacy();
-      DB = legacy || seedFromWindow();
+      DB = legacy || emptyDB();
       ready = isLoggedIn();
     }
     if (!ready) {
