@@ -3486,7 +3486,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         }).join('') +
         '</tbody></table>' : '') +
         '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
-        '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook — no data copying needed.</span></div></div>'
+        '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook — no data copying needed.</span></div>' +
+        '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
+          ? '<b>Master password is set.</b> From the sign-in screen it can reset the admin password if that is ever forgotten. Keep it on paper — SPR cannot show it again.'
+          : '<b>No master password yet.</b> Set one as a recovery key: if the admin password is ever forgotten, the master password resets it from the sign-in screen. Keep it on paper — SPR cannot show it again.') + '</p>' +
+        '<div class="flex" style="margin-top:8px">' + (masterWrap()
+          ? '<button class="btn sm" data-action="master-set-open">Replace master password</button> <button class="btn sm danger" data-action="master-del">Remove master password</button>'
+          : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
@@ -4203,6 +4209,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const cf = ($('#suConf') ? $('#suConf').value : '') || '';
       const errEl = $('#suErr');
       if (!un) { if (errEl) errEl.textContent = 'Choose a username.'; return; }
+      if (un === MASTER_KEY) { if (errEl) errEl.textContent = 'That username is reserved.'; return; }
       if (pw.length < 8) { if (errEl) errEl.textContent = 'Password must be at least 8 characters.'; return; }
       if (pw !== cf) { if (errEl) errEl.textContent = 'Passwords do not match.'; return; }
       (async () => {
@@ -4218,6 +4225,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'acct-del') {
       (async () => {
+        if (!isAdmin()) { toast('Admin only.', true); return; }
         const un = el.dataset.user;
         if (!un || un === SESSION.user) return;
         const okGo = await confirmDlg('Remove sign-in ' + U.esc(un) + '?',
@@ -4235,6 +4243,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       return;
     }
     if (a === 'acct-add-open') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Add a sign-in</h3>' +
         '<p class="small">Creates an account with its own password that opens this same markbook on this device. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
         '<label>Username <input class="inp" id="naUser" placeholder="e.g. ZFYBLS" autocomplete="off"></label>' +
@@ -4249,6 +4258,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'acct-add') {
       (async () => {
+        if (!isAdmin()) { toast('Admin only.', true); return; }
         const err = $('#naErr');
         const un = ($('#naUser') ? $('#naUser').value : '').trim();
         const name = ($('#naName') ? $('#naName').value : '').trim();
@@ -4256,6 +4266,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const pw = ($('#naPass') ? $('#naPass').value : '') || '';
         const cf = ($('#naConf') ? $('#naConf').value : '') || '';
         if (!un || /[^A-Za-z0-9_.-]/.test(un)) { if (err) err.textContent = 'Username: letters, numbers, dot, dash or underscore.'; return; }
+        if (un === MASTER_KEY) { if (err) err.textContent = 'That username is reserved.'; return; }
         if (getAuth().users.some((u) => u.username.toLowerCase() === un.toLowerCase())) { if (err) err.textContent = 'That username is already on this device.'; return; }
         if (pw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
         if (pw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
@@ -4277,6 +4288,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       return;
     }
     if (a === 'acct-reset-open') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
       openDlg('<h3>Reset password — ' + U.esc(un) + '</h3>' +
         '<p class="small">Sets a new password for this sign-in. Tell the person their new password — they will need it next time they sign in here.</p>' +
@@ -4289,6 +4301,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'acct-reset') {
       (async () => {
+        if (!isAdmin()) { toast('Admin only.', true); return; }
         const err = $('#rpErr');
         const un = el.dataset.user;
         const nw = ($('#rpPass') ? $('#rpPass').value : '') || '';
@@ -4309,6 +4322,97 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         }
         closeDlg();
         toast('Password updated for ' + un);
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
+    /* ---------- master password: admin recovery key for this device ---------- */
+    if (a === 'master-recover-cancel') { renderLogin(); return; }
+    if (a === 'master-recover-open') {
+      if (!masterWrap()) { renderLogin(); return; }
+      openDlg('<h3>Reset the admin password</h3>' +
+        '<p class="small">Use the <b>master password</b> to set a new password for the admin account on this device. All data and all other sign-ins stay untouched. Nothing works without the master password — keep it on paper.</p>' +
+        '<label>Master password <input class="inp" type="password" id="mrMaster" autocomplete="off"></label>' +
+        '<label>New admin password (8+ characters) <input class="inp" type="password" id="mrPass" autocomplete="new-password"></label>' +
+        '<label>Repeat new password <input class="inp" type="password" id="mrConf" autocomplete="new-password"></label>' +
+        '<div class="login-err" id="mrErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="master-recover-cancel">Back to sign-in</button>' +
+        '<button class="btn primary" data-action="master-recover">Reset &amp; sign in</button></div>');
+      return;
+    }
+    if (a === 'master-recover') {
+      (async () => {
+        const err = $('#mrErr');
+        const master = ($('#mrMaster') ? $('#mrMaster').value : '') || '';
+        const nw = ($('#mrPass') ? $('#mrPass').value : '') || '';
+        const cf = ($('#mrConf') ? $('#mrConf').value : '') || '';
+        if (!master) { if (err) err.textContent = 'Enter the master password.'; return; }
+        if (nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
+        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        const v2 = readV2();
+        const w = v2 && v2.wraps && v2.wraps[MASTER_KEY];
+        if (!w) { if (err) err.textContent = 'No master password is set on this device.'; return; }
+        let dk;
+        try { dk = await unwrapWrap(w, master); }
+        catch (e) { if (err) err.textContent = 'Wrong master password.'; return; }
+        const auth = getAuth();
+        const admin = auth.users.find((u) => u.role === 'admin') || auth.users[0];
+        if (!admin) { if (err) err.textContent = 'No admin account exists on this device.'; return; }
+        try {
+          v2.wraps[admin.username] = await makeWrap(dk, nw);
+          admin.hash = hashPassword(nw);
+          localStorage.setItem(V2_KEY, JSON.stringify(v2));
+          saveAuth(auth);
+        } catch (e) { if (err) err.textContent = 'Recovery failed: ' + e.message; return; }
+        closeDlg();
+        const res = await doLoginFull(admin.username, nw);
+        if (res.error) { toast(res.error, true); renderLogin(); return; }
+        document.body.classList.remove('auth-gate'); buildShell(); route();
+        toast('Admin password reset via master password — welcome back, ' + res.user.name);
+      })();
+      return;
+    }
+    if (a === 'master-set-open') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
+      openDlg('<h3>Set master password</h3>' +
+        '<p class="small">A recovery key for this device: if the admin password is ever forgotten, the master password can reset it from the sign-in screen. <b>Write it on paper</b> — SPR cannot show it to you again.</p>' +
+        '<label>Master password (8+ characters) <input class="inp" type="password" id="msPass" autocomplete="new-password"></label>' +
+        '<label>Repeat master password <input class="inp" type="password" id="msConf" autocomplete="new-password"></label>' +
+        '<div class="login-err" id="msErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+        '<button class="btn primary" data-action="master-set">Save master password</button></div>');
+      return;
+    }
+    if (a === 'master-set') {
+      (async () => {
+        const err = $('#msErr');
+        if (!isAdmin()) { closeDlg(); toast('Admin only.', true); return; }
+        if (!cryptoOK() || !SESSION.dk) { if (err) err.textContent = 'Needs the online (https) version.'; return; }
+        const pw = ($('#msPass') ? $('#msPass').value : '') || '';
+        const cf = ($('#msConf') ? $('#msConf').value : '') || '';
+        if (pw.length < 8) { if (err) err.textContent = 'Master password must be at least 8 characters.'; return; }
+        if (pw !== cf) { if (err) err.textContent = 'Master passwords do not match.'; return; }
+        const v2 = readV2();
+        if (!v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found — sign out and in once first.'; return; }
+        try {
+          v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, pw);
+          localStorage.setItem(V2_KEY, JSON.stringify(v2));
+        } catch (e) { if (err) err.textContent = 'Saving failed: ' + e.message; return; }
+        closeDlg();
+        toast('Master password set — write it on paper, SPR cannot show it again.');
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
+    if (a === 'master-del') {
+      (async () => {
+        if (!isAdmin()) { toast('Admin only.', true); return; }
+        const okGo = await confirmDlg('Remove master password?',
+          'The sign-in screen will no longer offer admin recovery on this device. If the admin password is then forgotten, the data can no longer be unlocked here.', 'Remove');
+        if (!okGo) return;
+        const v2 = readV2();
+        if (v2 && v2.wraps && v2.wraps[MASTER_KEY]) { delete v2.wraps[MASTER_KEY]; localStorage.setItem(V2_KEY, JSON.stringify(v2)); }
+        toast('Master password removed.');
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -4351,6 +4455,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'logout') { doLogout(); return; }
     if (a === 'change-pass-save') {
       (async () => {
+        /* dormant by owner decision (no self-service password changes on a
+           shared device); if ever re-enabled, admin-only by the same rule */
+        if (!isAdmin()) { if ($('#cpErr')) $('#cpErr').textContent = 'Password changes are managed by the admin on this device.'; return; }
         const err = $('#cpErr');
         const cur = ($('#cpCur') || {}).value || '';
         const nw = ($('#cpNew') || {}).value || '';
@@ -4938,6 +5045,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   const AUTH_KEY = 'spr-auth-v1';
+  const MASTER_KEY = '__master__';   /* reserved wrap slot: admin recovery key */
+  function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
+  function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 
   function hashPassword(pw) {
     let h = 0x811c9dc5;
@@ -4978,6 +5088,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
     const auth = getAuth();
+    if (username === MASTER_KEY) return { error: 'Invalid username or password.' };
     const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
     if (!user) return { error: 'Invalid username or password.' };
     if (!cryptoOK()) {
@@ -5056,6 +5167,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
+          (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
     openDlg(card);
