@@ -5592,6 +5592,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function showBanner() {
     if (sessionStorage.getItem('spr-update-later') === '1') return;
     if (document.getElementById('sw-update')) return;
+    /* A pairing/share link visit needs the NEW app right now — nobody is
+       mid-data-entry on a #pair/#join URL. If the browser is still running a
+       stale cached shell, update silently and reload instead of showing the
+       banner (guarded once per session so it can never loop). */
+    if (/^#(pair|join)=/.test(location.hash) && !sessionStorage.getItem('spr-sw-auto')) {
+      sessionStorage.setItem('spr-sw-auto', '1');
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!reloading) { reloading = true; location.reload(); }
+      });
+      if (regWaiting) regWaiting.postMessage('SPR_SKIP_WAITING');
+      setTimeout(function () { if (!reloading) location.reload(); }, 2500);
+      return;
+    }
     var d = document.createElement('div');
     d.id = 'sw-update';
     d.setAttribute('role', 'status');
@@ -5611,7 +5624,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       d.remove();
     });
   }
-  navigator.serviceWorker.register('./sw.js').then(function (reg) {
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
     reg.addEventListener('updatefound', function () {
       var nw = reg.installing;
       if (!nw) return;
