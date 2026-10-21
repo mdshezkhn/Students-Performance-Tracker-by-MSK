@@ -440,10 +440,15 @@
       Title: [sem.className, 'all-report-cards', sem.name].filter(Boolean).join(' - '),
       Company: sem.school || 'SPR — by Teacher Mo'
     });
+    const used = {};   /* two students can share a display name — Excel sheet
+                          names must be unique or SheetJS throws mid-export */
     for (const s of sem.students) {
-      const name = (s.nameEn || s.nameCn || s.id).replace(/[\\\/\?\*\[\]:]/g, '-');
+      const base = ((s.nameEn || s.nameCn || s.id) + '').replace(/[\\\/\?\*\[\]:]/g, '-').substring(0, 28) || 'Student';
+      let name = base, i = 2;
+      while (used[name]) { name = base.substring(0, 27) + '-' + (i++); }
+      used[name] = true;
       const ws = exportReportCard(sem, s.id, analysis);
-      XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 28));
+      XLSX.utils.book_append_sheet(wb, ws, name);
     }
     return wb;
   }

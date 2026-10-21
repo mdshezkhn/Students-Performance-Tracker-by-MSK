@@ -2697,7 +2697,9 @@
     onGridKey(e);
   });
   window.addEventListener('beforeunload', function() {
-    if (DB) { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {} }
+    /* offline/legacy mode only: online mode keeps data encrypted at rest
+       (plaintext mirror in localStorage would contradict that promise) */
+    if (DB && !cryptoOK()) { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {} }
   });
   document.addEventListener('paste', onGridPaste);
 
@@ -3045,7 +3047,7 @@
      on admin sign-in. Last save wins; every payload carries a content digest
      and an HMAC so tampered or identical copies are detected. */
   const DS_KEY = 'spr-devicesync-v1';
-  let DS_BOOT_TS = 0, dsTimer = null;
+  let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
   function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
   function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
@@ -3112,6 +3114,7 @@
   function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
   async function dsPushNow(interactive) {
     if (!dsOn() || !dsAdminActive()) return false;
+    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
     const cfg = dsCfg();
     try {
       const env = await dsSeal();
@@ -3142,6 +3145,17 @@
     return !mine || !cloud || mine.hash !== cloud.hash;
   }
   async function dsPullCheck(interactive) {
+    /* hold auto-pushes for the whole check INCLUDING the decision dialog —
+       otherwise the 4s-debounced push could overwrite the newer cloud copy
+       while the user is still deciding whether to open it */
+    dsHoldPush = true;
+    try { await dsPullCheckInner(interactive); }
+    finally {
+      dsHoldPush = false;
+      if (dsOn() && dsAdminActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+    }
+  }
+  async function dsPullCheckInner(interactive) {
     if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
     if (!dsAdminActive()) { if (interactive) toast('Sign in as the admin to check the cloud copy', true); return; }
     const cfg = dsCfg();
@@ -3450,6 +3464,13 @@
     chartTheme();
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
     window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
+    /* a push scheduled but not yet fired when the tab is hidden/closed would
+       otherwise leave the cloud copy one edit behind — flush best effort */
+    function dsFlushPending() {
+      if (dsTimer) { clearTimeout(dsTimer); dsTimer = null; try { dsPushNow(false); } catch (e) {} }
+    }
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') dsFlushPending(); });
+    window.addEventListener('pagehide', dsFlushPending);
     DB = emptyDB();
     buildShell();
     document.title = "Student's Performance Report";
