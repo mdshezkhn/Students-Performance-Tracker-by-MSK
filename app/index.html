@@ -2163,7 +2163,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       v2.fmt = 2;
       v2.data = await sealDB(DB, SESSION.dk);
       v2.ts = Date.now();
-      localStorage.setItem(V2_KEY, JSON.stringify(v2));
+      writeV2(v2);
       flashSaved(silent);
     } catch (e) { toast('Could not save — storage full?', true); }
   }
@@ -2400,7 +2400,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             '<button class="btn" data-action="import-xlsx">Import SPR Excel file</button>' +
             '<button class="btn" data-action="load-sample">Load sample data</button>' +
           '</div>' +
-          '<p class="small muted" style="margin-top:22px">Everything stays in this browser — nothing is sent to any server unless you use Share &amp; Sync. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Use “Download backup” in Manage to move data between computers.</p>' +
+          '<p class="small muted" style="margin-top:22px">Everything stays in this browser — nothing is sent to any server unless you use Share &amp; Sync or turn on Device sync (both encrypt before upload). Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Move data between computers with “Download backup”, or — as admin — let Device sync keep every system current automatically.</p>' +
           '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
           '<div class="rail-privacy" style="margin-top:14px;text-align:center"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
         '</div>' +
@@ -3464,6 +3464,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '" style="width:64px"></label>' +
         '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '" style="width:64px"></label>' +
       '</div></div>' +
+      '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Help &amp; support</b> — the illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</p>' +
+      '<div class="flex">' +
+      '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teachers-Operation-Manual.pdf" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
+      '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4" target="_blank" rel="noopener">Watch the video guide</a></div>' +
+      '<p class="small muted" style="margin-top:8px">Something looks wrong or a feature misbehaves? Note what you did and what happened, and tell the site owner (Teacher Mo) — fixes usually ship within a day. Your data lives in this browser: before any experiment, use “Download full backup” below.</p></div>' +
       /* password change UI removed for the shared-campus setup (owner decision):
          one shared password per account; changing it on a shared machine locks
          colleagues out. change-pass-save handler kept dormant in source. */
@@ -3494,6 +3499,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           ? '<button class="btn sm" data-action="master-set-open">Replace master password</button> <button class="btn sm danger" data-action="master-del">Remove master password</button>'
           : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
+      ((currentUser() || {}).role === 'admin' && cryptoOK() ? dsManageCard() : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
         var c = getShare();
@@ -3971,14 +3977,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<li>Data lives in this browser — online, stored <b>encrypted</b> (your password unlocks it); the offline file version stores it unencrypted.</li>' +
       '<li><b>Nothing leaves this device unless you use Save &amp; Share</b>, which uploads an <b>encrypted</b> copy of one class to a private cloud channel (Supabase, a hosted database service). The key stays inside your share link — the cloud stores only encrypted bytes. Anyone with that full link can open the class — send it only to your co-teacher.</li>' +
       '<li>Exported files (Excel / JSON backups) are <b>not encrypted</b>. Store them only on school-approved storage, and delete them when no longer needed.</li>' +
-      '<li>This website is a static page — no server, no database, no tracking. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Your student data remains stored in this browser unless you export a backup or use Share &amp; Sync.</li></ul>' +
+      '<li>This website is a static page — no server of its own, no tracking. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Your student data remains stored in this browser unless you export a backup or use Share &amp; Sync / Device sync — both encrypt everything (AES-GCM) before anything leaves this browser, so the cloud only ever stores unreadable bytes.</li></ul>' +
       '<h4>Your responsibilities</h4><ul>' +
       '<li>This browser profile contains confidential student information — protect the device (screen lock, no shared accounts).</li>' +
       '<li>Backup files (JSON / Excel exports) contain full student data. Store them only on encrypted or school-approved storage, and delete them when no longer needed.</li>' +
       '<li>Avoid entering student data on shared or public computers. If unavoidable, use “Erase everything” in Manage &amp; setup before leaving.</li>' +
       '<li>Sharing student performance outside school (parents, other staff) should follow your school’s policy and applicable law (e.g. PIPL in China, GDPR elsewhere).</li></ul>' +
       '<h4>Removing data</h4><ul>' +
-      '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, or delete the bin at npoint.io.</li></ul>' +
+      '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, delete the bin at npoint.io, or (Device sync) use “Turn off &amp; delete cloud copy” in Manage.</li></ul>' +
       '<p class="small muted">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</p></div>' +
       '<div class="dlg-actions"><button class="btn primary" data-action="' + (gate ? 'privacy-gate-ack' : 'dlg-close') + '">' +
       (gate ? 'I understand' : 'Close') + '</button></div>';
@@ -4159,6 +4165,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       credit: 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)',
       author: 'Mohammed Shehzad Khan (Teacher Mo)',
     });
+    const pc = dsCfg();   /* backups carry the device-sync pairing so a restore
+                             on another system re-enables sync there by itself */
+    if (pc && pc.on && pc.channel && pc.key) out.__sprPair = { channel: pc.channel, key: pc.key };
     DB.settings.lastBackupAt = Date.now();   /* powers the gentle backup reminder */
     try { saveDB(true); } catch (e) {}
     const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
@@ -4183,12 +4192,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
         downloadBackup();
         d.semesters.forEach(normalizeSemester);
+        const pairCfg = d.__sprPair; if (pairCfg) delete d.__sprPair;
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
         d.credit = d.credit || 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)';
         d.author = d.author || 'Mohammed Shehzad Khan (Teacher Mo)';
         DB = d;
         if (!DB.semesters.find((s) => s.id === DB.currentSemesterId)) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
         saveDB(true); buildShell(); location.hash = '#/dashboard'; route(); toast('Backup restored');
+        if (pairCfg && pairCfg.channel && pairCfg.key) dsPair(pairCfg.channel, pairCfg.key);
       } catch (err) { toast('Restore failed: ' + err.message, true); }
     };
     reader.readAsText(file);
@@ -4236,7 +4247,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         auth.users = auth.users.filter((u) => u.username !== un);
         saveAuth(auth);
         const v2 = readV2();
-        if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; localStorage.setItem(V2_KEY, JSON.stringify(v2)); }
+        if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
@@ -4278,7 +4289,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (SESSION.dk && v2 && v2.wraps) {
           try {
             v2.wraps[un] = await makeWrap(SESSION.dk, pw);
-            localStorage.setItem(V2_KEY, JSON.stringify(v2));
+            writeV2(v2);
           } catch (e2) { if (err) err.textContent = 'Account created, but key wrapping failed: ' + e2.message; return; }
         }
         closeDlg();
@@ -4317,7 +4328,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
           try {
             v2.wraps[un] = await makeWrap(SESSION.dk, nw);
-            localStorage.setItem(V2_KEY, JSON.stringify(v2));
+            writeV2(v2);
           } catch (e2) { if (err) err.textContent = 'Saved, but re-keying failed: ' + e2.message; return; }
         }
         closeDlg();
@@ -4361,7 +4372,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         try {
           v2.wraps[admin.username] = await makeWrap(dk, nw);
           admin.hash = hashPassword(nw);
-          localStorage.setItem(V2_KEY, JSON.stringify(v2));
+          writeV2(v2);
           saveAuth(auth);
         } catch (e) { if (err) err.textContent = 'Recovery failed: ' + e.message; return; }
         closeDlg();
@@ -4396,7 +4407,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (!v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found — sign out and in once first.'; return; }
         try {
           v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, pw);
-          localStorage.setItem(V2_KEY, JSON.stringify(v2));
+          writeV2(v2);
         } catch (e) { if (err) err.textContent = 'Saving failed: ' + e.message; return; }
         closeDlg();
         toast('Master password set — write it on paper, SPR cannot show it again.');
@@ -4411,7 +4422,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           'The sign-in screen will no longer offer admin recovery on this device. If the admin password is then forgotten, the data can no longer be unlocked here.', 'Remove');
         if (!okGo) return;
         const v2 = readV2();
-        if (v2 && v2.wraps && v2.wraps[MASTER_KEY]) { delete v2.wraps[MASTER_KEY]; localStorage.setItem(V2_KEY, JSON.stringify(v2)); }
+        if (v2 && v2.wraps && v2.wraps[MASTER_KEY]) { delete v2.wraps[MASTER_KEY]; writeV2(v2); }
         toast('Master password removed.');
         if (location.hash === '#/manage') renderManage();
       })();
@@ -4475,7 +4486,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         } catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
         me.hash = hashPassword(nw);
         saveAuth(auth);
-        localStorage.setItem(V2_KEY, JSON.stringify(v2));
+        writeV2(v2);
         try { sessionStorage.setItem('spr-session', JSON.stringify({ user: me.username, dk: b64uFromBytes(SESSION.dk) })); } catch (e) {}
         closeDlg(); toast('Password updated — use it next time you sign in.');
         if (location.hash === '#/manage') renderManage();
@@ -4499,6 +4510,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(inp.value).then(() => toast('Share link copied'), () => { inp.select(); document.execCommand('copy'); toast('Share link copied'); });
       } else { inp.select(); document.execCommand('copy'); toast('Share link copied'); }
+      return;
+    }
+    if (a === 'ds-enable') { dsEnable(); return; }
+    if (a === 'ds-now') { dsPullCheck(true); return; }
+    if (a === 'ds-link') { dsLinkModal(); return; }
+    if (a === 'ds-off') { dsOff(false); return; }
+    if (a === 'ds-off-del') { dsOff(true); return; }
+    if (a === 'ds-copy') {
+      const inp = $('#dsLinkInp');
+      if (!inp) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inp.value).then(() => toast('Pairing link copied'), () => { inp.select(); document.execCommand('copy'); toast('Pairing link copied'); });
+      } else { inp.select(); document.execCommand('copy'); toast('Pairing link copied'); }
       return;
     }
     if (a === 'privacy-open') { openPrivacy(); return; }
@@ -5039,9 +5063,258 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
   }
   function maybeJoin() {
-    const m = (location.hash || '').match(/^#join=([^&]+)(?:&k=([^&]+))?/);
-    if (!m) return;
-    shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null);
+    const h = location.hash || '';
+    const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?/);
+    if (m) { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null); return; }
+    const p = h.match(/^#pair=([^&]+)&k=([^&]+)/);
+    if (p) dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+  }
+
+  /* ============================ device sync (admin) ============================
+     Whole-database cloud mirror for the admin. The complete encrypted state
+     (accounts + wrapped data keys + sealed workbook) is AES-GCM sealed under a
+     random 256-bit sync key; only unreadable ciphertext reaches the cloud row.
+     The key travels ONLY inside the pairing link (#pair=<channel>&k=<key>) and
+     inside JSON backups. Automatic: debounced push after every save, pull-check
+     on admin sign-in. Last save wins; every payload carries a content digest
+     and an HMAC so tampered or identical copies are detected. */
+  const DS_KEY = 'spr-devicesync-v1';
+  let DS_BOOT_TS = 0, dsTimer = null;
+  function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
+  function dsOn() { const c = dsCfg(); return !!(c && c.on); }
+  function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
+  function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
+  function dsDeviceName() {
+    const c = dsCfg(); if (c && c.device) return c.device;
+    const ua = navigator.userAgent || '';
+    const b = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    const os = /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : 'device';
+    return b + ' · ' + os;
+  }
+  function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) + '&k=' + encodeURIComponent(c.key) : null; }
+  /* stable content digest: everything except volatile timestamps */
+  function dsContentString() {
+    const v2 = readV2() || { fmt: 2, wraps: {} };
+    return JSON.stringify({ users: getAuth().users, v2: { fmt: v2.fmt, wraps: v2.wraps || {}, data: v2.data || null } });
+  }
+  async function dsSum(str) {
+    const d = await subtle().digest('SHA-256', new TextEncoder().encode(str));
+    return b64uFromBytes(new Uint8Array(d)).slice(0, 22);
+  }
+  async function dsHmac(keyBytes, ctBytes) {
+    const k = await subtle().importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    return b64uFromBytes(new Uint8Array(await subtle().sign('HMAC', k, ctBytes)));
+  }
+  async function dsSeal() {
+    const cfg = dsCfg();
+    const keyBytes = bytesFromB64u(cfg.key);
+    const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
+    const sum = await dsSum(dsContentString());
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: getAuth().users, v2: v2 });
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
+    return { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+  }
+  async function dsOpen(row) {
+    const env = row && row.payload;
+    if (!env || env.sprDS !== 1) throw new Error('that cloud row is not a device-sync copy');
+    const cfg = dsCfg(); if (!cfg) throw new Error('device sync is not set up on this browser');
+    const keyBytes = bytesFromB64u(cfg.key);
+    const ctBytes = bytesFromB64u(env.ct);
+    const mac = await dsHmac(keyBytes, ctBytes);
+    if (mac !== env.mac) throw new Error('the cloud copy failed its integrity check (wrong pairing key, or the row was tampered with)');
+    const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+    const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(env.iv) }, ck, ctBytes);
+    const obj = JSON.parse(new TextDecoder().decode(pt));
+    if (!obj || obj.sprDS !== 1 || !Array.isArray(obj.users) || !obj.v2) throw new Error('the cloud copy is damaged');
+    return obj;
+  }
+  function dsInstall(obj) {
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
+      localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
+      try { sessionStorage.removeItem('spr-session'); } catch (e2) {}
+    } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
+    location.reload();
+  }
+  function scheduleSyncPush() {
+    if (!dsOn() || !dsAdminActive()) return;
+    clearTimeout(dsTimer);
+    dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
+  }
+  function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
+  async function dsPushNow(interactive) {
+    if (!dsOn() || !dsAdminActive()) return false;
+    const cfg = dsCfg();
+    try {
+      const env = await dsSeal();
+      const row = await sbGet(cfg.channel).catch(function () { return null; });
+      if (row && row.payload && row.payload.sum === env.sum) {
+        cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+        if (interactive) toast('Cloud copy already up to date');
+        return true;
+      }
+      const at = new Date().toISOString();
+      const who = cfg.device || 'admin device';
+      let r = await sbSave(cfg.channel, env, 'devicesync', who, at, !row);
+      if (r === 'conflict') r = await sbSave(cfg.channel, env, 'devicesync', who, at, false);
+      if (r !== 'ok') throw new Error('cloud save rejected');
+      cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+      if (interactive) toast('Cloud copy updated');
+      if (location.hash === '#/manage') renderManage();
+      return true;
+    } catch (e) {
+      const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
+      if (interactive) toast('Cloud save failed — it will retry on your next change', true);
+      return false;
+    }
+  }
+  function dsAdminHashDiffers(obj) {
+    const mine = getAuth().users.find(function (u) { return u.username === SESSION.user; });
+    const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
+    return !mine || !cloud || mine.hash !== cloud.hash;
+  }
+  async function dsPullCheck(interactive) {
+    if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
+    if (!dsAdminActive()) { if (interactive) toast('Sign in as the admin to check the cloud copy', true); return; }
+    const cfg = dsCfg();
+    let row;
+    try { row = await sbGet(cfg.channel); }
+    catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
+    cfg.lastCheck = new Date().toISOString(); dsSaveCfg(cfg);
+    if (!row) { if (interactive) toast('No cloud copy yet — it is created on your next change'); if (location.hash === '#/manage') renderManage(); return; }
+    let obj;
+    try { obj = await dsOpen(row); }
+    catch (e) { if (interactive) toast(e.message, true); return; }
+    const localSum = await dsSum(dsContentString());
+    if (obj.sum === localSum) { cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg); if (interactive) toast('This device already has the newest copy'); if (location.hash === '#/manage') renderManage(); return; }
+    const cloudTs = obj.ts || 0;
+    if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
+    const ok = await confirmDlg('A newer copy is in the cloud',
+      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
+      (dsAdminHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different admin password — use the password from the device that saved it.' : ''),
+      'Open cloud copy');
+    if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
+    downloadBackup();
+    dsInstall(obj);
+  }
+  async function dsFreshInstall(username, password) {
+    /* fresh browser paired via the pairing link: pull accounts + data BEFORE login.
+       Installs quietly and returns true — the caller then signs in normally, no reload. */
+    const cfg = dsCfg();
+    let row;
+    try { row = await sbGet(cfg.channel); }
+    catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
+    if (!row) throw new Error('this pairing has no cloud copy yet — sign in on your main device once so it can save one');
+    const obj = await dsOpen(row);
+    const u = (obj.users || []).find(function (x) { return x.username === username; });
+    if (!u || u.hash !== hashPassword(password)) return false;
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
+      localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
+      try { localStorage.removeItem(LS_KEY); } catch (e2) {}
+    } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
+    DS_BOOT_TS = (obj.v2 && obj.v2.ts) || Date.now();
+    return true;
+  }
+  function dsPair(channel, key) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
+    const cfg = dsCfg() || {};
+    cfg.on = true; cfg.channel = channel; cfg.key = key;
+    cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
+    dsSaveCfg(cfg);
+    const fresh = !readV2() && getAuth().users.length === 0;
+    toast(fresh ? 'Device paired — now sign in with your SPR account; your data arrives from the cloud'
+                : 'Device paired — cloud sync is on and will be checked when an admin signs in');
+    if (document.body.classList.contains('auth-gate')) renderLogin();
+  }
+  function dsEnable() {
+    if (!dsAdminActive()) { toast('Sign in as the admin to turn on device sync', true); return; }
+    (async () => {
+      const ok = await confirmDlg('Turn on device sync?',
+        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change, and open it when the admin signs in on another system.<br><br>The copy is sealed with a random 256-bit key that lives <b>only in your pairing link</b> — the cloud never sees names, scores or passwords. Set up each of your systems once with that link, then just sign in normally.<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
+      if (!ok) return;
+      const cfg = dsCfg() || {};
+      cfg.on = true;
+      cfg.channel = cfg.channel || uuid();
+      cfg.key = cfg.key || b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
+      cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
+      dsSaveCfg(cfg);
+      const done = await dsPushNow(false);
+      toast(done ? 'Device sync is on — cloud copy saved. Use “Show pairing link & QR” to set up your other systems.'
+                 : 'Device sync is on, but the first cloud save failed — it will retry on your next change.', !done);
+      if (location.hash === '#/manage') renderManage();
+    })();
+  }
+  function dsLinkModal() {
+    const link = dsLink();
+    if (!link) { toast('Turn on device sync first', true); return; }
+    openDlg(
+      '<h3>Pair another system</h3>' +
+      '<p class="small">Open this link <b>once</b> on each of your other systems (or scan the code with a phone), then sign in with your SPR account — everything arrives from the cloud and stays in sync automatically.<br><br>The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
+      '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
+        '<div id="dsQrBox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
+        '<div style="flex:1;min-width:220px"><input class="inp" id="dsLinkInp" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+        '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn" data-action="ds-copy">Copy link</button>' +
+        '<button class="btn" data-x="ds-close">Close</button></div></div>' +
+      '</div>',
+      (d) => {
+        try {
+          const q = qrcode(0, 'M'); q.addData(link); q.make();
+          const box = $('#dsQrBox'); if (box) box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 });
+        } catch (e) { const box = $('#dsQrBox'); if (box) box.textContent = 'QR unavailable — use the link'; }
+        d.onclick = (e) => { if (e.target.closest('[data-x="ds-close"]')) closeDlg(); };
+      }
+    );
+  }
+  function dsOff(withDelete) {
+    const cfg = dsCfg(); if (!cfg || !cfg.on) return;
+    (async () => {
+      const ok = await confirmDlg(withDelete ? 'Turn off and delete the cloud copy?' : 'Turn off device sync?',
+        withDelete ? 'Syncing stops and SPR tries to <b>delete the encrypted copy</b> from your cloud channel. Everything on this device stays untouched.'
+                   : 'Syncing stops on this device. The encrypted cloud copy stays in place until you delete it (“Turn off &amp; delete”). Everything on this device stays untouched.',
+        withDelete ? 'Turn off & delete' : 'Turn off');
+      if (!ok) return;
+      if (withDelete) {
+        /* Supabase/PostgREST quirk: a DELETE the row policy ignores still
+           returns 204 — so the authoritative step is overwriting the payload
+           with a dead tombstone (destroys the ciphertext); row removal via
+           DELETE is only a best-effort extra. */
+        let dead = false;
+        try {
+          const r2 = await sbSave(cfg.channel, { sprDS: 0, dead: 1 }, 'devicesync', 'turned off', new Date().toISOString(), false);
+          dead = (r2 === 'ok');
+          if (dead) { try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(cfg.channel), { method: 'DELETE', headers: sbHeaders() }); } catch (e2) {} }
+        } catch (e) { dead = false; }
+        toast(dead ? 'Cloud copy deleted' : 'The cloud copy could not be cleared — it stays encrypted and unreadable without your pairing link.', !dead);
+      }
+      dsSaveCfg(null);
+      toast('Device sync is off');
+      if (location.hash === '#/manage') renderManage();
+    })();
+  }
+  function dsManageCard() {
+    const cfg = dsCfg();
+    if (!cfg || !cfg.on) {
+      return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync</b> — keep an encrypted copy of the whole markbook in your private cloud channel, so every system you sign in on shows the same data. Sealed with a random key that never leaves your pairing link; the cloud stores only unreadable bytes.</p>' +
+        '<div class="flex"><button class="btn" data-action="ds-enable">Turn on device sync</button>' +
+        '<span class="small muted" style="align-self:center">Optional — SPR works fully without it.</span></div></div>';
+    }
+    const when = function (iso) { return iso ? new Date(iso).toLocaleString() : '—'; };
+    return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync is on.</b> ' +
+      (cfg.lastResult === 'fail' ? '<span style="color:#b45309">Last cloud save failed — it will retry automatically.</span>'
+                                  : 'An encrypted copy of everything is updated after each change.') + '</p>' +
+      '<table class="tbl"><tbody>' +
+      '<tr><td style="width:180px">This device</td><td>' + U.esc(cfg.device || '—') + '</td></tr>' +
+      '<tr><td>Last cloud save</td><td>' + U.esc(when(cfg.lastPush)) + '</td></tr>' +
+      '<tr><td>Last cloud check</td><td>' + U.esc(when(cfg.lastCheck)) + '</td></tr>' +
+      '</tbody></table>' +
+      '<div class="flex" style="margin-top:10px"><button class="btn sm" data-action="ds-now">Check for newer copy</button>' +
+      '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
+      '<button class="btn sm" data-action="ds-off">Turn off</button>' +
+      '<button class="btn sm danger" data-action="ds-off-del">Turn off &amp; delete cloud copy</button></div>' +
+      '<p class="small muted" style="margin-top:8px">Pair each of your systems once with the link — or just restore a JSON backup there; backups carry the pairing too.</p></div>';
   }
 
   const AUTH_KEY = 'spr-auth-v1';
@@ -5087,8 +5360,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
      migration time; there is no password-change UI, so this is all accounts */
   /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
-    const auth = getAuth();
     if (username === MASTER_KEY) return { error: 'Invalid username or password.' };
+    /* paired fresh browser: quietly pull accounts + data, then sign in normally */
+    let installedFromCloud = false;
+    if (cryptoOK() && !readV2() && getAuth().users.length === 0 && dsOn()) {
+      installedFromCloud = await dsFreshInstall(username, password);   /* throws on cloud errors */
+      if (!installedFromCloud) return { error: 'Invalid username or password.' };
+    }
+    const auth = getAuth();
     const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
     if (!user) return { error: 'Invalid username or password.' };
     if (!cryptoOK()) {
@@ -5105,7 +5384,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       v2.wraps[username] = await makeWrap(dk, password);
       DB = DB || emptyDB();
       v2.data = await sealDB(DB, dk);
-      localStorage.setItem(V2_KEY, JSON.stringify(v2));
+      writeV2(v2);
       try { localStorage.removeItem(LS_KEY); } catch (e) {}
     } else {
       const w = v2.wraps && v2.wraps[username];
@@ -5120,6 +5399,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     saveAuth(auth);
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
+    if (user.role === 'admin' && dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);
+    if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
   }
   function doLogout() {
@@ -5146,7 +5427,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   function renderLogin() {
-    const firstRun = getAuth().users.length === 0;
+    const firstRun = getAuth().users.length === 0 && !dsOn();
     const card = firstRun
       ? '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
@@ -5162,7 +5443,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       : '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Students Performance Report</h2>' +
-          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + '</p>' +
+          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '') + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
@@ -5187,7 +5468,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     v2.wraps[username] = await makeWrap(dk, password);
     DB = DB || emptyDB();
     v2.data = await sealDB(DB, dk);
-    localStorage.setItem(V2_KEY, JSON.stringify(v2));
+    writeV2(v2);
     try { localStorage.removeItem(LS_KEY); } catch (e) {}
     auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
     auth.session = { username: username, name: username, role: 'admin' };
@@ -5201,6 +5482,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
   async function init() {
     chartTheme();
+    DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
+    window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
     DB = emptyDB();
     buildShell();
     document.title = "Student's Performance Report";
