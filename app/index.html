@@ -4530,6 +4530,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       } else { inp.select(); document.execCommand('copy'); toast('Pairing link copied'); }
       return;
     }
+    if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
+    if (a === 'share-native') { shareNative($('#shareLink') ? $('#shareLink').value : ''); return; }
     if (a === 'privacy-open') { openPrivacy(); return; }
     if (a === 'privacy-ack') { closeDlg(); return; } /* legacy: viewer closes plainly */
     if (a === 'dl-class-report') { dlClassReport(); return; }
@@ -4852,8 +4854,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
-        '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn" data-action="share-copy">Copy link</button>' +
-        '<button class="btn" data-x="close">Close</button></div></div>' +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+        (navigator.share ? '<button class="btn primary" data-action="share-native">Share…</button>' : '') +
+        '<button class="btn" data-action="share-copy">Copy link</button>' +
+        '<button class="btn" data-x="close">Close</button></div>' +
+        '<p class="small muted" style="margin-top:8px">' + (navigator.share
+          ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…).'
+          : 'On a computer: copy the link, or let your co-teacher scan the code with a phone.') + '</p></div>' +
       '</div>',
       (d) => {
         try {
@@ -5099,6 +5106,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     return b + ' · ' + os;
   }
   function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) + '&k=' + encodeURIComponent(c.key) : null; }
+  /* native share sheet (WeChat / WhatsApp / QQ / email…) where the platform
+     provides one — phones; computers keep Copy + QR */
+  function shareNative(url) {
+    if (!url) return;
+    if (!navigator.share) { toast('This browser has no share sheet — use Copy link or the QR', true); return; }
+    navigator.share({ title: 'SPR', text: 'SPR link (contains the decryption key — keep it private):', url: url }).catch(function () { /* user cancelled */ });
+  }
   /* stable content digest: everything except volatile timestamps */
   function dsContentString() {
     const v2 = readV2() || { fmt: 2, wraps: {} };
@@ -5275,8 +5289,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="dsQrBox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="dsLinkInp" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
-        '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn" data-action="ds-copy">Copy link</button>' +
-        '<button class="btn" data-x="ds-close">Close</button></div></div>' +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+        (navigator.share ? '<button class="btn primary" data-action="ds-share">Share…</button>' : '') +
+        '<button class="btn" data-action="ds-copy">Copy link</button>' +
+        '<button class="btn" data-x="ds-close">Close</button></div>' +
+        '<p class="small muted" style="margin-top:8px">' + (navigator.share
+          ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…). <b>Send it only to yourself</b> — e.g. WeChat File Transfer or your own email.'
+          : 'On a computer: copy the link, or let your phone scan the code. <b>Keep it only for yourself.</b>') + '</p></div>' +
       '</div>',
       (d) => {
         try {
