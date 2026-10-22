@@ -48,3 +48,19 @@ templates under `source/`, then:
 The build **aborts** when the published files no longer match the last
 committed build (`deploy/`), so hand edits cannot be clobbered unnoticed.
 Override with `--force` only if you really mean to discard them.
+
+## Development & tests
+
+Everything runs from a clean clone — no build tools beyond Python 3 and Node:
+
+    npm install          # jsdom, the single dev dependency (test browser)
+    npm test             # calc regression + completeness + Excel import suites
+    node tests/test-device-sync.js   # jsdom browser suite (device sync)
+    python source/build2.py          # build dist/ + deploy/ (byte-stable)
+
+CI (`.github/workflows/ci.yml`) runs the build, verifies the committed
+`app/index.html` matches what the sources produce, and runs all four
+suites on every push and pull request. The calc regression fixture
+(`tests/fixtures/`) is synthetic; its expected values come from an
+independent Python implementation of the workbook rules
+(`tests/fixtures/generate_expected.py`).
