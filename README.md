@@ -29,3 +29,10 @@ templates under `source/`, then:
 The build **aborts** when the published files no longer match the last
 committed build (`deploy/`), so hand edits cannot be clobbered unnoticed.
 Override with `--force` only if you really mean to discard them.
+
+## How to run tests
+
+No npm needed — plain Node:
+
+    node tests/completeness.test.js   # grading/completeness units
+    node tests/merge.test.js          # device-sync three-way merge + protocol sim

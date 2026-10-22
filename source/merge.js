@@ -108,7 +108,7 @@
       const bm = getKey(bRow, month), lm = getKey(lRow, month), cm = getKey(cRow, month);
       const rm = pick3(bm, lm, cm);
       if (!rm.conflict) {
-        if (isAbsent(rm.v)) delete outRow[month];
+        if (isAbsent(rm.v) || !Object.keys(rm.v).length) delete outRow[month];
         else outRow[month] = deepCopy(rm.v);
         continue;
       }
@@ -191,6 +191,7 @@
         else if (section === 'tests') row = mergeTestsRow(bRow, lRow, cRow, sid, l, conflicts, stats);
         else if (section === 'reportNotes') row = mergeNoteRow(bRow, lRow, cRow, sid, l, conflicts, stats);
         else row = mergeMonthMap(section, bRow, lRow, cRow, sid, l, conflicts, stats);
+        if (section === 'observations' || section === 'spelling' || section === 'daily') row = pruneRow(row);
         if (row) outSec[sid] = row;
       }
       out[section] = outSec;
@@ -198,6 +199,27 @@
     return out;
   }
   function objectMap(arr) { const o = {}; (arr || []).forEach(function (s) { o[s.id] = 1; }); return o; }
+  /* strip empty month maps left behind by deletions, then drop the row if empty */
+  /* prune every month-map section of a semester (fast-path winners skip mergeSem) */
+  function pruneSem(sem) {
+    if (!sem) return sem;
+    for (const section of ['observations', 'spelling', 'daily']) {
+      const sec = sem[section] || {};
+      for (const sid of Object.keys(sec)) {
+        const row = pruneRow(sec[sid]);
+        if (row) sec[sid] = row; else delete sec[sid];
+      }
+    }
+    return sem;
+  }
+  function pruneRow(row) {
+    if (!row || typeof row !== 'object') return null;
+    for (const m of Object.keys(row)) {
+      const v = row[m];
+      if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) delete row[m];
+    }
+    return Object.keys(row).length ? row : null;
+  }
 
   /* ---------------- accounts (users + wraps move together) ---------------- */
   function mergeUsers(base, local, cloud, conflicts, stats) {
@@ -279,9 +301,9 @@
         if (!l || !c) {   // deleted on one side, edited on the other
           stats.conflicts++;
           conflicts.push(mkConflict('semester', { section: 'semester', semesterId: id, semName: (l || c || {}).name || id, label: 'Whole class · ' + ((l || c || {}).name || id) }, b, l, c));
-          if (l) out.semesters.push(deepCopy(l));
+          if (l) out.semesters.push(pruneSem(deepCopy(l)));
         } else out.semesters.push(mergeSem(b, l, c, conflicts, stats));
-      } else if (!isAbsent(r.v)) out.semesters.push(deepCopy(r.v));
+      } else if (!isAbsent(r.v)) out.semesters.push(pruneSem(deepCopy(r.v)));
       else stats.semestersRemoved++;
     }
     return out;
