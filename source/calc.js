@@ -308,8 +308,20 @@
     return out;
   }
 
+  /* descriptors of the (unchanged) grading rules - exported so UI text can
+     never drift from the code that actually computes grades */
+  const BANDS = [
+    { letter: 'A*', min: 84 }, { letter: 'A', min: 74 }, { letter: 'B', min: 64 },
+    { letter: 'C', min: 54 }, { letter: 'D', min: 49 }, { letter: 'U', min: null },
+  ];
+  const WEIGHTS = (function () {
+    const w = {};
+    COMPONENTS_ALL.forEach((k) => { w[k] = k === 'Written' ? 0.2 : 0.1; });
+    return w;
+  })();
+
   return {
-    SKILLS, TESTS, COMPONENTS_ALL, FINAL_MIN_ASSESSED,
+    SKILLS, TESTS, COMPONENTS_ALL, FINAL_MIN_ASSESSED, BANDS, WEIGHTS,
     assessedCount, getAssessmentCompleteness,
     letter, mean, round1, student,
     obsValue, obsMonthPct, obsMonthPctOverall, obsSkillPct,

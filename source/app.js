@@ -688,7 +688,7 @@
   function renderStudents() {
     const sem = cur();
     $('#content').innerHTML = pageHead('Students', 'click a student for the full performance profile',
-      '<input class="inp" id="stuSearch" placeholder="Search name or ID…" value="' + U.esc(ui.q) + '">') +
+      '<input class="inp" id="stuSearch" aria-label="Search students by name or ID" placeholder="Search name or ID…" value="' + U.esc(ui.q) + '">') +
       '<div class="stu-grid" id="stuList">' + stuCards(sem) + '</div>';
   }
 
@@ -1222,11 +1222,49 @@
         '<td class="num small">' + trend + '</td></tr>';
     }).join('');
   }
+  /* one source of truth for the weights/bands text: calc.js itself */
+  function gradeRuleText() {
+    const parts = C.COMPONENTS_ALL.map((k) => {
+      const short = { 'Daily Assignments': 'Daily', 'Mid-Term': 'Mid' }[k] || k;
+      return short + ' ' + Math.round(C.WEIGHTS[k] * 100) + '%';
+    }).join(' + ');
+    const bands = C.BANDS.filter((b) => b.min !== null).map((b) => b.letter + ' &gt; ' + b.min).join(', ');
+    return '<span class="small muted">Final = ' + parts + '. Grades: ' + bands + ', otherwise ' + C.BANDS[C.BANDS.length - 1].letter + '.</span>';
+  }
+  function aboutDialog() {
+    const b = window.SPR_BUILD || {};
+    openDlg(
+      '<h3>About SPR</h3>' +
+      '<table class="tbl"><tbody>' +
+      '<tr><td style="width:150px">Application</td><td>Student&rsquo;s Performance Report (SPR)</td></tr>' +
+      '<tr><td>Version</td><td>' + U.esc(b.v || 'dev') + '</td></tr>' +
+      '<tr><td>Build date</td><td>' + U.esc(b.d || '-') + '</td></tr>' +
+      '<tr><td>Created by</td><td>Mohammed Shehzad Khan (Teacher Mo)</td></tr>' +
+      '</tbody></table>' +
+      '<p class="small" style="margin-top:10px"><b>Your data:</b> all classes and scores are stored <b>encrypted inside this browser</b>. Nothing is uploaded anywhere unless you turn on Device Sync or Save &amp; Share - and then only an encrypted copy travels to your private cloud channel, sealed with a key that never leaves your pairing link or backup file. No analytics, no tracking, no accounts on any server.</p>' +
+      '<p class="small muted">Designed for teachers, by a teacher.</p>',
+      null);
+  }
+  function howGradesDialog() {
+    const rows = C.COMPONENTS_ALL.map((k) =>
+      '<tr><td>' + U.esc(k) + '</td><td class="num">' + Math.round(C.WEIGHTS[k] * 100) + '%</td></tr>').join('');
+    const bands = C.BANDS.map((b) =>
+      '<tr><td><b>' + b.letter + '</b></td><td>' + (b.min === null ? 'below ' + C.BANDS[C.BANDS.length - 2].min : 'above ' + b.min) + '</td></tr>').join('');
+    openDlg(
+      '<h3>How grades are calculated</h3>' +
+      '<p class="small">Every component is scored as a percentage, then weighted:</p>' +
+      '<table class="tbl"><thead><tr><th>Component</th><th class="num">Weight</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<p class="small" style="margin-top:8px">Letter bands:</p>' +
+      '<table class="tbl"><tbody>' + bands + '</tbody></table>' +
+      '<p class="small" style="margin-top:8px"><b>Provisional results:</b> a final grade needs at least <b>' + C.FINAL_MIN_ASSESSED + ' of ' + C.COMPONENTS_ALL.length + '</b> components assessed. With fewer, the student shows <i>Not yet assessed</i>. With ' + C.FINAL_MIN_ASSESSED + '-' + (C.COMPONENTS_ALL.length - 1) + ' assessed, the result is marked provisional and <b>missing components count as 0</b> - so early-term grades can look lower than the student&rsquo;s true level.</p>' +
+      '<p class="small muted">This panel reads its numbers straight from the grading engine (calc.js), so it always matches the computed grades.</p>',
+      null);
+  }
   function renderGrading() {
     const sem = cur();
     const arrow = (k) => ui.gsort.k === k ? (ui.gsort.d < 0 ? ' ↓' : ' ↑') : '';
     $('#content').innerHTML = pageHead('Grading', 'computed live from every score — the same formula as the SPR Excel',
-      '<input class="inp" id="grSearch" placeholder="Search student…" value="' + U.esc(ui.grQ) + '">' +
+      '<input class="inp" id="grSearch" aria-label="Search students" placeholder="Search student…" value="' + U.esc(ui.grQ) + '">' +
       '<button class="btn" data-action="export-xlsx">Export SPR Excel</button>' +
       '<button class="btn" data-action="print">Print</button>') +
       '<div class="sheet"><table class="tbl"><thead><tr>' +
@@ -1236,7 +1274,7 @@
       '<th class="num" data-action="gsort" data-k="final" style="cursor:pointer">Final' + arrow('final') + '</th>' +
       '<th class="c">Grade</th><th class="num">vs last term</th></tr></thead>' +
       '<tbody id="grBody">' + grRows(sem) + '</tbody></table></div>' +
-      '<div class="legend"><span class="small muted">Final = Listening 10% + Speaking 10% + Writing 10% + Reading 10% + Spelling 10% + Daily 10% + Mid-Term 10% + Oral 10% + Written 20%. Grades: A* &gt; 84, A &gt; 74, B &gt; 64, C &gt; 54, D &gt; 49, otherwise U.</span><br><span class="small muted">P n/9 = provisional grade based on n of 9 components (finals appear at 6 or more); fewer than 6 assessed components show Not yet assessed.</span></div>';
+      '<div class="legend">' + gradeRuleText() + '<br><span class="small muted">P n/9 = provisional - n of 9 components assessed; missing components count as 0. Finals appear at ' + C.FINAL_MIN_ASSESSED + ' or more assessed components; below that the result shows Not yet assessed.</span> <button class="btn sm" data-action="how-grades" style="margin-left:6px">How grades are calculated</button></div>';
   }
 
   /* ================================= manage ================================= */
@@ -1393,6 +1431,7 @@
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
+        '<button class="btn" data-action="about-open">About</button>' +
         '<button class="btn" data-action="export-xlsx">Export current semester to Excel</button>' +
         '<button class="btn" data-action="backup">Download full backup (all semesters)</button>' +
         '<span class="small muted" style="align-self:center">' + (function () {
@@ -2499,6 +2538,8 @@
       return;
     }
     if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
+    if (a === 'how-grades') { howGradesDialog(); return; }
+    if (a === 'about-open') { aboutDialog(); return; }
     if (a === 'ds-conf-apply') { dsApplyConflicts(null); return; }
     if (a === 'ds-conf-all-mine') { dsApplyConflicts('mine'); return; }
     if (a === 'ds-conf-all-theirs') { dsApplyConflicts('theirs'); return; }

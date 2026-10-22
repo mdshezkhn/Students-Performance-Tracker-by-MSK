@@ -68,7 +68,11 @@ assert seed_obj.get('meta', '').startswith('SYNTHETIC'), 'refusing to embed a no
 seed_json = json.dumps(seed_obj, ensure_ascii=False)
 app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = ' + seed_json + ';', 1)
 assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed injection failed'
-for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__MERGE__', '__EXCEL__', '__ANALYSIS__', '__APP__'):
+import datetime
+_build_v = hashlib.sha256(app_html.encode('utf-8')).hexdigest()[:10]
+_build_d = datetime.date.today().isoformat()
+app_html = app_html.replace('__BUILD_VERSION__', _build_v, 1).replace('__BUILD_DATE__', _build_d, 1)
+for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__MERGE__', '__EXCEL__', '__ANALYSIS__', '__APP__', '__BUILD_VERSION__', '__BUILD_DATE__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
 # ---------- service worker: version = content hash of the app HTML ----------

@@ -173,3 +173,23 @@ dataset; and a two-device protocol simulation against an in-memory `sbGet`/
 plan (this file) → Task 1 landing claims → Task 2 storage persistence →
 merge.js + build wiring → app.js integration → tests → Task 5 hardening doc +
 doc updates → Task 6 quality items → PR.
+
+## Decisions
+
+## Decisions (task 6 round)
+
+- **Web-app manifest: SKIPPED.** The service worker's version string is the
+  SHA-256 of the app HTML; a manifest file is one more cached asset whose
+  update cadence could disagree with the shell hash during staggered deploys.
+  The offline shell already installs and updates correctly without it, and the
+  owner's SW notes record the omission as intentional. Not worth the risk
+  before the presentation.
+- **Sample data**: values regenerated deterministically around per-student
+  ability targets (A*/A/A/B/C/D for the six fully-assessed students; the six
+  partial students intentionally demonstrate provisional / not-yet-assessed).
+  Structure, names, ids and coverage patterns unchanged; no real data.
+- **Grading text**: the weights/bands legend and the new "How grades are
+  calculated" dialog are generated from `calc.js` exports (`WEIGHTS`, `BANDS`,
+  `FINAL_MIN_ASSESSED`) so the text can never drift from the engine.
+- **Version/About**: `window.SPR_BUILD` (hash + date) is injected by
+  `build2.py`; the About dialog reads it. Owner credit kept verbatim.
