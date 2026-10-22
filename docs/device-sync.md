@@ -50,6 +50,40 @@ sign-in-anywhere bootstrap never breaks. On legacy pre-account pairings
 (random channel, pre-migration), pushes stay admin-only until an admin signs
 in once and moves the channel home.
 
+## Teacher sign-in-anywhere (2026-10-22, pointers)
+Teacher accounts bootstrap on a fresh browser through a **pointer row**: at
+`dsChan(<teacher>)` sits a tiny payload `{chan, key}` — the school data row's
+id and the sync key — sealed under the TEACHER's password (PBKDF2-310k +
+AES-GCM, same KDF as everything else). Written at the only moments the
+plaintext password exists (admin creates / resets the sign-in), removed with
+the account or when the school channel is deleted. Collisions with the same
+username at another school return 409 and are never overwritten — the admin
+renames the sign-in. Sign-in flows through the same verified path as the
+admin's: after unwrap, the data row's account hashes must match, so a swapped
+pointer buys an attacker nothing. Fresh-browser restore installs the teacher
+on the OWNER channel (`cfg.owner = admin`), so every push still lands on the
+one school row — no forks. The Manage → sign-ins table shows a
+"✓ signs in anywhere" badge per account (admin: whenever sync is on;
+teachers: once their pointer exists).
+
+## No-surprise safety copies (2026-10-22)
+Opening a join link, adopting a cloud copy, or restoring a backup no longer
+drops `SPR-backup-before-replace.json` into Downloads — non-technical
+teachers read that as something going wrong. The previous data is kept as an
+in-app safety copy (`spr-safety-backups-v1`, newest three, per browser) and
+Manage → Safety copies offers Restore/Delete. If localStorage refuses
+(quota), the old file download returns so a copy is never silently missing.
+The explicit "Download full backup" button is unchanged.
+
+## Sharing into DingTalk / WeChat (2026-10-22)
+No third-party JS-SDK (WeChat needs a verified official account + ICP
+domain, DingTalk an enterprise app) — instead: "Copy for DingTalk / WeChat"
+(clipboard gets a paste-ready message + link, the way teachers actually
+share), QR (both apps scan natively), OS share sheet on phones, an
+"Open in DingTalk" deep link (`dingtalk://dingtalkclient/page/link`), and
+UA-aware hints when the app already runs inside WeChat/DingTalk (use the
+native forward menu).
+
 ## Threat model
 `spr_channels` is listable with the public publishable key (share links need
 anon read), so the account row is findable by username. Everything inside is

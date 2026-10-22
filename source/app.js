@@ -163,6 +163,26 @@
       document.body.appendChild(a); a.click(); a.remove();
     } catch (e) {}
   }
+  /* in-app safety copy kept BEFORE data gets replaced (join link, cloud copy,
+     backup restore). No file lands in Downloads — non-technical teachers saw
+     the sudden .json and lost trust in the app. Last 3 copies, and if the
+     storage quota refuses, fall back to the old file download so a copy is
+     never silently missing. */
+  const SAFETY_KEY = 'spr-safety-backups-v1';
+  function stashSafetyBackup(label) {
+    try {
+      const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
+      list.unshift({ t: Date.now(), label: label || 'before replace', db: DB });
+      while (list.length > 3) list.pop();
+      localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
+      toast('Safety copy kept — Manage → Backups can bring it back');
+      return true;
+    } catch (e) { downloadBackup(); return false; }
+  }
+  function safetyBackups() {
+    try { const l = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]'); return Array.isArray(l) ? l : []; }
+    catch (e) { return []; }
+  }
   function persistReplaced(db) {
     validateDB(db);
     normalizeDB(db);
@@ -1402,6 +1422,13 @@
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
+      (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
+        '<b>Safety copies</b> <span class="small muted">— kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
+        safetyBackups().map((b, i) => '<div class="flex" style="margin-top:6px;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + ((b.db || {}).semesters || []).length + ' class(es)</span>' +
+          '<button class="btn sm" data-action="sb-restore" data-i="' + i + '">Restore</button>' +
+          '<button class="btn sm danger" data-action="sb-del" data-i="' + i + '">Delete</button></div>').join('') +
+        '</div>' : '') +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
@@ -1444,13 +1471,16 @@
       ((currentUser() || {}).role === 'admin' ?
         '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — the accounts that can open this browser\u2019s data. <b>Admin</b> sees and controls everything; <b>Management</b> also sees the Ranking view; <b>Teachers</b> get the everyday markbook tools. Add a sign-in to give someone their own password here.</p>' +
         (getAuth().users.length ?
-        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col"></th></tr></thead><tbody>' +
+        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col">Any system</th><th scope="col"></th></tr></thead><tbody>' +
         getAuth().users.map((u) => {
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
+          const dsc = dsCfg();
+          const ptrOk = u.role === 'admin' ? dsOn() : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
+            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + (u.role === 'admin' ? '' : ' — reset password to enable') + '</span>') + '</td>' +
             '<td>' + (selfNow ? '' :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
@@ -2156,10 +2186,10 @@
         validateDB(d);
         /* replacing everything deserves a clear question first */
         const okRestore = await confirmDlg('Replace everything with this backup?',
-          'This backup holds <b>' + d.semesters.length + ' semester(s)</b> and will <b>replace all classes currently in this browser</b> (' + DB.semesters.length + ' now).<br><br>Your current data is saved to a file (SPR-backup-before-replace.json) as a safety copy — keep it somewhere you can find it.',
+          'This backup holds <b>' + d.semesters.length + ' semester(s)</b> and will <b>replace all classes currently in this browser</b> (' + DB.semesters.length + ' now).<br><br>Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
           'Replace');
         if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
-        downloadBackup();
+        stashSafetyBackup('before restoring a backup file');
         d.semesters.forEach(normalizeSemester);
         const pairCfg = d.__sprPair; if (pairCfg) delete d.__sprPair;
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
@@ -2219,15 +2249,39 @@
         saveAuth(auth);
         const v2 = readV2();
         if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
+        await dsKillPointer(un);
+        if (dsCanPush()) scheduleSyncPush();   /* the removed account must leave the data row too */
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
     }
+    if (a === 'sb-restore') {
+      (async () => {
+        const list = safetyBackups();
+        const b = list[Number(el.dataset.i)];
+        if (!b || !b.db) { toast('That safety copy is gone', true); return; }
+        const okGo = await confirmDlg('Restore this safety copy?',
+          'Your data from <b>' + new Date(b.t).toLocaleString() + '</b> (' + ((b.db || {}).semesters || []).length + ' classes) will replace what is here now. Today&rsquo;s data is kept as a new safety copy.', 'Restore');
+        if (!okGo) return;
+        stashSafetyBackup('before restoring a safety copy');
+        persistReplaced(JSON.parse(JSON.stringify(b.db)));
+      })();
+      return;
+    }
+    if (a === 'sb-del') {
+      const list = safetyBackups();
+      const i = Number(el.dataset.i);
+      if (!list[i]) return;
+      list.splice(i, 1);
+      try { localStorage.setItem(SAFETY_KEY, JSON.stringify(list)); } catch (e) {}
+      if (location.hash === '#/manage') renderManage();
+      return;
+    }
     if (a === 'acct-add-open') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Add a sign-in</h3>' +
-        '<p class="small">Creates an account with its own password that opens this same markbook on this device. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
+        '<p class="small">Creates an account with its own password that opens this same markbook. With device sync on, it also works on any other system — the teacher signs in and the same data arrives. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
         '<label>Username <input class="inp" id="naUser" placeholder="e.g. ZFYBLS" autocomplete="off"></label>' +
         '<label>Display name <input class="inp" id="naName" placeholder="shown on the sidebar (optional)"></label>' +
         '<label>Role <select class="inp" id="naRole"><option value="teacher">Teacher</option><option value="management">Management</option></select></label>' +
@@ -2264,7 +2318,11 @@
           } catch (e2) { if (err) err.textContent = 'Account created, but key wrapping failed: ' + e2.message; return; }
         }
         closeDlg();
-        toast('Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
+        const ptr = await dsWritePointer(un, pw);
+        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new account hash in the data row */
+        toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') — works on any system they sign in from'
+             : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
+             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -2303,8 +2361,12 @@
           } catch (e2) { if (err) err.textContent = 'Saved, but re-keying failed: ' + e2.message; return; }
         }
         if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
+        const ptr = await dsWritePointer(un, nw);
+        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
         closeDlg();
-        toast('Password updated for ' + un);
+        toast(ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
+             : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
+             : 'Password updated for ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -2487,6 +2549,9 @@
     if (a === 'ds-enable') { dsEnable(); return; }
     if (a === 'ds-now') { dsPullCheck(true); return; }
     if (a === 'ds-link') { dsLinkModal(); return; }
+    if (a === 'ds-ding') { const i = $('#dsLinkInp'); if (i) dingtalkOpen(i.value); return; }
+    if (a === 'share-chatmsg') { const i = $('#shareLink'); if (i) copyChatMessage(i.value, 'SPR class markbook — tap to open and join our class:'); return; }
+    if (a === 'share-ding') { const i = $('#shareLink'); if (i) dingtalkOpen(i.value); return; }
     if (a === 'ds-off') { dsOff(false); return; }
     if (a === 'ds-off-del') { dsOff(true); return; }
     if (a === 'ds-copy') {
@@ -2818,12 +2883,15 @@
     openDlg(
       '<h3>Share this class</h3>' +
       '<p class="small">Send the link to your co-teacher, or let them scan the code with a phone camera. Anyone who has it can open this class — share it only with them.</p>' +
+      (shareAppHint() ? '<p class="small" style="margin-top:-6px">' + shareAppHint() + '</p>' : '') +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        (navigator.share ? '<button class="btn primary" data-action="share-native">Share…</button>' : '') +
+        '<button class="btn primary" data-action="share-chatmsg">Copy for DingTalk / WeChat</button>' +
+        (navigator.share ? '<button class="btn" data-action="share-native">Share…</button>' : '') +
         '<button class="btn" data-action="share-copy">Copy link</button>' +
+        '<button class="btn" data-action="share-ding">Open in DingTalk</button>' +
         '<button class="btn" data-x="close">Close</button></div>' +
         '<p class="small muted" style="margin-top:8px">' + (navigator.share
           ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…).'
@@ -2923,7 +2991,7 @@
       openDlg(
         '<h3>Cloud was updated after your last sync</h3>' +
         '<p class="small">The cloud copy was pushed by <b>' + U.esc(who) + '</b> at ' + U.esc(when) + '. Pushing now would <b>overwrite their newer copy with your older one</b> — sync is last-save-wins.</p>' +
-        '<p class="small"><b>Pull first</b> to get their changes (a backup of your current data downloads too). Push anyway only if you are sure their copy is outdated.</p>' +
+        '<p class="small"><b>Pull first</b> to get their changes (your current copy is kept as a safety copy — Manage &rarr; Backups). Push anyway only if you are sure their copy is outdated.</p>' +
         '<div class="dlg-actions">' +
           '<button class="btn" data-x="2">Cancel</button>' +
           '<button class="btn danger" data-x="1">Push anyway</button>' +
@@ -2958,9 +3026,9 @@
           const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
           const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
           const okGo = await confirmDlg('Open shared copy?',
-            'This will update <b>' + U.esc(nm) + '</b> in this browser with the copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your other classes are untouched. A backup downloads first.', 'Open it');
+            'This will update <b>' + U.esc(nm) + '</b> in this browser with the copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your other classes are untouched. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Open it');
           if (!okGo) return;
-          downloadBackup();
+          stashSafetyBackup('before replacing data');
           c.lastPull = new Date().toISOString(); setShare(c);
           mergeSharedSem(obj.sem);
           toast('Shared copy loaded');
@@ -2968,9 +3036,9 @@
           validateDB(obj.db);
           const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
           const okGo = await confirmDlg('Open shared copy?',
-            'This shared channel carries a <b>whole workbook</b>. Opening it will <b>REPLACE all data in this browser</b> with the cloud copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. A backup of your current data downloads first.', 'Open & replace');
+            'This shared channel carries a <b>whole workbook</b>. Opening it will <b>REPLACE all data in this browser</b> with the cloud copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Open & replace');
           if (!okGo) return;
-          downloadBackup();
+          stashSafetyBackup('before replacing data');
           c.lastPull = new Date().toISOString(); setShare(c);
           persistReplaced(obj.db);
         } else throw new Error('cloud copy has no class data');
@@ -2989,9 +3057,9 @@
       validateDB(obj.db);
       const when = (obj.pushedAt || env.pushedAt) ? new Date(obj.pushedAt || env.pushedAt).toLocaleString() : 'unknown time';
       const okGo = await confirmDlg('Pull from cloud?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. A backup of your current data downloads first.', 'Pull & replace');
+        'This will <b>REPLACE all data in this browser</b> with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Pull & replace');
       if (!okGo) return;
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       c.lastPull = new Date().toISOString(); setShare(c);
       persistReplaced(obj.db);
     } catch (e) { toast('Pull failed: ' + e.message, true); }
@@ -3007,9 +3075,9 @@
       if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
       validateDB(obj.db);
       const okGo = await confirmDlg('Join shared workbook?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. A backup of your current data downloads first. Future Push/Pull uses this bin.', 'Join');
+        'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups). Future Push/Pull uses this bin.', 'Join');
       if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       setShare({ bin: id, key: keyB64 || null, lastPull: new Date().toISOString() });
       history.replaceState(null, '', location.pathname + location.search);
       persistReplaced(obj.db);
@@ -3031,9 +3099,9 @@
       normalizeSemester(obj.sem);
       const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
       const okGo = await confirmDlg('Join shared class?',
-        'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. A backup downloads first.', 'Join');
+        'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Join');
       if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       setShare({ provider: 'sb', channel: channel, key: keyB64 || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
       history.replaceState(null, '', location.pathname + location.search);
       mergeSharedSem(obj.sem);
@@ -3082,6 +3150,64 @@
     return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + variant + '-' + hex.slice(20, 32);
   }
   function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
+  /* ---- teacher bootstrap pointers ----
+     The data row lives at dsChan(ADMIN). A teacher's fresh-browser sign-in
+     knows only the teacher's username, so it looks at dsChan(teacher) — which
+     holds a tiny pointer: {chan, key} of the school row, sealed under the
+     teacher's own password (PBKDF2-310k). Written when the admin creates or
+     resets the sign-in (the only moments the plaintext password is available);
+     removed with the account. Attacking a pointer = brute-forcing the
+     password; swapping rows buys nothing — the sealed payload won't unwrap
+     under the real teacher's password and the data row's account hashes are
+     verified after decryption. */
+  async function ptrSeal(obj, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const bits = await deriveKeyBits(password, salt);
+    const key = await subtle().importKey('raw', bits, 'AES-GCM', false, ['encrypt']);
+    const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj))));
+    return { sprPTR: 1, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+  }
+  async function ptrOpen(payload, password) {
+    const bits = await deriveKeyBits(password, bytesFromB64u(payload.salt));
+    const key = await subtle().importKey('raw', bits, 'AES-GCM', false, ['decrypt']);
+    const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(payload.iv) }, key, bytesFromB64u(payload.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  /* returns 'ok' | 'name-taken' | 'off' (sync not on / not this account's device) */
+  async function dsWritePointer(username, password) {
+    const cfg = dsCfg();
+    if (!dsOn() || !cfg || cfg.adoptedAcct !== true || !SESSION.dk) return 'off';
+    try {
+      const id = await dsChan(username);
+      const env = await ptrSeal({ chan: cfg.channel, key: cfg.key }, password);
+      const known = !!(cfg.pointers && cfg.pointers[username]);
+      if (!known) {
+        /* first write must INSERT: a 409 means this username is already taken
+           in the SPR cloud by another school — never overwrite their pointer */
+        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), true);
+        if (res !== 'ok') return 'name-taken';
+      } else {
+        /* re-seal (password reset): PATCH our own row, then verify it landed —
+           PostgREST reports success even when the id matches zero rows */
+        await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), false);
+        const back = await sbGet(id);
+        if (!back || !back.payload || back.payload.ct !== env.ct) {
+          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), true);
+          if (res !== 'ok') return 'name-taken';
+        }
+      }
+      cfg.pointers = cfg.pointers || {};
+      cfg.pointers[username] = new Date().toISOString();
+      dsSaveCfg(cfg);
+      return 'ok';
+    } catch (e) { return 'off'; }
+  }
+  async function dsKillPointer(username) {
+    const cfg = dsCfg();
+    if (cfg && cfg.pointers) { delete cfg.pointers[username]; dsSaveCfg(cfg); }
+    try { await dsKillRow(await dsChan(username)); } catch (e) {}
+  }
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
   function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
   function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
@@ -3101,6 +3227,33 @@
     return b + ' · ' + os;
   }
   function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) + '&k=' + encodeURIComponent(c.key) : null; }
+  /* ---- China-app aware sharing (DingTalk / WeChat) ----
+     No third-party JS-SDK: WeChat requires a verified公众号 + ICP domain and
+     DingTalk an enterprise app registration. What works everywhere without
+     registrations: paste-ready chat messages (the way teachers actually
+     share), QR codes (both apps scan natively), the OS share sheet on
+     phones, and a DingTalk deep link to open the page inside DingTalk. */
+  function inWeChat() { return /MicroMessenger/i.test(navigator.userAgent || ''); }
+  function inDingTalk() { return /DingTalk/i.test(navigator.userAgent || ''); }
+  function copyChatMessage(url, message) {
+    const text = message + '\n' + url;
+    const done = () => toast('Copied — paste it into your DingTalk or WeChat chat');
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); }); return; }
+    fallbackCopy(text); done();
+  }
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+  function dingtalkOpen(url) { location.href = 'dingtalk://dingtalkclient/page/link?url=' + encodeURIComponent(url) + '&pc_slide=true'; }
+  function shareAppHint() {
+    if (inWeChat()) return 'You are inside WeChat: tap <b>&hellip;</b> (top right) &rarr; <b>Send to friend</b> to forward this page, or long-press the code to scan it from another phone.';
+    if (inDingTalk()) return 'You are inside DingTalk: tap <b>&hellip;</b> (top right) &rarr; <b>Forward</b> to send this page to a colleague.';
+    return '';
+  }
   /* native share sheet (WeChat / WhatsApp / QQ / email…) where the platform
      provides one — phones; computers keep Copy + QR */
   function shareNative(url) {
@@ -3298,10 +3451,10 @@
       catch (e) { if (interactive) toast(e.message, true); return; }
       if (!hit) { if (interactive) toast('The cloud copy was saved under a different admin password — open it with the pairing link instead.', true); return; }
       const ok = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
-        'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is saved to a file first (SPR-backup-before-replace.json).',
+        'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
         'Open cloud copy');
       if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device&rsquo;s data — find the cloud copy later in Manage &rarr; Device sync'); return; }
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       dsInstallFrom(hit, SESSION.user);
       dsInstall(hit.obj);
       return;
@@ -3333,9 +3486,9 @@
         try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
         if (hit) {
           const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
-            'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is saved to a file first (SPR-backup-before-replace.json).',
+            'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
             'Open cloud copy');
-          if (okA) { downloadBackup(); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
+          if (okA) { stashSafetyBackup('before opening the cloud copy'); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
           else if (interactive) toast('Kept this device&rsquo;s data — its pairing key no longer matches the cloud copy', true);
           return;
         }
@@ -3347,11 +3500,11 @@
     const cloudTs = obj.ts || 0;
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
-      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
+      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
-    downloadBackup();
+    stashSafetyBackup('before replacing data');
     dsInstall(obj);
   }
   async function dsFreshInstall(username, password) {
@@ -3386,6 +3539,24 @@
     catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
     if (!row || !row.payload || row.payload.dead) return null;
     const env = row.payload;
+    /* teacher account: this row is a pointer to the school's data row,
+       sealed under the teacher's own password */
+    if (env.sprPTR === 1) {
+      let pt;
+      try { pt = await ptrOpen(env, password); }
+      catch (e) { return false; }
+      if (!pt || !pt.chan || !pt.key) return null;
+      let dataRow;
+      try { dataRow = await sbGet(pt.chan); }
+      catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
+      if (!dataRow || !dataRow.payload || dataRow.payload.dead) return null;
+      const keyB64 = pt.key;
+      const obj = await dsOpenWith(dataRow, keyB64);
+      const u = (obj.users || []).find(function (x) { return x.username === username; });
+      if (!u || u.hash !== hashPassword(password)) return false;
+      const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
+      return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
+    }
     if (env.sprDS !== 1 || !env.wrap) return null;   /* legacy pairing-only row — needs the link */
     let keyBytes;
     try { keyBytes = await unwrapWrap(env.wrap, password); }
@@ -3437,9 +3608,9 @@
           if (SESSION.pw) { try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e) { hit = null; } }
           if (hit) {
             const okGo = await confirmDlg('This account already has a cloud copy',
-              'The account <b>' + U.esc(SESSION.user) + '</b> already keeps an <b>encrypted cloud copy</b> — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is saved to a file first (SPR-backup-before-replace.json).', 'Open cloud copy');
+              'The account <b>' + U.esc(SESSION.user) + '</b> already keeps an <b>encrypted cloud copy</b> — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Open cloud copy');
             if (!okGo) { toast('Device sync left unchanged'); return; }
-            downloadBackup();
+            stashSafetyBackup('before replacing data');
             dsInstallFrom(hit, SESSION.user);
             dsInstall(hit.obj);
             return;
@@ -3472,6 +3643,7 @@
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         (navigator.share ? '<button class="btn primary" data-action="ds-share">Share…</button>' : '') +
         '<button class="btn" data-action="ds-copy">Copy link</button>' +
+        '<button class="btn" data-action="ds-ding">Open in DingTalk</button>' +
         '<button class="btn" data-x="ds-close">Close</button></div>' +
         '<p class="small muted" style="margin-top:8px">' + (navigator.share
           ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…). <b>Send it only to yourself</b> — e.g. WeChat File Transfer or your own email.'
@@ -3506,6 +3678,8 @@
           dead = (r2 === 'ok');
           if (dead) { try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(cfg.channel), { method: 'DELETE', headers: sbHeaders() }); } catch (e2) {} }
         } catch (e) { dead = false; }
+        /* teacher sign-in pointers die with the school channel */
+        for (const un of Object.keys(cfg.pointers || {})) { try { await dsKillPointer(un); } catch (e2) {} }
         toast(dead ? 'Cloud copy deleted' : 'The cloud copy could not be cleared — it stays encrypted and unreadable without your pairing link.', !dead);
       }
       dsSaveCfg(null);
@@ -3597,7 +3771,7 @@
         let r = null;
         try { r = await dsAccountLookup(username, password); }
         catch (e) { netErr = netErr || e; }
-        if (r) { dsInstallFrom(r, username); installedFromCloud = true; }
+        if (r) { dsInstallFrom(r, r.owner || username); installedFromCloud = true; }
         else if (r === false) return { error: 'Invalid username or password.' };
         /* r === null: no cloud copy for this account, continue to the local lookup */
       }
@@ -3614,11 +3788,11 @@
       catch (e) { /* unreachable: fall through to the normal local error */ }
       if (hit) {
         const okGo = await confirmDlg('This account has a cloud copy',
-          'The account <b>' + U.esc(username) + '</b> was not created on this device, but its <b>encrypted cloud copy</b> exists — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is saved to a file first (SPR-backup-before-replace.json).',
+          'The account <b>' + U.esc(username) + '</b> was not created on this device, but its <b>encrypted cloud copy</b> exists — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
           'Open cloud copy');
         if (!okGo) { renderLogin(); const eEl = $('#loginErr'); if (eEl) eEl.textContent = 'Invalid username or password.'; return { error: '__shown__' }; }
-        downloadBackup();
-        dsInstallFrom(hit, username);
+        stashSafetyBackup('before replacing data');
+        dsInstallFrom(hit, hit.owner || username);
         installedFromCloud = true;
       }
     }

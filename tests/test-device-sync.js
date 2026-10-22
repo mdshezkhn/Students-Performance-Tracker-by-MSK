@@ -55,6 +55,9 @@ function boot(preStorage, preSession) {
   const stub = '<script>' + pre +
     'window.__SB=' + JSON.stringify(SB) + ';' +
     'window.Chart=function(){};Chart.defaults={font:{},color:"",borderColor:""};' +
+    'window.__downloads=[];' +
+    'try{var oc=HTMLAnchorElement.prototype.click;' +
+    'HTMLAnchorElement.prototype.click=function(){if(this.download)window.__downloads.push(this.download);return oc.apply(this,arguments)}}catch(e){}' +
     '(function(){var d=document.getElementById("dlg");if(d&&!d.showModal){d.showModal=function(){this.open=true};d.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();' +
     'window.fetch=' + SB_FETCH_SRC + ';' +
     '</script>';
@@ -341,7 +344,7 @@ function loginAs(B, user, pass) {
   // sign out and back in as the teacher on this paired device
   click(Bb, Bb.d.querySelector('[data-action="logout"]'));
   await sleep(400);
-  const Bt = reboot(Bb);
+  let Bt = reboot(Bb);
   await sleep(700);
   loginAs(Bt, TEA, TEAPW);
   await waitFor(function () { return !Bt.d.body.classList.contains('auth-gate'); }, 20000);
@@ -374,19 +377,131 @@ function loginAs(B, user, pass) {
   ok(teaPushed, 'teacher edit auto-pushed to the same cloud row');
   ok(String(SB[rows[0]].pushed_by || '').indexOf(TEA) !== -1, 'push credited to “device — ' + TEA + '” (got: ' + SB[rows[0]].pushed_by + ')');
   ok(JSON.stringify(SB[rows[0]].payload.wrap) === JSON.stringify(wrapBeforeTea), 'owner password wrap preserved by the teacher push');
-  // a teacher account alone still cannot bootstrap a brand-new browser
-  // (documented limit — pairing link / admin sign-in does that), and no
-  // second cloud row (fork) is ever created
-  const E = boot();
+  // with the cloud pointer (written at account creation), a teacher CAN now
+  // bootstrap a brand-new browser — and still no fork: one data row + one
+  // small pointer row, nothing else
+  syncSB(Bt);
+  ok(Object.keys(SB).filter(function (id) { return SB[id].payload && SB[id].payload.sprDS === 1; }).length === 1, 'still exactly one DATA row for the school');
+  ok(Object.keys(SB).filter(function (id) { return SB[id].payload && SB[id].payload.sprPTR === 1; }).length === 1, 'plus exactly one pointer row (teacher bootstrap)');
+
+  /* ---------- S8: teacher sign-in-anywhere (cloud pointer) ---------- */
+  console.log('== S8: teacher signs in on a FRESH browser via cloud pointer ==');
+  const TEAPW2 = 'teacher-pass-2-reset';
+  syncSB(Bt);
+  const allRows = Object.keys(SB);
+  const dataRows = allRows.filter(function (id) { return SB[id].payload && SB[id].payload.sprDS === 1; });
+  const ptrRows = allRows.filter(function (id) { return SB[id].payload && SB[id].payload.sprPTR === 1; });
+  ok(dataRows.length === 1, 'exactly one data row (no fork)');
+  ok(ptrRows.length === 1, 'pointer row exists for the teacher account');
+  ok(ptrRows.length === 1 && SB[ptrRows[0]].payload.ct, 'pointer payload is sealed ciphertext');
+  ok(ptrRows.length === 1 && String(SB[ptrRows[0]].share_name) === 'ds-ptr', 'pointer row tagged ds-ptr (not listed as a school copy)');
+  /* fresh browser: teacher signs in with the ORIGINAL password -> everything arrives */
+  const G1 = boot();
   await sleep(300);
-  await ackGate(E);
-  loginAs(E, TEA, TEAPW);
-  const teaRejected = await waitFor(function () {
-    return ((E.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1;
-  }, 20000);
-  ok(teaRejected, 'teacher fresh-browser sign-in alone is rejected (no fork, no leak)');
-  syncSB(E);
-  ok(Object.keys(SB).length === 1 && !!SB[rows[0]], 'still exactly one cloud row for the school');
+  await ackGate(G1);
+  loginAs(G1, TEA, TEAPW);
+  const teaBoot1 = await waitFor(function () { return !G1.d.body.classList.contains('auth-gate'); }, 25000);
+  ok(teaBoot1, 'teacher fresh-browser sign-in restored the whole markbook');
+  ok(teaBoot1 && G1.w.SPR_DEBUG_GET_DB().semesters.length > 0, 'teacher sees the classes');
+  const cfgG1 = JSON.parse(G1.w.localStorage.getItem('spr-devicesync-v1') || 'null');
+  ok(!!(cfgG1 && cfgG1.channel === dataRows[0] && cfgG1.owner === ADMIN && cfgG1.adoptedAcct === true), 'teacher device joined the OWNER channel (cfg.owner=admin)');
+  /* fresh browser: wrong teacher password is rejected */
+  const G2 = boot();
+  await sleep(300);
+  await ackGate(G2);
+  loginAs(G2, TEA, 'wrong-password-99');
+  const rej = await waitFor(function () { return ((G2.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+  ok(rej, 'wrong teacher password rejected on the pointer row');
+  /* admin resets the teacher password -> old pointer password dies, new one works */
+  click(Bt, Bt.d.querySelector('[data-action="logout"]'));
+  await sleep(400);
+  Bt = reboot(Bt);
+  await sleep(700);
+  loginAs(Bt, ADMIN, PW);
+  await waitFor(function () { return !Bt.d.body.classList.contains('auth-gate'); }, 25000);
+  await ackPrivacy(Bt);
+  Bt.w.location.hash = '#/manage';
+  await sleep(300);
+  click(Bt, Bt.d.querySelector('[data-action="acct-reset-open"][data-user="' + TEA + '"]'));
+  await sleep(150);
+  setVal(Bt, Bt.d.getElementById('rpPass'), TEAPW2);
+  setVal(Bt, Bt.d.getElementById('rpConf'), TEAPW2);
+  syncSB(Bt);
+  const ptrCtBefore = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
+  click(Bt, Bt.d.querySelector('[data-action="acct-reset"]'));
+  const resealed = await waitFor(function () {
+    syncSB(Bt);
+    return SB[ptrRows[0]] && SB[ptrRows[0]].payload.ct !== ptrCtBefore;
+  }, 25000);
+  ok(resealed, 'password reset re-sealed the pointer row');
+  syncSB(Bt);
+  const dataAtBefore = SB[dataRows[0]] ? SB[dataRows[0]].pushed_at : null;
+  const hashPushed = await waitFor(function () {
+    syncSB(Bt);
+    return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== dataAtBefore;
+  }, 25000);
+  ok(hashPushed, 'reset also pushed the new account hash to the data row');
+  const G3 = boot();
+  await sleep(300);
+  await ackGate(G3);
+  loginAs(G3, TEA, TEAPW);
+  const oldPwRejected = await waitFor(function () { return ((G3.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+  ok(oldPwRejected, 'old teacher password no longer bootstraps');
+  const G4 = boot();
+  await sleep(300);
+  await ackGate(G4);
+  loginAs(G4, TEA, TEAPW2);
+  const newPwWorks = await waitFor(function () { return !G4.d.body.classList.contains('auth-gate'); }, 25000);
+  ok(newPwWorks, 'new teacher password bootstraps a fresh browser');
+  /* removing the sign-in kills its pointer; the data row survives */
+  syncSB(Bt);
+  click(Bt, Bt.d.querySelector('[data-action="acct-del"][data-user="' + TEA + '"]'));
+  await sleep(150);
+  click(Bt, Bt.d.querySelector('#dlg [data-x="1"]'));
+  const ptrDead = await waitFor(function () {
+    syncSB(Bt);
+    const r = SB[ptrRows[0]];
+    return !r || !r.payload || r.payload.dead || r.payload.sprPTR !== 1;
+  }, 25000);
+  ok(ptrDead, 'pointer row killed with the account');
+  syncSB(Bt);
+  ok(SB[dataRows[0]] && SB[dataRows[0]].payload.sprDS === 1, 'school data row untouched by account removal');
+  const G5 = boot();
+  await sleep(300);
+  await ackGate(G5);
+  loginAs(G5, TEA, TEAPW2);
+  const goneRej = await waitFor(function () { return ((G5.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+  ok(goneRej, 'deleted teacher account cannot sign in anywhere anymore');
+
+  /* ---------- S9: no surprise .json downloads; in-app safety copies ---------- */
+  console.log('== S9: safety copies replace the .json download ==');
+  ok(Array.isArray(G1.w.__downloads) && G1.w.__downloads.length === 0, 'cloud adoption triggered ZERO file downloads');
+  /* a browser WITH its own data adopting the cloud copy must stash, not download */
+  const H = boot();
+  await sleep(300);
+  await ackGate(H);
+  click(H, H.d.querySelector('[data-action="show-setup"]'));
+  await sleep(80);
+  setVal(H, H.d.getElementById('suUser'), 'other-admin');
+  setVal(H, H.d.getElementById('suPass'), 'other-pass-123');
+  setVal(H, H.d.getElementById('suConf'), 'other-pass-123');
+  click(H, H.d.querySelector('[data-action="first-run"]'));
+  await waitFor(function () { return !H.d.body.classList.contains('auth-gate'); }, 20000);
+  await ackPrivacy(H);
+  await sleep(800);   /* let the setup persist settle */
+  const H2 = boot(JSON.parse(JSON.stringify((function () { const o = {}; for (let i = 0; i < H.w.localStorage.length; i++) { const k = H.w.localStorage.key(i); o[k] = H.w.localStorage.getItem(k); } return o; })())));
+  await sleep(500);
+  loginAs(H2, ADMIN, PW);
+  await waitFor(function () {
+    const d = H2.d.getElementById('dlg');
+    return d && d.open && d.textContent.indexOf('cloud copy') !== -1;
+  }, 25000);
+  click(H2, H2.d.querySelector('#dlg [data-x="1"]'));
+  await sleep(2500);
+  ok(H2.w.__downloads.length === 0, 'adoption over existing data: no .json downloaded');
+  const stashH = JSON.parse(H2.w.localStorage.getItem('spr-safety-backups-v1') || '[]');
+  ok(stashH.length === 1 && stashH[0].db && Array.isArray(stashH[0].db.semesters), 'safety copy stashed in-app instead');
+  ok(H2.w.localStorage.getItem('spr-auth-v1').indexOf(ADMIN) !== -1, 'cloud accounts installed over the old ones');
 
   console.log(fails ? ('\n' + fails + ' FAILURES') : '\nALL DEVICE-SYNC CHECKS PASSED');
   process.exit(fails ? 1 : 0);

@@ -223,6 +223,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
 .g-D  { color: var(--g-D);  border-color: var(--g-D);  background: #faeeed; }
 .g-U  { color: var(--g-U);  border-color: var(--g-U);  background: #f3f3f3; }
 .g-none { color: var(--ink-40); border-color: var(--rule-strong); background: #fafaf7; }
+.g-ok { color: var(--g-A); border-color: var(--g-A); background: #f0f8f1; }
 
 /* ---------- student profile ---------- */
 .profile-head {
