@@ -51,11 +51,16 @@
     sem.period = sem.period || (m ? m[2].toLowerCase() : null);
     sem.months = (sem.months || []).filter((x, i, a) => a.indexOf(x) === i).sort((a, b) => acadRank(a) - acadRank(b));
     sem.students = sem.students || [];
+    sem.students.forEach((s) => { if (s) s.gender = U.normGender(s.gender); });
     sem.observations = sem.observations || {};
     sem.spelling = sem.spelling || {};
     sem.daily = sem.daily || {};
     sem.tests = sem.tests || {};
     sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
+    /* self-heal any invalid stored scores (legacy saves, hand-edited backups);
+       count surfaces in __droppedInvalid (non-enumerable) for a one-time toast */
+    const dropped = C.sanitizeSemester(sem);
+    if (dropped) Object.defineProperty(sem, '__droppedInvalid', { value: dropped, enumerable: false, configurable: true });
     return sem;
   }
   function emptyDB() {
@@ -910,7 +915,7 @@
       '</div></div>';
   }
   function tdAvg(id, v, cls) {
-    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + id + '"><strong>' + fmt(v, 1) + '</strong></td>';
+    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + U.esc(id) + '"><strong>' + fmt(v, 1) + '</strong></td>';
   }
   function setAvgCell(id, v) {
     const td = document.getElementById(id);
@@ -937,7 +942,7 @@
       let ci = 0;
       for (const sk of SKILLS) for (const lo of [1, 2]) {
         const v = C.obsValue(sem, s.id, month, sk, lo);
-        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
@@ -1003,10 +1008,10 @@
       for (let w = 1; w <= 5; w++) for (const f of ['s', 't']) {
         const e = sem[metKey][s.id] && sem[metKey][s.id][month] && sem[metKey][s.id][month][w];
         const v = e ? e[f] : null;
-        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
-      tds += tdAvg('mavg-' + U.esc(s.id), C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
+      tds += tdAvg('mavg-' + s.id, C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
       tds += tdAvg('savg-' + s.id, C.weeklySemesterPct(sem, s.id, metKey));
       return '<tr>' + tds + '</tr>';
     }).join('');
@@ -1055,13 +1060,13 @@
       for (const b of TEST_BLOCKS) for (const f of ['s', 't']) {
         const t = sem.tests[s.id] && sem.tests[s.id][b[0]];
         const v = t ? t[f] : null;
-        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
       for (const b of TEST_BLOCKS) tds += tdAvg('tp-' + b[0] + '-' + s.id, C.testPct(sem, s.id, b[0]));
       tds += '<td class="avg sep" id="tfin-' + U.esc(s.id) + '">' + (gateOk(g) ? '<strong>' + fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') + '</strong>' : '<span class="muted small">' + nOf9(g) + '/9</span>') + '</td>';
-      tds += '<td class="avg" id="tgl-' + s.id + '">' + gradeCell(g) + '</td>';
+      tds += '<td class="avg" id="tgl-' + U.esc(s.id) + '">' + gradeCell(g) + '</td>';
       return '<tr>' + tds + '</tr>';
     }).join('');
 
@@ -1132,35 +1137,52 @@
 
     if (kind === 'obs') {
       const sid = el.dataset.sid, month = el.dataset.month, key = el.dataset.key;
+      /* out-of-range scores are refused, not stored (D5/D6): the cell stays
+         flagged red with the teacher's text in it until they fix it */
+      if (v !== null && !C.validObs(v)) { el.classList.add('invalid'); v = null; }
+      else el.classList.remove('invalid');
       setObsCell(sem, sid, month, key, v);
-      if (v !== null && (v < 0 || v > 10)) el.classList.add('invalid');
       updateObsRow(sem, sid);
       updateObsFooters(sem);
     } else if (kind === 'week') {
       const sid = el.dataset.sid, met = el.dataset.met, w = el.dataset.w, f = el.dataset.f;
       const metric = met === 'spelling' ? 'sp' : 'da';
       const month = ui.entryMonth[metric];
-      setWeekCell(sem, sid, met, month, w, f, v);
-      if (f === 's' && v !== null && DB.settings.autoTotal) {
-        const rec = getWeek(sem, sid, met, month, w);
-        if (!rec || rec.t === null) {
-          const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
-          setWeekCell(sem, sid, met, month, w, 't', def);
-          const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
-          if (ti) ti.value = def;
+      const rec0 = getWeek(sem, sid, met, month, w);
+      const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
+      /* refuse the edit that breaks validity (D5/D6): negative/non-finite score,
+         unusable total, score above the total it will be measured against
+         (incl. the auto-filled default) — the stored value stays as it was */
+      const effT = (rec0 && rec0.t !== null && rec0.t !== undefined) ? rec0.t
+        : (DB.settings.autoTotal && C.validTotal(def) ? def : null);
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (effT !== null && v > effT))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && v < rec0.s))));
+      if (refused) {
+        el.classList.add('invalid');
+      } else {
+        weekInputs(sid, met, w).forEach((x) => x.classList.remove('invalid'));
+        setWeekCell(sem, sid, met, month, w, f, v);
+        if (f === 's' && v !== null && DB.settings.autoTotal && C.validTotal(def)) {
+          const rec = getWeek(sem, sid, met, month, w);
+          if (!rec || rec.t === null) {
+            setWeekCell(sem, sid, met, month, w, 't', def);
+            const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
+            if (ti) ti.value = def;
+          }
         }
       }
-      const rec = getWeek(sem, sid, met, month, w);
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      weekInputs(sid, met, w).forEach((x) => x.classList.toggle('invalid', !!bad));
       updateWeekRow(sem, sid, met);
       updateWeekFooters(sem, met);
     } else if (kind === 'test') {
       const sid = el.dataset.sid, tp = el.dataset.tp, f = el.dataset.f;
-      setTestCell(sem, sid, tp, f, v);
-      const rec = sem.tests[sid] && sem.tests[sid][tp];
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp).forEach((x) => x.classList.toggle('invalid', !!bad));
+      const rec0 = sem.tests[sid] && sem.tests[sid][tp];
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (rec0 && rec0.t !== null && rec0.t !== undefined && v > rec0.t))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && rec0.s !== undefined && v < rec0.s))));
+      const tps = $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp);
+      if (refused) el.classList.add('invalid');
+      else { tps.forEach((x) => x.classList.remove('invalid')); setTestCell(sem, sid, tp, f, v); }
       updateTestRow(sem, sid);
       updateTestFooters(sem);
     }
@@ -1269,7 +1291,8 @@
       else if (f.length === 2) { cn = f[0]; en = f[1]; }
       else { en = f[0]; }
       if (!id) id = 'STU-' + String(out.length + 1).padStart(3, '0');
-      if (g === '男') g = 'M'; else if (g === '女') g = 'F';
+      id = id.replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || 'STU';   // same id rule as Excel import
+      g = U.normGender(g);
       if (en || cn) out.push({ id: id, nameCn: cn, nameEn: en, gender: g });
     });
     return out;
@@ -1559,11 +1582,12 @@
   }
   function rosterAdd() {
     const sem = cur();
-    const id = $('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0'));
+    const id = ($('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0')))
+      .replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40);
     const cn = $('#ro-cn').value.trim(), en = $('#ro-en').value.trim();
     if (!cn && !en) { toast('Enter at least one name', true); return; }
     if (sem.students.some((s) => s.id === id)) { toast('ID already used: ' + id, true); return; }
-    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: $('#ro-g').value });
+    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: U.normGender($('#ro-g').value) });
     saveDB(); renderManage(); toast((en || cn) + ' added');
   }
   function rosterBulk() {
@@ -2057,7 +2081,7 @@
     let students = [];
     if (mode === 'copy') {
       const src = DB.semesters.find((s) => s.id === $('#wiz-copyfrom').value);
-      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: s.gender }));
+      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: U.normGender(s.gender) }));
     } else if (mode === 'paste') {
       students = parseRosterPaste($('#wiz-paste').value);
     }
@@ -2111,13 +2135,15 @@
       reader.onload = () => {
         try {
           const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
-          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
+          const warnings = [];
+          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name), warnings: warnings }));
           sem.students.forEach((st) => { st.id = String(st.id == null ? '' : st.id).replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || U.uid('stu'); });
           const dup = sem.students.filter((st, i) => sem.students.findIndex((x) => x.id === st.id) !== i);
           if (dup.length) throw new Error('duplicate student IDs after sanitising: ' + dup[0].id);
           validateDB({ semesters: [sem], settings: {} });
           const tm = String(file.name).match(/\(([^)]+)\)/);
           if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+          if (warnings.length) toast('Imported with ' + warnings.length + ' invalid score' + (warnings.length > 1 ? 's' : '') + ' ignored — check the class details', true);
           resolve(sem);
         } catch (err) { reject(err); }
       };
@@ -2190,14 +2216,16 @@
           'Replace');
         if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
         stashSafetyBackup('before restoring a backup file');
-        d.semesters.forEach(normalizeSemester);
+        let healed = 0;
+        d.semesters.forEach((sm) => { normalizeSemester(sm); healed += (sm.__droppedInvalid || 0); });
         const pairCfg = d.__sprPair; if (pairCfg) delete d.__sprPair;
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
         d.credit = d.credit || 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)';
         d.author = d.author || 'Mohammed Shehzad Khan (Teacher Mo)';
         DB = d;
         if (!DB.semesters.find((s) => s.id === DB.currentSemesterId)) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
-        saveDB(true); buildShell(); location.hash = '#/dashboard'; route(); toast('Backup restored');
+        saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
+        toast('Backup restored' + (healed ? ' — ' + healed + ' invalid score' + (healed > 1 ? 's' : '') + ' removed' : ''));
         if (pairCfg && pairCfg.channel && pairCfg.key) dsPair(pairCfg.channel, pairCfg.key);
       } catch (err) { toast('Restore failed: ' + err.message, true); }
     };
@@ -3368,7 +3396,7 @@
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
-          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage &rarr; Device sync first.', true);
+          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage → Device sync first.', true);
           return false;
         }
       }
@@ -3453,7 +3481,7 @@
       const ok = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
         'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
         'Open cloud copy');
-      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device&rsquo;s data — find the cloud copy later in Manage &rarr; Device sync'); return; }
+      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device’s data — find the cloud copy later in Manage → Device sync'); return; }
       stashSafetyBackup('before replacing data');
       dsInstallFrom(hit, SESSION.user);
       dsInstall(hit.obj);
@@ -3489,7 +3517,7 @@
             'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
             'Open cloud copy');
           if (okA) { stashSafetyBackup('before opening the cloud copy'); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
-          else if (interactive) toast('Kept this device&rsquo;s data — its pairing key no longer matches the cloud copy', true);
+          else if (interactive) toast('Kept this device’s data — its pairing key no longer matches the cloud copy', true);
           return;
         }
       }
@@ -3503,7 +3531,7 @@
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
-    if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
+    if (!ok) { toast('Kept this device’s copy'); return; }
     stashSafetyBackup('before replacing data');
     dsInstall(obj);
   }

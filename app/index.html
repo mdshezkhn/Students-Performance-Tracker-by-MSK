@@ -673,6 +673,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
+  /* normalise a gender value to M / F / '' (unknown spellings kept as-is
+     upper-cased, never silently destroyed) — 男->M, 女->F, male/f/m -> M ... */
+  const normGender = (g) => {
+    const t = String(g ?? '').trim();
+    if (!t) return '';
+    if (t === '男' || t === 'M' || t.toUpperCase() === 'MALE' || t.toUpperCase() === 'BOY') return 'M';
+    if (t === '女' || t === 'F' || t.toUpperCase() === 'FEMALE' || t.toUpperCase() === 'GIRL') return 'F';
+    return t;
+  };
   const num = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
   const r1 = (v) => (v === null ? null : Math.round(v * 10) / 10);
   const r2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
@@ -709,7 +718,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   return {
     MONTHS, MONTH_ABBR, CNY, LOS, INSTRUCTIONS_LINES,
     suggestMonths, suggestHint, springStart, fmtCny,
-    uid, esc, num, r1, r2, canonMonth,
+    uid, esc, num, r1, r2, canonMonth, normGender,
   };
 });
 
@@ -753,15 +762,38 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
   const round1 = (v) => (v === null ? null : Math.round(v * 10) / 10);
 
+  /* ---------- score validity (single source of truth) -------------------
+     Workbook rules: an observation raw score is out of 10; weekly/test cells
+     are score/total pairs with 0 <= score <= total and total > 0. Ingress
+     paths (grid entry, paste, Excel import, backup restore) must REJECT
+     values that fail these rules; and for anything that still slips into
+     stored data (legacy saves, hand-edited backups) the calc engine treats
+     the value as absent instead of counting it — a blank score next to a
+     filled total is NOT a zero score. -------------------------------------- */
+  const EMPTY = (x) => x === null || x === undefined || x === '';
+  function validObs(v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10;
+  }
+  function validScore(v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0;
+  }
+  function validTotal(v) {
+    return typeof v === 'number' && isFinite(v) && v > 0;
+  }
+  function validPair(s, t) {
+    return validScore(s) && validTotal(t) && s <= t;
+  }
+
   function student(sem, sid) {
     return (sem.students || []).find((s) => s.id === sid) || null;
   }
 
   /* ---------- Classroom Observations ---------- */
-  // raw LO value for one month/skill/lo
+  // raw LO value for one month/skill/lo (invalid stored values read as absent)
   function obsValue(sem, sid, month, skill, lo) {
-    return (sem.observations[sid] && sem.observations[sid][month] &&
-            sem.observations[sid][month][skill + '-LO' + lo]) ?? null;
+    const v = (sem.observations[sid] && sem.observations[sid][month] &&
+               sem.observations[sid][month][skill + '-LO' + lo]) ?? null;
+    return validObs(v) ? v : null;
   }
 
   // month % for one skill = mean(LO1, LO2) * 10, null if no data that month
@@ -808,20 +840,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       .sort((a, b) => a - b);
   }
 
-  // month % = Σscore / Σtotal * 100 (weeks with a positive total)
+  // month % = Σscore / Σtotal * 100 (weeks with a valid score/total pair)
   function weeklyMonthPct(sem, sid, metric, month) {
     const rec = sem[metric] && sem[metric][sid] && sem[metric][sid][month];
     if (!rec) return null;
     let s = 0, t = 0, any = false;
     for (const w of Object.keys(rec)) {
       const e = rec[w];
-      if (!e) continue;
+      if (!e || EMPTY(e.s)) continue;               // no score -> not assessable
+      if (EMPTY(e.t)) continue;                     // score without total: cannot include
       const sc = Number(e.s), tt = Number(e.t);
-      if (!isNaN(sc) && !isNaN(tt) && tt > 0) { s += sc; t += tt; any = true; }
-      else if (!isNaN(sc) && (e.t === null || e.t === undefined) && sc >= 0 && e.s !== null && e.s !== undefined) {
-        // score entered without total — cannot include, flag separately
-        any = any || false;
-      }
+      if (validPair(sc, tt)) { s += sc; t += tt; any = true; }
     }
     if (!any || t === 0) return null;
     return (s / t) * 100;
@@ -833,11 +862,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     for (const m of sem.months) {
       for (const w of weeksWithData(sem, sid, metric, m)) {
         const e = sem[metric][sid][m][w];
-        const sc = Number(e.s), tt = Number(e.t);
-        out.push({
-          label: m.slice(0, 3) + ' W' + w,
-          pct: !isNaN(sc) && !isNaN(tt) && tt > 0 ? (sc / tt) * 100 : null,
-        });
+        const pct = (!e || EMPTY(e.s) || EMPTY(e.t))
+          ? null
+          : (validPair(Number(e.s), Number(e.t)) ? (Number(e.s) / Number(e.t)) * 100 : null);
+        out.push({ label: m.slice(0, 3) + ' W' + w, pct });
       }
     }
     return out;
@@ -855,8 +883,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function testPct(sem, sid, kind) {
     const t = sem.tests && sem.tests[sid] && sem.tests[sid][kind];
     if (!t) return null;
+    if (EMPTY(t.s) || EMPTY(t.t)) return null;      // blank score or total -> no %
     const sc = Number(t.s), tt = Number(t.t);
-    if (isNaN(sc) || isNaN(tt) || tt <= 0) return null;
+    if (!validPair(sc, tt)) return null;
     return (sc / tt) * 100;
   }
 
@@ -1025,10 +1054,64 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     return out;
   }
 
+  /* ---------- sanitize stored semester data (self-healing) ----------------
+     Walks every stored score and brings it to the valid canonical form:
+     - numeric strings ("8") are coerced to numbers;
+     - observation values outside 0..10 are dropped;
+     - score/total pairs: an invalid total drops the entry, an invalid score
+       (negative, non-finite, > total) drops the score but keeps a valid total;
+     - empty leftovers are pruned.
+     Returns the number of stored VALUES removed (0 = already clean).
+     Grading rules are untouched — this only removes values that could never
+     have come from the school's workbook. ---------------------------------- */
+  const coerceNum = (x) => (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x)) ? Number(x) : x);
+  function sanitizeSemester(sem) {
+    let dropped = 0;
+    const fixPair = (e) => {          // e = {s,t} score/total holder (mutated)
+      e.s = coerceNum(e.s); e.t = coerceNum(e.t);
+      // invalid total (present but unusable) -> clear it, keep the score for later
+      if (!EMPTY(e.t) && !validTotal(e.t)) { e.t = null; dropped++; }
+      // invalid score (present but negative/non-finite/above total) -> clear it, keep total
+      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) { e.s = null; dropped++; }
+      return (EMPTY(e.s) && EMPTY(e.t));   // nothing left -> caller deletes
+    };
+    for (const sid of Object.keys(sem.observations || {})) {
+      for (const m of Object.keys(sem.observations[sid])) {
+        const cell = sem.observations[sid][m];
+        for (const k of Object.keys(cell)) {
+          const v = coerceNum(cell[k]);
+          if (EMPTY(v)) { delete cell[k]; continue; }          // absent -> prune, not "invalid"
+          if (!validObs(v)) { delete cell[k]; dropped++; continue; }
+          cell[k] = v;
+        }
+        if (!Object.keys(cell).length) delete sem.observations[sid][m];
+      }
+      if (!Object.keys(sem.observations[sid] || {}).length) delete sem.observations[sid];
+    }
+    for (const metric of ['spelling', 'daily']) {
+      for (const sid of Object.keys(sem[metric] || {})) {
+        for (const m of Object.keys(sem[metric][sid])) {
+          const rec = sem[metric][sid][m];
+          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w])) delete rec[w];
+          if (!Object.keys(rec).length) delete sem[metric][sid][m];
+        }
+        if (!Object.keys(sem[metric][sid] || {}).length) delete sem[metric][sid];
+      }
+    }
+    for (const sid of Object.keys(sem.tests || {})) {
+      for (const kind of Object.keys(sem.tests[sid])) {
+        if (fixPair(sem.tests[sid][kind])) delete sem.tests[sid][kind];
+      }
+      if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
+    }
+    return dropped;
+  }
+
   return {
     SKILLS, TESTS, COMPONENTS_ALL, FINAL_MIN_ASSESSED,
     assessedCount, getAssessmentCompleteness,
     letter, mean, round1, student,
+    validObs, validScore, validTotal, validPair, sanitizeSemester,
     obsValue, obsMonthPct, obsMonthPctOverall, obsSkillPct,
     weeksWithData, weeklyMonthPct, weeklyPctList, weeklySemesterPct,
     testPct, gradeStudent, gradeAll,
@@ -1050,7 +1133,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   'use strict';
   const Calc = (typeof window !== 'undefined' && window.Calc) || (typeof require === 'function' ? require('./calc.js') : null);
   const Util = (typeof window !== 'undefined' && window.Util) || (typeof require === 'function' ? require('./util.js') : null);
-  const XLSX = (typeof window !== 'undefined' && window.XLSX) || (typeof require === 'function' ? require('../libs/xlsx.full.min.js') : null);
+  const XLSX = (typeof window !== 'undefined' && window.XLSX) || (typeof require === 'function' ? require('./libs/xlsx.full.min.js') : null);
 
   const SKILLS = Calc.SKILLS;
   const MONTH_ORDER = Util.MONTHS;
@@ -1092,10 +1175,44 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         row: r,
         id: idStr,
         nameCn, nameEn,
-        gender: String(cell(rows, r, 4) ?? '').trim(),
+        gender: Util.normGender(cell(rows, r, 4)),   // 男->M, 女->F (D7)
       });
     }
     return out;
+  }
+
+  /* teacher names: workbooks place them differently (exported files use
+     row 2 col E; the school's own files label a cell "Teachers"/"教师" with
+     the names beside or below it). Scan the top rows of every sheet for the
+     label, take the next non-empty cell right/down, and merge everything
+     found. Falls back to the legacy fixed cell. (D8) */
+  const TEACHER_LABEL = /teach|教师|授课/i;
+  const splitNames = (raw) => String(raw || '').split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+  function findTeachers(sheets, legacy) {
+    const found = [];
+    const seen = new Set();
+    const add = (raw) => splitNames(raw).forEach((n) => {
+      const k = n.toLowerCase();
+      if (!seen.has(k) && !TEACHER_LABEL.test(n)) { seen.add(k); found.push(n); }
+    });
+    for (const sh of sheets) {
+      if (!sh) continue;
+      for (let r = 0; r < 7 && r < sh.rows.length; r++) {
+        for (let c = 0; c < 15; c++) {
+          const v = cell(sh.rows, r, c);
+          if (v === null || v === undefined || !TEACHER_LABEL.test(String(v))) continue;
+          if (String(v).trim().length > 24) continue;   // long prose mentioning teaching — not a label
+          for (let d = 1; d <= 4; d++) {
+            const right = cell(sh.rows, r, c + d);
+            if (right !== null && right !== undefined && String(right).trim()) { add(right); break; }
+          }
+          const below = cell(sh.rows, r + 1, c);
+          if (below !== null && below !== undefined && String(below).trim()) add(below);
+        }
+      }
+    }
+    if (!found.length && legacy) add(legacy);
+    return found.slice(0, 6);
   }
 
   /* months from row 1 (idx 0) starting col 6 (idx 5); block = cols per month */
@@ -1125,12 +1242,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const roster = studentRows(rosterSrc.rows);
     if (!roster.length) throw new Error('No student rows found (columns: Index, ID, Chinese name, English name, Gender).');
 
-    /* school / class / teachers from first available sheet rows 1-2 (col B; teachers in col E) */
+    /* school / class / teachers: label scan first, legacy fixed cell as fallback */
     const metaSrc = obsS || spS || daS || teS;
     const school = String(cell(metaSrc.rows, 0, 1) ?? '').trim() || 'School';
     const className = String(cell(metaSrc.rows, 1, 1) ?? '').trim() || '';
-    const splitNames = (raw) => String(raw || '').split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
-    const teachers = splitNames(cell(metaSrc.rows, 1, 4));
+    const teachers = findTeachers([obsS, spS, daS, teS], cell(metaSrc.rows, 1, 4));
 
     /* months: prefer Observations sheet (8-col blocks), else Spelling (11-col blocks) */
     let months = [];
@@ -1148,20 +1264,24 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       observations: {}, spelling: {}, daily: {}, tests: {},
     };
     const sidByRow = new Map(roster.map((r) => [r.row, r.id]));
+    const warn = (msg) => { if (opts.warnings) opts.warnings.push(msg); };
 
-    /* observations: per month block of 8: L-LO1, L-LO2, S-LO1, … */
+    /* observations: per month block of 8: L-LO1, L-LO2, S-LO1, …
+       Out-of-range values (not 0-10) are dropped and reported (D5). */
     if (obsS) {
       for (const mb of monthBlocks(obsS.rows, 8)) {
         for (const r of roster) {
           const vals = {};
-          let any = false;
+          let any = false, bad = 0;
           SKILLS.forEach((sk, si) => {
             for (const lo of [1, 2]) {
               const v = numOrNull(cell(obsS.rows, r.row, mb.col + si * 2 + lo - 1));
+              if (v !== null && !Calc.validObs(v)) { bad++; continue; }
               if (v !== null) any = true;
               vals[sk + '-LO' + lo] = v;
             }
           });
+          if (bad) warn('Observations ' + mb.name + ': ' + bad + ' out-of-range score' + (bad > 1 ? 's' : '') + ' ignored for ' + (r.nameEn || r.nameCn || r.id) + ' (scores are 0-10)');
           if (any) {
             sem.observations[r.id] = sem.observations[r.id] || {};
             sem.observations[r.id][mb.name] = vals;
@@ -1170,18 +1290,22 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       }
     }
 
-    /* spelling & daily: per month block of 11: 5×(score,total) + avg col */
+    /* spelling & daily: per month block of 11: 5×(score,total) + avg col.
+       Pairs with a negative score or score above the total are dropped and
+       reported (D5). */
     for (const [sh, key] of [[spS, 'spelling'], [daS, 'daily']]) {
       if (!sh) continue;
       for (const mb of monthBlocks(sh.rows, 11)) {
         for (const r of roster) {
           const weeks = {};
-          let any = false;
+          let any = false, bad = 0;
           for (let w = 1; w <= 5; w++) {
-            const s = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2));
+            let s = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2));
             const t = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2 + 1));
+            if (s !== null && (s < 0 || (t !== null && (t <= 0 || s > t)))) { bad++; s = null; }
             if (s !== null || t !== null) { weeks[w] = { s, t }; any = true; }
           }
+          if (bad) warn(sh.name + ' ' + mb.name + ': ' + bad + ' impossible score' + (bad > 1 ? 's' : '') + ' (above the total or negative) ignored for ' + (r.nameEn || r.nameCn || r.id));
           if (any) {
             sem[key][r.id] = sem[key][r.id] || {};
             sem[key][r.id][mb.name] = weeks;
@@ -1194,11 +1318,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (teS) {
       for (const r of roster) {
         const t = {};
+        let bad = 0;
         for (const [kind, c0] of [['midterm', 5], ['oral', 8], ['written', 11]]) {
-          const s = numOrNull(cell(teS.rows, r.row, c0));
+          let s = numOrNull(cell(teS.rows, r.row, c0));
           const tt = numOrNull(cell(teS.rows, r.row, c0 + 1));
+          if (s !== null && (s < 0 || (tt !== null && (tt <= 0 || s > tt)))) { bad++; s = null; }
           if (s !== null || tt !== null) t[kind] = { s, t: tt };
         }
+        if (bad) warn('Tests: ' + bad + ' impossible score' + (bad > 1 ? 's' : '') + ' (above the total or negative) ignored for ' + (r.nameEn || r.nameCn || r.id));
         if (Object.keys(t).length) sem.tests[r.id] = t;
       }
     }
@@ -2091,11 +2218,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     sem.period = sem.period || (m ? m[2].toLowerCase() : null);
     sem.months = (sem.months || []).filter((x, i, a) => a.indexOf(x) === i).sort((a, b) => acadRank(a) - acadRank(b));
     sem.students = sem.students || [];
+    sem.students.forEach((s) => { if (s) s.gender = U.normGender(s.gender); });
     sem.observations = sem.observations || {};
     sem.spelling = sem.spelling || {};
     sem.daily = sem.daily || {};
     sem.tests = sem.tests || {};
     sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
+    /* self-heal any invalid stored scores (legacy saves, hand-edited backups);
+       count surfaces in __droppedInvalid (non-enumerable) for a one-time toast */
+    const dropped = C.sanitizeSemester(sem);
+    if (dropped) Object.defineProperty(sem, '__droppedInvalid', { value: dropped, enumerable: false, configurable: true });
     return sem;
   }
   function emptyDB() {
@@ -2950,7 +3082,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '</div></div>';
   }
   function tdAvg(id, v, cls) {
-    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + id + '"><strong>' + fmt(v, 1) + '</strong></td>';
+    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + U.esc(id) + '"><strong>' + fmt(v, 1) + '</strong></td>';
   }
   function setAvgCell(id, v) {
     const td = document.getElementById(id);
@@ -2977,7 +3109,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       let ci = 0;
       for (const sk of SKILLS) for (const lo of [1, 2]) {
         const v = C.obsValue(sem, s.id, month, sk, lo);
-        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
@@ -3043,10 +3175,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (let w = 1; w <= 5; w++) for (const f of ['s', 't']) {
         const e = sem[metKey][s.id] && sem[metKey][s.id][month] && sem[metKey][s.id][month][w];
         const v = e ? e[f] : null;
-        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
-      tds += tdAvg('mavg-' + U.esc(s.id), C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
+      tds += tdAvg('mavg-' + s.id, C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
       tds += tdAvg('savg-' + s.id, C.weeklySemesterPct(sem, s.id, metKey));
       return '<tr>' + tds + '</tr>';
     }).join('');
@@ -3095,13 +3227,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (const b of TEST_BLOCKS) for (const f of ['s', 't']) {
         const t = sem.tests[s.id] && sem.tests[s.id][b[0]];
         const v = t ? t[f] : null;
-        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
       for (const b of TEST_BLOCKS) tds += tdAvg('tp-' + b[0] + '-' + s.id, C.testPct(sem, s.id, b[0]));
       tds += '<td class="avg sep" id="tfin-' + U.esc(s.id) + '">' + (gateOk(g) ? '<strong>' + fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') + '</strong>' : '<span class="muted small">' + nOf9(g) + '/9</span>') + '</td>';
-      tds += '<td class="avg" id="tgl-' + s.id + '">' + gradeCell(g) + '</td>';
+      tds += '<td class="avg" id="tgl-' + U.esc(s.id) + '">' + gradeCell(g) + '</td>';
       return '<tr>' + tds + '</tr>';
     }).join('');
 
@@ -3172,35 +3304,52 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
     if (kind === 'obs') {
       const sid = el.dataset.sid, month = el.dataset.month, key = el.dataset.key;
+      /* out-of-range scores are refused, not stored (D5/D6): the cell stays
+         flagged red with the teacher's text in it until they fix it */
+      if (v !== null && !C.validObs(v)) { el.classList.add('invalid'); v = null; }
+      else el.classList.remove('invalid');
       setObsCell(sem, sid, month, key, v);
-      if (v !== null && (v < 0 || v > 10)) el.classList.add('invalid');
       updateObsRow(sem, sid);
       updateObsFooters(sem);
     } else if (kind === 'week') {
       const sid = el.dataset.sid, met = el.dataset.met, w = el.dataset.w, f = el.dataset.f;
       const metric = met === 'spelling' ? 'sp' : 'da';
       const month = ui.entryMonth[metric];
-      setWeekCell(sem, sid, met, month, w, f, v);
-      if (f === 's' && v !== null && DB.settings.autoTotal) {
-        const rec = getWeek(sem, sid, met, month, w);
-        if (!rec || rec.t === null) {
-          const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
-          setWeekCell(sem, sid, met, month, w, 't', def);
-          const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
-          if (ti) ti.value = def;
+      const rec0 = getWeek(sem, sid, met, month, w);
+      const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
+      /* refuse the edit that breaks validity (D5/D6): negative/non-finite score,
+         unusable total, score above the total it will be measured against
+         (incl. the auto-filled default) — the stored value stays as it was */
+      const effT = (rec0 && rec0.t !== null && rec0.t !== undefined) ? rec0.t
+        : (DB.settings.autoTotal && C.validTotal(def) ? def : null);
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (effT !== null && v > effT))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && v < rec0.s))));
+      if (refused) {
+        el.classList.add('invalid');
+      } else {
+        weekInputs(sid, met, w).forEach((x) => x.classList.remove('invalid'));
+        setWeekCell(sem, sid, met, month, w, f, v);
+        if (f === 's' && v !== null && DB.settings.autoTotal && C.validTotal(def)) {
+          const rec = getWeek(sem, sid, met, month, w);
+          if (!rec || rec.t === null) {
+            setWeekCell(sem, sid, met, month, w, 't', def);
+            const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
+            if (ti) ti.value = def;
+          }
         }
       }
-      const rec = getWeek(sem, sid, met, month, w);
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      weekInputs(sid, met, w).forEach((x) => x.classList.toggle('invalid', !!bad));
       updateWeekRow(sem, sid, met);
       updateWeekFooters(sem, met);
     } else if (kind === 'test') {
       const sid = el.dataset.sid, tp = el.dataset.tp, f = el.dataset.f;
-      setTestCell(sem, sid, tp, f, v);
-      const rec = sem.tests[sid] && sem.tests[sid][tp];
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp).forEach((x) => x.classList.toggle('invalid', !!bad));
+      const rec0 = sem.tests[sid] && sem.tests[sid][tp];
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (rec0 && rec0.t !== null && rec0.t !== undefined && v > rec0.t))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && rec0.s !== undefined && v < rec0.s))));
+      const tps = $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp);
+      if (refused) el.classList.add('invalid');
+      else { tps.forEach((x) => x.classList.remove('invalid')); setTestCell(sem, sid, tp, f, v); }
       updateTestRow(sem, sid);
       updateTestFooters(sem);
     }
@@ -3309,7 +3458,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       else if (f.length === 2) { cn = f[0]; en = f[1]; }
       else { en = f[0]; }
       if (!id) id = 'STU-' + String(out.length + 1).padStart(3, '0');
-      if (g === '男') g = 'M'; else if (g === '女') g = 'F';
+      id = id.replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || 'STU';   // same id rule as Excel import
+      g = U.normGender(g);
       if (en || cn) out.push({ id: id, nameCn: cn, nameEn: en, gender: g });
     });
     return out;
@@ -3599,11 +3749,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function rosterAdd() {
     const sem = cur();
-    const id = $('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0'));
+    const id = ($('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0')))
+      .replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40);
     const cn = $('#ro-cn').value.trim(), en = $('#ro-en').value.trim();
     if (!cn && !en) { toast('Enter at least one name', true); return; }
     if (sem.students.some((s) => s.id === id)) { toast('ID already used: ' + id, true); return; }
-    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: $('#ro-g').value });
+    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: U.normGender($('#ro-g').value) });
     saveDB(); renderManage(); toast((en || cn) + ' added');
   }
   function rosterBulk() {
@@ -4097,7 +4248,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     let students = [];
     if (mode === 'copy') {
       const src = DB.semesters.find((s) => s.id === $('#wiz-copyfrom').value);
-      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: s.gender }));
+      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: U.normGender(s.gender) }));
     } else if (mode === 'paste') {
       students = parseRosterPaste($('#wiz-paste').value);
     }
@@ -4151,13 +4302,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       reader.onload = () => {
         try {
           const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
-          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
+          const warnings = [];
+          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name), warnings: warnings }));
           sem.students.forEach((st) => { st.id = String(st.id == null ? '' : st.id).replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || U.uid('stu'); });
           const dup = sem.students.filter((st, i) => sem.students.findIndex((x) => x.id === st.id) !== i);
           if (dup.length) throw new Error('duplicate student IDs after sanitising: ' + dup[0].id);
           validateDB({ semesters: [sem], settings: {} });
           const tm = String(file.name).match(/\(([^)]+)\)/);
           if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+          if (warnings.length) toast('Imported with ' + warnings.length + ' invalid score' + (warnings.length > 1 ? 's' : '') + ' ignored — check the class details', true);
           resolve(sem);
         } catch (err) { reject(err); }
       };
@@ -4230,14 +4383,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           'Replace');
         if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
         stashSafetyBackup('before restoring a backup file');
-        d.semesters.forEach(normalizeSemester);
+        let healed = 0;
+        d.semesters.forEach((sm) => { normalizeSemester(sm); healed += (sm.__droppedInvalid || 0); });
         const pairCfg = d.__sprPair; if (pairCfg) delete d.__sprPair;
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
         d.credit = d.credit || 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)';
         d.author = d.author || 'Mohammed Shehzad Khan (Teacher Mo)';
         DB = d;
         if (!DB.semesters.find((s) => s.id === DB.currentSemesterId)) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
-        saveDB(true); buildShell(); location.hash = '#/dashboard'; route(); toast('Backup restored');
+        saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
+        toast('Backup restored' + (healed ? ' — ' + healed + ' invalid score' + (healed > 1 ? 's' : '') + ' removed' : ''));
         if (pairCfg && pairCfg.channel && pairCfg.key) dsPair(pairCfg.channel, pairCfg.key);
       } catch (err) { toast('Restore failed: ' + err.message, true); }
     };
@@ -5408,7 +5563,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
-          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage &rarr; Device sync first.', true);
+          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage → Device sync first.', true);
           return false;
         }
       }
@@ -5493,7 +5648,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const ok = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
         'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
         'Open cloud copy');
-      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device&rsquo;s data — find the cloud copy later in Manage &rarr; Device sync'); return; }
+      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device’s data — find the cloud copy later in Manage → Device sync'); return; }
       stashSafetyBackup('before replacing data');
       dsInstallFrom(hit, SESSION.user);
       dsInstall(hit.obj);
@@ -5529,7 +5684,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
             'Open cloud copy');
           if (okA) { stashSafetyBackup('before opening the cloud copy'); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
-          else if (interactive) toast('Kept this device&rsquo;s data — its pairing key no longer matches the cloud copy', true);
+          else if (interactive) toast('Kept this device’s data — its pairing key no longer matches the cloud copy', true);
           return;
         }
       }
@@ -5543,7 +5698,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
-    if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
+    if (!ok) { toast('Kept this device’s copy'); return; }
     stashSafetyBackup('before replacing data');
     dsInstall(obj);
   }
