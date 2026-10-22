@@ -38,7 +38,7 @@ After sign-in, the debounced auto-push fired ~4 s later. If the "A newer copy is
 1. **Cold-load latency from China → GitHub Pages**: app HTML 3.5–6.4 s; the manual PDF took ~17 s and the video ~30 s on a cold fetch. The service worker makes every subsequent load instant and fully offline-capable (verified).
 2. **No HSTS/security headers** (GitHub Pages can't set them; needs Cloudflare in front) — documented P1, no demo impact.
 3. **Auth `hash` is FNV-1a (UI gate only)** — real protection remains PBKDF2-310k → AES-GCM on the data itself; cloud payloads are random-key encrypted.
-4. **Last-save-wins sync** — no merge; the app downloads a safety backup before replacing anything.
+4. ~~**Last-save-wins sync**~~ **UPDATED (2026-10-22, branch improve/sync-merge-and-claims): sync now merges cell-by-cell.** Two teachers editing different things on different devices both keep their work; the same cell changed twice becomes a clear keep-mine/use-theirs dialog. Last-save-wins survives only as the first-sync-after-upgrade fallback, with the safety-backup dialog. EVERY signed-in user on a paired device syncs (channel control stays admin-only).
 
 ---
 
@@ -49,6 +49,6 @@ After sign-in, the debounced auto-push fired ~4 s later. If the "A newer copy is
 3. **Warm the cache:** with the app open, the service worker has already cached the shell — reload once with Wi-Fi off to see it come back offline. Present with confidence even if the venue Wi-Fi dies.
 4. **Don't click the PDF/video live** (cold fetch is slow from here) — open them once beforehand, or keep local copies in a folder on the desktop.
 5. Demo accounts on the presentation browser: sign-ins are device-local — use the browser profile that already has your data, or run first-run + "Load sample data" (verified working on production).
-6. If asked "what if two people edit at once?" — answer: last save wins, the app always downloads a safety backup first, and only the admin (you) syncs.
+6. If asked "what if two people edit at once?" — answer: changes from different systems are merged automatically, cell by cell; if two people changed the SAME cell, the app shows both values and asks which one to keep — it never guesses, and it downloads a safety backup before changing anything. Every signed-in user on a paired system syncs; only the administrator controls the channel.
 
 *QA scripts kept for reuse: `qa_rk/qa_presweep.py` (live sweep), `qa_rk/qa_devicesync.py` (sync matrix). Full logs: `/tmp/presweep.log`, `/tmp/regression_all.log`.*
