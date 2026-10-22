@@ -4,10 +4,24 @@
    and cloud-copy adoption on a browser that has its own local sign-ins. */
 const fs = require('fs');
 const path = require('path');
-const { JSDOM, VirtualConsole } = require(path.join(__dirname, '../../test/node_modules/jsdom'));
 const webcrypto = require('crypto').webcrypto;
 
-const html0 = fs.readFileSync(path.join(__dirname, '../dist/app/index.html'), 'utf8');
+/* jsdom is the ONLY dev dependency (package.json). Resolve it the normal
+   way from a clean clone / CI (`npm install`), with the legacy sibling
+   layout as a fallback for older checkouts. */
+function requireJSDOM() {
+  try { return require('jsdom'); }
+  catch (e) { return require(path.join(__dirname, '../../test/node_modules/jsdom')); }
+}
+const { JSDOM, VirtualConsole } = requireJSDOM();
+
+/* the single-file app: a fresh dist/ build if present, else the committed
+   build at app/index.html (what a clean clone ships) */
+const appHtmlPath = ['../dist/app/index.html', '../app/index.html']
+  .map((rel) => path.join(__dirname, rel))
+  .find((p) => fs.existsSync(p));
+if (!appHtmlPath) { console.log('FAIL: no app build found (run: python source/build2.py)'); process.exit(1); }
+const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 
 /* ---- fake Supabase REST: table lives INSIDE the jsdom window (window.__SB);
        the Node-side SB mirror is serialized in at boot and synced back out ---- */
