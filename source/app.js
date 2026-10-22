@@ -1402,6 +1402,7 @@
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
+      storagePanelHtml() +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
@@ -1526,6 +1527,7 @@
       '</div>' +
       '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
       '<input type="file" id="file-json" accept=".json" hidden>';
+    refreshStoragePanel();
   }
   function rosterAdd() {
     const sem = cur();
@@ -3410,8 +3412,36 @@
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
     if (dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user: keep this device current */
+    askPersistOnce();
     if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
+  }
+  /* ---- persistent storage: ask the browser once not to auto-evict this
+     site's data (feature-detected, best-effort, never alarming) ---- */
+  const PERSIST_KEY = 'spr-persist-v1';
+  function askPersistOnce() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      if (DB && (!DB.semesters || !DB.semesters.length)) return;   /* only once real data exists */
+      let c = null; try { c = JSON.parse(localStorage.getItem(PERSIST_KEY)); } catch (e) {}
+      if (c && c.asked) return;
+      navigator.storage.persist().then(function (granted) {
+        try { localStorage.setItem(PERSIST_KEY, JSON.stringify({ asked: true, result: granted ? 'granted' : 'denied', at: Date.now() })); } catch (e2) {}
+      }).catch(function () { /* leave unset — retried on a later sign-in */ });
+    } catch (e) { /* storage API unavailable — nothing to do */ }
+  }
+  function storagePanelHtml() {
+    return '<div class="panel" style="margin-top:10px" id="storagePanel"><p class="small" style="margin-bottom:4px"><b>Browser storage:</b> <span id="storageState">checking…</span></p>' +
+      '<p class="small muted" style="margin:0">Browsers can clear data from sites that are not used for a while. A downloaded backup (above) is still the safest copy — keep one after big changes.</p></div>';
+  }
+  function refreshStoragePanel() {
+    const el = $('#storageState'); if (!el) return;
+    const done = function (txt) { el.textContent = txt; };
+    if (!(navigator.storage && navigator.storage.persisted)) { done('not guaranteed — download regular backups'); return; }
+    navigator.storage.persisted().then(function (ok) {
+      done(ok ? 'protected — this browser will not clear it automatically'
+              : 'not guaranteed — download regular backups');
+    }).catch(function () { done('not guaranteed — download regular backups'); });
   }
   function doLogout() {
     const auth = getAuth();
