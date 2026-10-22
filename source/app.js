@@ -37,7 +37,7 @@
   const V2_KEY = 'p4c4-markbook-v2';
   const CORRUPT_PREFIX = 'p4c4-markbook-corrupt-';
   let DB = null, saveTimer = null;
-  let SESSION = { user: null, dk: null };   // raw 256-bit master key, memory only (online mode)
+  let SESSION = { user: null, dk: null, pw: null };   // raw 256-bit master key, memory only (online mode); pw = signed-in password, memory only — used to re-wrap the device-sync key so fresh devices can bootstrap by sign-in alone
   function cryptoOK() { return !!(window.crypto && window.crypto.subtle); }
   const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null, anMode: 'class', anStu: null };
 
@@ -1466,6 +1466,9 @@
           : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
       ((currentUser() || {}).role === 'admin' && cryptoOK() ? dsManageCard() : '') +
+      (cryptoOK() && (currentUser() || {}).role !== 'admin' && dsOn()
+        ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b> — your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator manages this channel.</p></div>'
+        : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
         var c = getShare();
@@ -2180,6 +2183,8 @@
     if (el.tagName === 'A' && el.getAttribute('href') === '#') e.preventDefault();
     const a = el.dataset.action;
     const sem = cur();
+    if (a === 'show-setup') { loginSetupMode = true; renderLogin(); return; }
+    if (a === 'show-signin') { loginSetupMode = false; renderLogin(); return; }
     if (a === 'first-run') {
       const un = ($('#suUser') ? $('#suUser').value : '').trim();
       const pw = ($('#suPass') ? $('#suPass').value : '') || '';
@@ -2297,6 +2302,7 @@
             writeV2(v2);
           } catch (e2) { if (err) err.textContent = 'Saved, but re-keying failed: ' + e2.message; return; }
         }
+        if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
         closeDlg();
         toast('Password updated for ' + un);
         if (location.hash === '#/manage') renderManage();
@@ -2420,7 +2426,7 @@
       (async () => {
         try {
           const res = await doLoginFull(u, p);
-          if (res.error) { $('#loginErr').textContent = res.error; return; }
+          if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
@@ -3049,16 +3055,44 @@
      Whole-database cloud mirror for the admin. The complete encrypted state
      (accounts + wrapped data keys + sealed workbook) is AES-GCM sealed under a
      random 256-bit sync key; only unreadable ciphertext reaches the cloud row.
-     The key travels ONLY inside the pairing link (#pair=<channel>&k=<key>) and
-     inside JSON backups. Automatic: debounced push after every save, pull-check
-     on admin sign-in. Last save wins; every payload carries a content digest
-     and an HMAC so tampered or identical copies are detected. */
+     The channel id is derived from the admin's username (dsChan), and the sync
+     key itself is stored inside the row wrapped under the admin's login
+     password (PBKDF2-310k, the same wrapping used for the local vault). So a
+     fresh device needs NOTHING but the admin username + password: sign in and
+     the whole markbook arrives. The pairing link (#pair=<channel>&k=<key>) and
+     JSON backups remain as alternative ways to carry the key. Automatic:
+     debounced push after every save, pull-check on admin sign-in. Last save
+     wins; every payload carries a content digest and an HMAC so tampered or
+     identical copies are detected. */
   const DS_KEY = 'spr-devicesync-v1';
+  const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* account-derived channel id: stable across password changes, guessable
+     only with the username — everything inside is sealed, so an id match
+     reveals nothing without the password (which is needed to unwrap the key) */
+  async function dsChan(username) {
+    /* deterministic UUID: spr_channels.id is a Postgres uuid column, so the
+       id must be uuid-shaped (a tag like 'ds1-…' is rejected with 22P02).
+       NOTE: the variant group must be built from the NUMBER — wrapping it in
+       String() first makes .toString(16) a no-op (String.toString ignores the
+       radix) and emits a 5-char DECIMAL group Postgres rejects. */
+    const d = await subtle().digest('SHA-256', new TextEncoder().encode('spr-ds1:chan:' + String(username).trim().toLowerCase()));
+    const hex = Array.from(new Uint8Array(d), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    const variant = ((parseInt(hex.slice(16, 20), 16) & 0x3fff) | 0x8000).toString(16).padStart(4, '0');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + variant + '-' + hex.slice(20, 32);
+  }
   function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
   function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
   function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
+  /* sync transport runs for EVERY signed-in user on a paired device (the
+     markbook is shared by the whole school); channel CONTROL (enable / turn
+     off / delete / pairing link) stays admin-only */
+  function dsSyncActive() { return !!(cryptoOK() && SESSION && SESSION.dk && SESSION.user); }
+  /* a legacy pre-account pairing (random channel, no adoptedAcct flag) keeps
+     admin-only pushes until an admin's fresh sign-in migrates the channel to
+     the account home — a teacher must never fork a second cloud island */
+  function dsCanPush() { return dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
   function dsDeviceName() {
     const c = dsCfg(); if (c && c.device) return c.device;
     const ua = navigator.userAgent || '';
@@ -3076,8 +3110,12 @@
   }
   /* stable content digest: everything except volatile timestamps */
   function dsContentString() {
+    /* digest the DECRYPTED content, never the stored ciphertext: sealDB uses a
+       fresh random IV on every save, so v2.data is a different string each
+       time even when nothing changed — digesting it made every device see the
+       cloud copy as "newer" (false-positive dialogs, pointless re-pushes) */
     const v2 = readV2() || { fmt: 2, wraps: {} };
-    return JSON.stringify({ users: getAuth().users, v2: { fmt: v2.fmt, wraps: v2.wraps || {}, data: v2.data || null } });
+    return JSON.stringify({ users: getAuth().users, wraps: v2.wraps || {}, db: DB });
   }
   async function dsSum(str) {
     const d = await subtle().digest('SHA-256', new TextEncoder().encode(str));
@@ -3087,7 +3125,7 @@
     const k = await subtle().importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     return b64uFromBytes(new Uint8Array(await subtle().sign('HMAC', k, ctBytes)));
   }
-  async function dsSeal() {
+  async function dsSeal(wrap) {
     const cfg = dsCfg();
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
@@ -3096,13 +3134,17 @@
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    return { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    /* the wrap lets a fresh device unwrap this sync key with nothing but the
+       admin username + password; refreshed on every push made during a fresh
+       sign-in, carried forward unchanged otherwise */
+    if (wrap) env.wrap = wrap;
+    return env;
   }
-  async function dsOpen(row) {
+  async function dsOpenWith(row, keyB64) {
     const env = row && row.payload;
     if (!env || env.sprDS !== 1) throw new Error('that cloud row is not a device-sync copy');
-    const cfg = dsCfg(); if (!cfg) throw new Error('device sync is not set up on this browser');
-    const keyBytes = bytesFromB64u(cfg.key);
+    const keyBytes = bytesFromB64u(keyB64);
     const ctBytes = bytesFromB64u(env.ct);
     const mac = await dsHmac(keyBytes, ctBytes);
     if (mac !== env.mac) throw new Error('the cloud copy failed its integrity check (wrong pairing key, or the row was tampered with)');
@@ -3111,6 +3153,10 @@
     const obj = JSON.parse(new TextDecoder().decode(pt));
     if (!obj || obj.sprDS !== 1 || !Array.isArray(obj.users) || !obj.v2) throw new Error('the cloud copy is damaged');
     return obj;
+  }
+  async function dsOpen(row) {
+    const cfg = dsCfg(); if (!cfg) throw new Error('device sync is not set up on this browser');
+    return dsOpenWith(row, cfg.key);
   }
   function dsInstall(obj) {
     try {
@@ -3121,28 +3167,71 @@
     location.reload();
   }
   function scheduleSyncPush() {
-    if (!dsOn() || !dsAdminActive()) return;
+    if (!dsCanPush()) return;
     clearTimeout(dsTimer);
     dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
   }
   function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
-  async function dsPushNow(interactive) {
-    if (!dsOn() || !dsAdminActive()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
-    const cfg = dsCfg();
+  /* tombstone-first row removal (a DELETE the row policy ignores still says
+     204 in PostgREST, so overwrite the payload with a dead marker first) */
+  async function dsKillRow(id) {
+    if (!id) return false;
     try {
-      const env = await dsSeal();
-      const row = await sbGet(cfg.channel).catch(function () { return null; });
-      if (row && row.payload && row.payload.sum === env.sum) {
+      const r = await sbSave(id, { sprDS: 0, dead: 1 }, 'devicesync', 'turned off', new Date().toISOString(), false);
+      if (r !== 'ok') return false;
+      try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: sbHeaders() }); } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  async function dsPushNow(interactive) {
+    if (!dsCanPush()) return false;
+    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    let cfg = dsCfg();
+    try {
+      /* the cloud home is derived from the OWNER (admin) account, so every
+         device — and every teacher signed in on a paired device — pushes to
+         the same single row without any link sharing; a legacy random-channel
+         pairing migrates here on the first admin sign-in */
+      const owner = (cfg && cfg.adoptedAcct && cfg.owner) ? cfg.owner : SESSION.user;
+      const chan = await dsChan(owner);
+      const row = await sbGet(chan).catch(function () { return null; });
+      let wrap = null;
+      if (cfg && cfg.key && SESSION.pw && SESSION.user === owner) {
+        try { wrap = await makeWrap(bytesFromB64u(cfg.key), SESSION.pw); } catch (e) { wrap = null; }
+      }
+      if (!wrap && row && row.payload && row.payload.wrap) wrap = row.payload.wrap;   /* carry forward until the owner signs in fresh */
+      const env = await dsSeal(wrap);
+      /* same-content rows still get one repair write when this fresh sign-in can
+         add the password wrap the row lacks — without it, a brand-new device
+         cannot bootstrap by sign-in alone */
+      const wrapRepair = !!(wrap && row && row.payload && row.payload.sprDS === 1 && !row.payload.wrap);
+      /* never clobber a copy sealed under a DIFFERENT sync key (device sync
+         enabled independently on two systems): that row belongs to another
+         setup — open it (adopt) instead of overwriting it with this device's
+         data */
+      if (row && row.payload && row.payload.sprDS === 1 && !row.payload.dead && cfg && cfg.key) {
+        let rowOurs = true;
+        try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
+        catch (e) { rowOurs = true; }
+        if (!rowOurs) {
+          cfg.lastResult = 'fail'; dsSaveCfg(cfg);
+          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage &rarr; Device sync first.', true);
+          return false;
+        }
+      }
+      if (row && row.payload && row.payload.sum === env.sum && !wrapRepair) {
+        await dsAdoptChan(cfg, chan);
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
       const at = new Date().toISOString();
-      const who = cfg.device || 'admin device';
-      let r = await sbSave(cfg.channel, env, 'devicesync', who, at, !row);
-      if (r === 'conflict') r = await sbSave(cfg.channel, env, 'devicesync', who, at, false);
+      const who = (cfg && cfg.device ? cfg.device : 'device') + ' — ' + SESSION.user;
+      let r = await sbSave(chan, env, 'devicesync', who, at, !row);
+      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false);
       if (r !== 'ok') throw new Error('cloud save rejected');
+      await dsAdoptChan(cfg, chan);
+      cfg = dsCfg() || cfg;
       cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
@@ -3150,10 +3239,26 @@
     } catch (e) {
       const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud save failed — it will retry on your next change', true);
+      /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
+         new edit to get the data out */
+      clearTimeout(dsTimer);
+      dsTimer = setTimeout(function () { if (dsCanPush()) dsPushNow(false); }, 30000);
       return false;
     }
   }
-  function dsAdminHashDiffers(obj) {
+  /* move this device's config to the account channel; if it previously used a
+     random legacy channel, retire that row so no device stays behind on it */
+  async function dsAdoptChan(cfg, chan) {
+    if (!cfg) return;
+    const legacy = (cfg.channel && cfg.channel !== chan) ? cfg.channel : null;
+    if (legacy) await dsKillRow(legacy);
+    if (cfg.channel !== chan || cfg.adoptedAcct !== true || (dsAdminActive() && cfg.owner !== SESSION.user)) {
+      cfg.channel = chan; cfg.adoptedAcct = true;
+      if (dsAdminActive()) cfg.owner = SESSION.user;   /* only an admin session sets the owner — a teacher pushing to the shared row must not re-key it */
+      dsSaveCfg(cfg);
+    }
+  }
+  function dsHashDiffers(obj) {
     const mine = getAuth().users.find(function (u) { return u.username === SESSION.user; });
     const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
     return !mine || !cloud || mine.hash !== cloud.hash;
@@ -3166,28 +3271,84 @@
     try { await dsPullCheckInner(interactive); }
     finally {
       dsHoldPush = false;
-      if (dsOn() && dsAdminActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+      if (dsOn() && dsCanPush()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
     }
   }
+  function dsDeclined() { try { return JSON.parse(localStorage.getItem(DS_DECLINED_KEY)) || null; } catch (e) { return null; } }
+  function dsSetDeclined(user) { try { localStorage.setItem(DS_DECLINED_KEY, JSON.stringify({ user: user, at: new Date().toISOString() })); } catch (e) {} }
   async function dsPullCheckInner(interactive) {
-    if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
-    if (!dsAdminActive()) { if (interactive) toast('Sign in as the admin to check the cloud copy', true); return; }
+    if (!dsSyncActive()) { if (interactive) toast('Sign in to check the cloud copy', true); return; }
+    const chan = await dsChan(SESSION.user);
+    /* ---- this browser has device sync OFF: still look for a cloud copy that
+       belongs to the signed-in account, and offer to adopt it ---- */
+    if (!dsOn()) {
+      const dec = dsDeclined();
+      if (!interactive && dec && dec.user === SESSION.user) return;   /* asked before, user kept local data */
+      let row;
+      try { row = await sbGet(chan); }
+      catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
+      if (!row || !row.payload || row.payload.dead) { if (interactive) toast('No cloud copy found for this account'); return; }
+      if (row.payload.sprDS !== 1 || !row.payload.wrap) {
+        if (interactive) toast('The cloud copy was made by an older SPR version. Sign in as admin once on the device that has device sync on, make any small change, then try again.', true);
+        return;
+      }
+      if (!SESSION.pw) { if (interactive) toast('Sign out and sign in again first — the check needs your password to unlock the cloud copy.', true); return; }
+      let hit = null;
+      try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); }
+      catch (e) { if (interactive) toast(e.message, true); return; }
+      if (!hit) { if (interactive) toast('The cloud copy was saved under a different admin password — open it with the pairing link instead.', true); return; }
+      const ok = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
+        'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is saved to a file first (SPR-backup-before-replace.json).',
+        'Open cloud copy');
+      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device&rsquo;s data — find the cloud copy later in Manage &rarr; Device sync'); return; }
+      downloadBackup();
+      dsInstallFrom(hit, SESSION.user);
+      dsInstall(hit.obj);
+      return;
+    }
+    /* ---- device sync is ON: the usual freshness check ---- */
     const cfg = dsCfg();
     let row;
     try { row = await sbGet(cfg.channel); }
     catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
+    if ((!row || (row.payload && row.payload.dead)) && cfg.channel !== chan) {
+      /* legacy channel retired by the account migration — follow it home */
+      try { row = await sbGet(chan); } catch (e) { row = null; }
+      if (row && row.payload && !row.payload.dead) { cfg.channel = chan; cfg.owner = cfg.owner || SESSION.user; dsSaveCfg(cfg); }
+    }
     cfg.lastCheck = new Date().toISOString(); dsSaveCfg(cfg);
-    if (!row) { if (interactive) toast('No cloud copy yet — it is created on your next change'); if (location.hash === '#/manage') renderManage(); return; }
+    if (!row || (row.payload && row.payload.dead)) {
+      if (interactive) toast('No cloud copy yet — it is created on your next change');
+      if (location.hash === '#/manage') renderManage();
+      return;
+    }
     let obj;
     try { obj = await dsOpen(row); }
-    catch (e) { if (interactive) toast(e.message, true); return; }
+    catch (e) {
+      /* this device's pairing key cannot read the row any more (sync was set
+         up or reset elsewhere): with the account password we can still adopt
+         the row's own key instead of dead-ending */
+      if (/integrity check/.test(e.message || '') && SESSION.pw) {
+        let hit = null;
+        try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
+        if (hit) {
+          const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
+            'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is saved to a file first (SPR-backup-before-replace.json).',
+            'Open cloud copy');
+          if (okA) { downloadBackup(); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
+          else if (interactive) toast('Kept this device&rsquo;s data — its pairing key no longer matches the cloud copy', true);
+          return;
+        }
+      }
+      if (interactive) toast(e.message, true); return;
+    }
     const localSum = await dsSum(dsContentString());
     if (obj.sum === localSum) { cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg); if (interactive) toast('This device already has the newest copy'); if (location.hash === '#/manage') renderManage(); return; }
     const cloudTs = obj.ts || 0;
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
-      (dsAdminHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different admin password — use the password from the device that saved it.' : ''),
+      (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
     downloadBackup();
@@ -3212,6 +3373,43 @@
     DS_BOOT_TS = (obj.v2 && obj.v2.ts) || Date.now();
     return true;
   }
+  /* the account IS the pairing. Looks up the channel derived from the given
+     username; the row's wrap (PBKDF2 over the given password) unlocks the sync
+     key. Returns:
+       {chan, keyB64, obj, by, at} → verified cloud copy for this account
+       false → account known to the cloud but the password is wrong
+       null  → no cloud copy for this account */
+  async function dsAccountLookup(username, password) {
+    const chan = await dsChan(username);
+    let row;
+    try { row = await sbGet(chan); }
+    catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
+    if (!row || !row.payload || row.payload.dead) return null;
+    const env = row.payload;
+    if (env.sprDS !== 1 || !env.wrap) return null;   /* legacy pairing-only row — needs the link */
+    let keyBytes;
+    try { keyBytes = await unwrapWrap(env.wrap, password); }
+    catch (e) { return false; }   /* AES-GCM auth failed → wrong password */
+    const keyB64 = b64uFromBytes(keyBytes);
+    const obj = await dsOpenWith(row, keyB64);
+    const u = (obj.users || []).find(function (x) { return x.username === username; });
+    if (!u || u.hash !== hashPassword(password)) return false;
+    return { chan: chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at };
+  }
+  /* install a verified cloud copy on this device and join its sync channel */
+  function dsInstallFrom(hit, owner) {
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: hit.obj.users, session: null }));
+      localStorage.setItem(V2_KEY, JSON.stringify(hit.obj.v2));
+      try { localStorage.removeItem(LS_KEY); } catch (e2) {}
+    } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
+    const cfg = dsCfg() || {};
+    cfg.on = true; cfg.channel = hit.chan; cfg.key = hit.keyB64; cfg.owner = owner; cfg.adoptedAcct = true;
+    cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = cfg.pairedAt || new Date().toISOString();
+    dsSaveCfg(cfg);
+    try { localStorage.removeItem(DS_DECLINED_KEY); } catch (e2) {}
+    DS_BOOT_TS = (hit.obj.v2 && hit.obj.v2.ts) || Date.now();
+  }
   function dsPair(channel, key) {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
     const cfg = dsCfg() || {};
@@ -3227,26 +3425,47 @@
     if (!dsAdminActive()) { toast('Sign in as the admin to turn on device sync', true); return; }
     (async () => {
       const ok = await confirmDlg('Turn on device sync?',
-        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change, and open it when the admin signs in on another system.<br><br>The copy is sealed with a random 256-bit key that lives <b>only in your pairing link</b> — the cloud never sees names, scores or passwords. Set up each of your systems once with that link, then just sign in normally.<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
+        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change.<br><br>On any other system, <b>just sign in with this admin account</b> — the whole markbook arrives automatically, no links needed. The copy is sealed so the cloud never sees names, scores or passwords: the key is wrapped under your SPR password (and a pairing link stays available as a backup way in).<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
       if (!ok) return;
+      /* this account may already own a cloud copy (set up on another system):
+         turning sync on must ADOPT that copy — never overwrite it with this
+         browser's own (possibly empty) data */
+      {
+        const already = dsCfg();
+        if (!already || !already.on) {
+          let hit = null;
+          if (SESSION.pw) { try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e) { hit = null; } }
+          if (hit) {
+            const okGo = await confirmDlg('This account already has a cloud copy',
+              'The account <b>' + U.esc(SESSION.user) + '</b> already keeps an <b>encrypted cloud copy</b> — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is saved to a file first (SPR-backup-before-replace.json).', 'Open cloud copy');
+            if (!okGo) { toast('Device sync left unchanged'); return; }
+            downloadBackup();
+            dsInstallFrom(hit, SESSION.user);
+            dsInstall(hit.obj);
+            return;
+          }
+        }
+      }
       const cfg = dsCfg() || {};
       cfg.on = true;
-      cfg.channel = cfg.channel || uuid();
+      cfg.owner = SESSION.user;
+      cfg.channel = cfg.channel || uuid();   /* replaced by the account channel on first push */
       cfg.key = cfg.key || b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
       cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
       dsSaveCfg(cfg);
       const done = await dsPushNow(false);
-      toast(done ? 'Device sync is on — cloud copy saved. Use “Show pairing link & QR” to set up your other systems.'
+      toast(done ? 'Device sync is on — cloud copy saved. On other systems, just sign in with this account.'
                  : 'Device sync is on, but the first cloud save failed — it will retry on your next change.', !done);
       if (location.hash === '#/manage') renderManage();
     })();
   }
   function dsLinkModal() {
+    if (!isAdmin()) { toast('Device sync is managed by the administrator', true); return; }
     const link = dsLink();
     if (!link) { toast('Turn on device sync first', true); return; }
     openDlg(
       '<h3>Pair another system</h3>' +
-      '<p class="small">Open this link <b>once</b> on each of your other systems (or scan the code with a phone), then sign in with your SPR account — everything arrives from the cloud and stays in sync automatically.<br><br>The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
+      '<p class="small">Easiest way: on the other system <b>just sign in with your SPR admin account</b> — everything arrives from the cloud automatically.<br><br>This link is the <b>backup way</b>: open it once on a system (or scan the code with a phone) to pair it without typing the admin account. The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="dsQrBox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="dsLinkInp" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
@@ -3268,6 +3487,7 @@
     );
   }
   function dsOff(withDelete) {
+    if (!isAdmin()) { toast('Device sync is managed by the administrator', true); return; }
     const cfg = dsCfg(); if (!cfg || !cfg.on) return;
     (async () => {
       const ok = await confirmDlg(withDelete ? 'Turn off and delete the cloud copy?' : 'Turn off device sync?',
@@ -3296,7 +3516,7 @@
   function dsManageCard() {
     const cfg = dsCfg();
     if (!cfg || !cfg.on) {
-      return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync</b> — keep an encrypted copy of the whole markbook in your private cloud channel, so every system you sign in on shows the same data. Sealed with a random key that never leaves your pairing link; the cloud stores only unreadable bytes.</p>' +
+      return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync</b> — keep an encrypted copy of the whole markbook in your private cloud channel, so every system you sign in on shows the same data. The copy is sealed under your SPR account: sign in anywhere with your admin username and password and everything arrives — the cloud stores only unreadable bytes.</p>' +
         '<div class="flex"><button class="btn" data-action="ds-enable">Turn on device sync</button>' +
         '<span class="small muted" style="align-self:center">Optional — SPR works fully without it.</span></div></div>';
     }
@@ -3313,7 +3533,7 @@
       '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
       '<button class="btn sm" data-action="ds-off">Turn off</button>' +
       '<button class="btn sm danger" data-action="ds-off-del">Turn off &amp; delete cloud copy</button></div>' +
-      '<p class="small muted" style="margin-top:8px">Pair each of your systems once with the link — or just restore a JSON backup there; backups carry the pairing too.</p></div>';
+      '<p class="small muted" style="margin-top:8px">Other systems: just sign in with your admin account. The pairing link (below) and JSON backups are backup ways to carry the key.</p></div>';
   }
 
   const AUTH_KEY = 'spr-auth-v1';
@@ -3360,11 +3580,47 @@
   /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
     if (username === MASTER_KEY) return { error: 'Invalid username or password.' };
-    /* paired fresh browser: quietly pull accounts + data, then sign in normally */
+    /* fresh browser: quietly pull accounts + data from the cloud, then sign
+       in normally. Unpaired browsers need nothing but the admin account —
+       the channel is derived from the username and the key is password-wrapped.
+       Paired browsers try their pairing first (covers pre-migration rows),
+       then the account. */
     let installedFromCloud = false;
-    if (cryptoOK() && !readV2() && getAuth().users.length === 0 && dsOn()) {
-      installedFromCloud = await dsFreshInstall(username, password);   /* throws on cloud errors */
-      if (!installedFromCloud) return { error: 'Invalid username or password.' };
+    const freshBrowser = !readV2() && getAuth().users.length === 0;
+    if (cryptoOK() && freshBrowser) {
+      let pairErr = null, netErr = null;
+      if (dsOn()) {
+        try { installedFromCloud = await dsFreshInstall(username, password); }
+        catch (e) { pairErr = e; if (/^cannot reach/.test(e.message || '')) netErr = e; }
+      }
+      if (!installedFromCloud) {
+        let r = null;
+        try { r = await dsAccountLookup(username, password); }
+        catch (e) { netErr = netErr || e; }
+        if (r) { dsInstallFrom(r, username); installedFromCloud = true; }
+        else if (r === false) return { error: 'Invalid username or password.' };
+        /* r === null: no cloud copy for this account, continue to the local lookup */
+      }
+      if (!installedFromCloud) {
+        if (netErr) throw netErr;              /* offline: say so instead of "invalid password" */
+        if (dsOn() && pairErr) throw pairErr;  /* e.g. paired, but no cloud copy exists yet */
+      }
+    } else if (cryptoOK() && !getAuth().users.some(function (u) { return u.username === username && u.hash === hashPassword(password); })) {
+      /* this browser has its own sign-ins, but the typed account is not one of
+         them — it may live in the cloud copy from another system. Ask before
+         replacing this browser's data (a backup file is saved first). */
+      let hit = null;
+      try { hit = await dsAccountLookup(username, password); }
+      catch (e) { /* unreachable: fall through to the normal local error */ }
+      if (hit) {
+        const okGo = await confirmDlg('This account has a cloud copy',
+          'The account <b>' + U.esc(username) + '</b> was not created on this device, but its <b>encrypted cloud copy</b> exists — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is saved to a file first (SPR-backup-before-replace.json).',
+          'Open cloud copy');
+        if (!okGo) { renderLogin(); const eEl = $('#loginErr'); if (eEl) eEl.textContent = 'Invalid username or password.'; return { error: '__shown__' }; }
+        downloadBackup();
+        dsInstallFrom(hit, username);
+        installedFromCloud = true;
+      }
     }
     const auth = getAuth();
     const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
@@ -3387,18 +3643,22 @@
       try { localStorage.removeItem(LS_KEY); } catch (e) {}
     } else {
       const w = v2.wraps && v2.wraps[username];
-      if (!w) return { error: 'No data key is stored for this account. Sign in as admin mo once, then sign in again with this account.' };
+      if (!w) return { error: 'No data key is stored for this account. Sign in as the admin once, then sign in again with this account.' };
       try { dk = await unwrapWrap(w, password); }
       catch (e) { return { error: 'Invalid username or password.' }; }
       try { DB = normalizeDB(await unsealDB(v2.data, dk)); }
       catch (e) { return { error: 'Could not open the encrypted workbook.' }; }
     }
-    SESSION = { user: user.username, dk: dk };
+    SESSION = { user: user.username, dk: dk, pw: password };
     auth.session = { username: user.username, name: user.name, role: user.role };
     saveAuth(auth);
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
-    if (user.role === 'admin' && dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);
+    if (!installedFromCloud && (dsOn() || user.role === 'admin')) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user on a paired device: keep it current; admin also gets the adopt offer when sync is off */
+    /* fresh sign-in with device sync on: push soon even without a data change,
+       so a legacy channel migrates home and the owner's password wrap lands on
+       the row (a fresh device cannot bootstrap until the wrap exists) */
+    if (SESSION.pw && dsCanPush()) scheduleSyncPush();
     if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
   }
@@ -3407,7 +3667,7 @@
     auth.session = null;
     saveAuth(auth);
     try { sessionStorage.removeItem('spr-session'); sessionStorage.removeItem('spr-session-db'); } catch (e) {}
-    SESSION = { user: null, dk: null };
+    SESSION = { user: null, dk: null, pw: null };
     location.reload();
   }
   function addUser(username, password, name, role) {
@@ -3425,33 +3685,39 @@
     return null;
   }
 
+  let loginSetupMode = false;   /* fresh browsers open on the sign-in card — signing in with an existing account pulls its data from the cloud; setup is an explicit choice */
   function renderLogin() {
-    const firstRun = getAuth().users.length === 0 && !dsOn();
-    const card = firstRun
+    const freshBrowser = getAuth().users.length === 0 && !readV2();
+    const setupCard = freshBrowser && loginSetupMode;
+    const card = setupCard
       ? '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Set up this browser</h2>' +
-          '<p>First time on this device. Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
+          '<p>Starting fresh? Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
           '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="suPass">Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
+          '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-signin">&larr; I already use SPR — sign in instead</button></div>' +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>'
       : '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Students Performance Report</h2>' +
-          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '') + '</p>' +
+          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') +
+          (cryptoOK() && freshBrowser ? '<br><b>New device?</b> Just sign in with your usual SPR account — if device sync is on, your data arrives from the cloud automatically.' :
+           (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '')) + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
           (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
+          (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
     openDlg(card);
-    setTimeout(function() { var u = document.getElementById(firstRun ? 'suUser' : 'loginUser'); if (u) u.focus(); }, 50);
+    setTimeout(function() { var u = document.getElementById(setupCard ? 'suUser' : 'loginUser'); if (u) u.focus(); }, 50);
   }
   async function firstRunCreate(username, password) {
     const auth = getAuth();
@@ -3472,7 +3738,7 @@
     auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
     auth.session = { username: username, name: username, role: 'admin' };
     saveAuth(auth);
-    SESSION = { user: username, dk: dk };
+    SESSION = { user: username, dk: dk, pw: password };
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
     return { user: auth.session };
   }
