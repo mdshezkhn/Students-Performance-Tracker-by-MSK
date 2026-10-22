@@ -30,6 +30,16 @@ the cloud row is findable but uncrackable, matching the existing class-share
 security model. Every payload carries an HMAC(key, ct) so tampered or
 mismatched-key copies are refused.
 
+## All users (2026-10-22)
+The sync transport now runs for EVERY signed-in user on a paired device:
+teachers' and management's saves auto-push, and each sign-in pulls the newest
+copy — nobody is tied to one system. Channel CONTROL (enable / turn off /
+delete / pairing link) stays admin-only; other users see a one-line
+"managed by the administrator" note in Manage. The pairing link decides who
+can join a device — hand it to a teacher only if that teacher should have the
+markbook on that system. Pushes record `device — username` so the
+"newer copy" dialog says who saved it. Failed pushes auto-retry after 30 s.
+
 ## Known limits
 - Last-save-wins; no merge. Two offline devices that both edit will be asked to
   pick a copy.

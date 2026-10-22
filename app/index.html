@@ -3504,7 +3504,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           ? '<button class="btn sm" data-action="master-set-open">Replace master password</button> <button class="btn sm danger" data-action="master-del">Remove master password</button>'
           : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
-      ((currentUser() || {}).role === 'admin' && cryptoOK() ? dsManageCard() : '') +
+      (cryptoOK() && (currentUser() || {}).role === 'admin' ? dsManageCard() : '') +
+      (cryptoOK() && (currentUser() || {}).role !== 'admin' && dsOn()
+        ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b> — your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator (mo) manages this channel.</p></div>'
+        : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
         var c = getShare();
@@ -5098,6 +5101,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
   function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
   function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
+  /* sync transport runs for EVERY signed-in user on a paired device (the
+     markbook is shared); channel CONTROL (enable/off/delete/pairing link)
+     stays admin-only */
+  function dsSyncActive() { return !!(cryptoOK() && SESSION && SESSION.dk && SESSION.user); }
   function dsDeviceName() {
     const c = dsCfg(); if (c && c.device) return c.device;
     const ua = navigator.userAgent || '';
@@ -5160,14 +5167,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     location.reload();
   }
   function scheduleSyncPush() {
-    if (!dsOn() || !dsAdminActive()) return;
+    if (!dsOn() || !dsSyncActive()) return;
     clearTimeout(dsTimer);
     dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
   }
   function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
   async function dsPushNow(interactive) {
-    if (!dsOn() || !dsAdminActive()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    if (!dsOn() || !dsSyncActive()) return false;
+    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
     const cfg = dsCfg();
     try {
       const env = await dsSeal();
@@ -5178,7 +5185,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         return true;
       }
       const at = new Date().toISOString();
-      const who = cfg.device || 'admin device';
+      const who = (cfg.device || 'device') + ' — ' + (SESSION.user || 'user');
       let r = await sbSave(cfg.channel, env, 'devicesync', who, at, !row);
       if (r === 'conflict') r = await sbSave(cfg.channel, env, 'devicesync', who, at, false);
       if (r !== 'ok') throw new Error('cloud save rejected');
@@ -5189,10 +5196,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     } catch (e) {
       const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud save failed — it will retry on your next change', true);
+      /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
+         new edit to get the data out */
+      clearTimeout(dsTimer);
+      dsTimer = setTimeout(function () { if (dsOn() && dsSyncActive()) dsPushNow(false); }, 30000);
       return false;
     }
   }
-  function dsAdminHashDiffers(obj) {
+  function dsHashDiffers(obj) {
     const mine = getAuth().users.find(function (u) { return u.username === SESSION.user; });
     const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
     return !mine || !cloud || mine.hash !== cloud.hash;
@@ -5205,12 +5216,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     try { await dsPullCheckInner(interactive); }
     finally {
       dsHoldPush = false;
-      if (dsOn() && dsAdminActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+      if (dsOn() && dsSyncActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
     }
   }
   async function dsPullCheckInner(interactive) {
     if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
-    if (!dsAdminActive()) { if (interactive) toast('Sign in as the admin to check the cloud copy', true); return; }
+    if (!dsSyncActive()) { if (interactive) toast('Sign in to check the cloud copy', true); return; }
     const cfg = dsCfg();
     let row;
     try { row = await sbGet(cfg.channel); }
@@ -5226,7 +5237,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
-      (dsAdminHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different admin password — use the password from the device that saved it.' : ''),
+      (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
     downloadBackup();
@@ -5437,7 +5448,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     saveAuth(auth);
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
-    if (user.role === 'admin' && dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);
+    if (dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user: keep this device current */
     if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
   }
