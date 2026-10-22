@@ -1,0 +1,2567 @@
+{
+ "meta": "SYNTHETIC regression fixture - no real students; expected values computed independently in Python (this generator), NOT by calc.js",
+ "semester": {
+  "id": "sem-fixture",
+  "name": "2026 Spring",
+  "school": "Fixture School",
+  "className": "P4C4",
+  "months": [
+   "March",
+   "May"
+  ],
+  "teachers": [
+   "Mo (fixture)",
+   "Lisa (fixture)"
+  ],
+  "students": [
+   {
+    "id": "P01",
+    "nameCn": "学生01",
+    "nameEn": "Pupil 01",
+    "gender": "M"
+   },
+   {
+    "id": "P02",
+    "nameCn": "学生02",
+    "nameEn": "Pupil 02",
+    "gender": "F"
+   },
+   {
+    "id": "P03",
+    "nameCn": "学生03",
+    "nameEn": "Pupil 03",
+    "gender": "M"
+   },
+   {
+    "id": "P04",
+    "nameCn": "学生04",
+    "nameEn": "Pupil 04",
+    "gender": "F"
+   },
+   {
+    "id": "P05",
+    "nameCn": "学生05",
+    "nameEn": "Pupil 05",
+    "gender": "M"
+   },
+   {
+    "id": "P06",
+    "nameCn": "学生06",
+    "nameEn": "Pupil 06",
+    "gender": "F"
+   },
+   {
+    "id": "P07",
+    "nameCn": "学生07",
+    "nameEn": "Pupil 07",
+    "gender": "M"
+   },
+   {
+    "id": "P08",
+    "nameCn": "学生08",
+    "nameEn": "Pupil 08",
+    "gender": "F"
+   },
+   {
+    "id": "P09",
+    "nameCn": "学生09",
+    "nameEn": "Pupil 09",
+    "gender": "M"
+   },
+   {
+    "id": "P10",
+    "nameCn": "学生10",
+    "nameEn": "Pupil 10",
+    "gender": "F"
+   },
+   {
+    "id": "P11",
+    "nameCn": "学生11",
+    "nameEn": "Pupil 11",
+    "gender": "M"
+   },
+   {
+    "id": "P12",
+    "nameCn": "学生12",
+    "nameEn": "Pupil 12",
+    "gender": "F"
+   },
+   {
+    "id": "P13",
+    "nameCn": "学生13",
+    "nameEn": "Pupil 13",
+    "gender": "M"
+   },
+   {
+    "id": "P14",
+    "nameCn": "学生14",
+    "nameEn": "Pupil 14",
+    "gender": "F"
+   },
+   {
+    "id": "P15",
+    "nameCn": "学生15",
+    "nameEn": "Pupil 15",
+    "gender": "M"
+   },
+   {
+    "id": "P16",
+    "nameCn": "学生16",
+    "nameEn": "Pupil 16",
+    "gender": "F"
+   },
+   {
+    "id": "P17",
+    "nameCn": "学生17",
+    "nameEn": "Pupil 17",
+    "gender": "M"
+   },
+   {
+    "id": "P18",
+    "nameCn": "学生18",
+    "nameEn": "Pupil 18",
+    "gender": "F"
+   },
+   {
+    "id": "P19",
+    "nameCn": "学生19",
+    "nameEn": "Pupil 19",
+    "gender": "M"
+   },
+   {
+    "id": "P20",
+    "nameCn": "学生20",
+    "nameEn": "Pupil 20",
+    "gender": "F"
+   },
+   {
+    "id": "P21",
+    "nameCn": "学生21",
+    "nameEn": "Pupil 21",
+    "gender": "M"
+   },
+   {
+    "id": "P22",
+    "nameCn": "学生22",
+    "nameEn": "Pupil 22",
+    "gender": "F"
+   },
+   {
+    "id": "P23",
+    "nameCn": "学生23",
+    "nameEn": "Pupil 23",
+    "gender": "M"
+   }
+  ],
+  "observations": {
+   "P01": {
+    "March": {
+     "Listening-LO1": 9.0,
+     "Listening-LO2": 9.0,
+     "Speaking-LO1": 9.0,
+     "Speaking-LO2": 9.0,
+     "Writing-LO1": 9.0,
+     "Writing-LO2": 9.0,
+     "Reading-LO1": 9.0,
+     "Reading-LO2": 9.0
+    },
+    "May": {
+     "Listening-LO1": 9.0,
+     "Listening-LO2": 9.0,
+     "Speaking-LO1": 9.0,
+     "Speaking-LO2": 9.0,
+     "Writing-LO1": 9.0,
+     "Writing-LO2": 9.0,
+     "Reading-LO1": 9.0,
+     "Reading-LO2": 9.0
+    }
+   },
+   "P02": {
+    "March": {
+     "Listening-LO1": 8.5,
+     "Listening-LO2": 8.5,
+     "Speaking-LO1": 8.5,
+     "Speaking-LO2": 8.5,
+     "Writing-LO1": 8.5,
+     "Writing-LO2": 8.5,
+     "Reading-LO1": 8.5,
+     "Reading-LO2": 8.5
+    },
+    "May": {
+     "Listening-LO1": 8.5,
+     "Listening-LO2": 8.5,
+     "Speaking-LO1": 8.5,
+     "Speaking-LO2": 8.5,
+     "Writing-LO1": 8.5,
+     "Writing-LO2": 8.5,
+     "Reading-LO1": 8.5,
+     "Reading-LO2": 8.5
+    }
+   },
+   "P03": {
+    "March": {
+     "Listening-LO1": 8.4,
+     "Listening-LO2": 8.4,
+     "Speaking-LO1": 8.4,
+     "Speaking-LO2": 8.4,
+     "Writing-LO1": 8.4,
+     "Writing-LO2": 8.4,
+     "Reading-LO1": 8.4,
+     "Reading-LO2": 8.4
+    },
+    "May": {
+     "Listening-LO1": 8.4,
+     "Listening-LO2": 8.4,
+     "Speaking-LO1": 8.4,
+     "Speaking-LO2": 8.4,
+     "Writing-LO1": 8.4,
+     "Writing-LO2": 8.4,
+     "Reading-LO1": 8.4,
+     "Reading-LO2": 8.4
+    }
+   },
+   "P04": {
+    "March": {
+     "Listening-LO1": 7.5,
+     "Listening-LO2": 7.5,
+     "Speaking-LO1": 7.5,
+     "Speaking-LO2": 7.5,
+     "Writing-LO1": 7.5,
+     "Writing-LO2": 7.5,
+     "Reading-LO1": 7.5,
+     "Reading-LO2": 7.5
+    },
+    "May": {
+     "Listening-LO1": 7.5,
+     "Listening-LO2": 7.5,
+     "Speaking-LO1": 7.5,
+     "Speaking-LO2": 7.5,
+     "Writing-LO1": 7.5,
+     "Writing-LO2": 7.5,
+     "Reading-LO1": 7.5,
+     "Reading-LO2": 7.5
+    }
+   },
+   "P05": {
+    "March": {
+     "Listening-LO1": 7.4,
+     "Listening-LO2": 7.4,
+     "Speaking-LO1": 7.4,
+     "Speaking-LO2": 7.4,
+     "Writing-LO1": 7.4,
+     "Writing-LO2": 7.4,
+     "Reading-LO1": 7.4,
+     "Reading-LO2": 7.4
+    },
+    "May": {
+     "Listening-LO1": 7.4,
+     "Listening-LO2": 7.4,
+     "Speaking-LO1": 7.4,
+     "Speaking-LO2": 7.4,
+     "Writing-LO1": 7.4,
+     "Writing-LO2": 7.4,
+     "Reading-LO1": 7.4,
+     "Reading-LO2": 7.4
+    }
+   },
+   "P06": {
+    "March": {
+     "Listening-LO1": 6.5,
+     "Listening-LO2": 6.5,
+     "Speaking-LO1": 6.5,
+     "Speaking-LO2": 6.5,
+     "Writing-LO1": 6.5,
+     "Writing-LO2": 6.5,
+     "Reading-LO1": 6.5,
+     "Reading-LO2": 6.5
+    },
+    "May": {
+     "Listening-LO1": 6.5,
+     "Listening-LO2": 6.5,
+     "Speaking-LO1": 6.5,
+     "Speaking-LO2": 6.5,
+     "Writing-LO1": 6.5,
+     "Writing-LO2": 6.5,
+     "Reading-LO1": 6.5,
+     "Reading-LO2": 6.5
+    }
+   },
+   "P07": {
+    "March": {
+     "Listening-LO1": 6.4,
+     "Listening-LO2": 6.4,
+     "Speaking-LO1": 6.4,
+     "Speaking-LO2": 6.4,
+     "Writing-LO1": 6.4,
+     "Writing-LO2": 6.4,
+     "Reading-LO1": 6.4,
+     "Reading-LO2": 6.4
+    },
+    "May": {
+     "Listening-LO1": 6.4,
+     "Listening-LO2": 6.4,
+     "Speaking-LO1": 6.4,
+     "Speaking-LO2": 6.4,
+     "Writing-LO1": 6.4,
+     "Writing-LO2": 6.4,
+     "Reading-LO1": 6.4,
+     "Reading-LO2": 6.4
+    }
+   },
+   "P08": {
+    "March": {
+     "Listening-LO1": 5.5,
+     "Listening-LO2": 5.5,
+     "Speaking-LO1": 5.5,
+     "Speaking-LO2": 5.5,
+     "Writing-LO1": 5.5,
+     "Writing-LO2": 5.5,
+     "Reading-LO1": 5.5,
+     "Reading-LO2": 5.5
+    },
+    "May": {
+     "Listening-LO1": 5.5,
+     "Listening-LO2": 5.5,
+     "Speaking-LO1": 5.5,
+     "Speaking-LO2": 5.5,
+     "Writing-LO1": 5.5,
+     "Writing-LO2": 5.5,
+     "Reading-LO1": 5.5,
+     "Reading-LO2": 5.5
+    }
+   },
+   "P09": {
+    "March": {
+     "Listening-LO1": 5.0,
+     "Listening-LO2": 5.0,
+     "Speaking-LO1": 5.0,
+     "Speaking-LO2": 5.0,
+     "Writing-LO1": 5.0,
+     "Writing-LO2": 5.0,
+     "Reading-LO1": 5.0,
+     "Reading-LO2": 5.0
+    },
+    "May": {
+     "Listening-LO1": 5.0,
+     "Listening-LO2": 5.0,
+     "Speaking-LO1": 5.0,
+     "Speaking-LO2": 5.0,
+     "Writing-LO1": 5.0,
+     "Writing-LO2": 5.0,
+     "Reading-LO1": 5.0,
+     "Reading-LO2": 5.0
+    }
+   },
+   "P10": {
+    "March": {
+     "Listening-LO1": 4.0,
+     "Listening-LO2": 4.0,
+     "Speaking-LO1": 4.0,
+     "Speaking-LO2": 4.0,
+     "Writing-LO1": 4.0,
+     "Writing-LO2": 4.0,
+     "Reading-LO1": 4.0,
+     "Reading-LO2": 4.0
+    },
+    "May": {
+     "Listening-LO1": 4.0,
+     "Listening-LO2": 4.0,
+     "Speaking-LO1": 4.0,
+     "Speaking-LO2": 4.0,
+     "Writing-LO1": 4.0,
+     "Writing-LO2": 4.0,
+     "Reading-LO1": 4.0,
+     "Reading-LO2": 4.0
+    }
+   },
+   "P11": {
+    "March": {
+     "Listening-LO1": 0.0,
+     "Listening-LO2": 0.0,
+     "Speaking-LO1": 0.0,
+     "Speaking-LO2": 0.0,
+     "Writing-LO1": 0.0,
+     "Writing-LO2": 0.0,
+     "Reading-LO1": 0.0,
+     "Reading-LO2": 0.0
+    },
+    "May": {
+     "Listening-LO1": 0.0,
+     "Listening-LO2": 0.0,
+     "Speaking-LO1": 0.0,
+     "Speaking-LO2": 0.0,
+     "Writing-LO1": 0.0,
+     "Writing-LO2": 0.0,
+     "Reading-LO1": 0.0,
+     "Reading-LO2": 0.0
+    }
+   },
+   "P12": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P13": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P14": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P15": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P16": {
+    "March": {
+     "Listening-LO1": 8,
+     "Listening-LO2": 8,
+     "Speaking-LO1": 8,
+     "Speaking-LO2": 8,
+     "Writing-LO1": 8,
+     "Writing-LO2": 8,
+     "Reading-LO1": 8,
+     "Reading-LO2": 8
+    }
+   },
+   "P17": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P18": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P19": {
+    "March": {
+     "Listening-LO1": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9,
+     "Listening-LO2": 12
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P20": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P21": {
+    "March": {
+     "Listening-LO1": 8.5,
+     "Speaking-LO1": 7.5,
+     "Writing-LO1": 8.5,
+     "Reading-LO1": 7.5,
+     "Listening-LO2": 7.5,
+     "Speaking-LO2": 8.5,
+     "Writing-LO2": 7.5,
+     "Reading-LO2": 8.5
+    },
+    "May": {
+     "Listening-LO1": 8.5,
+     "Speaking-LO1": 7.5,
+     "Writing-LO1": 8.5,
+     "Reading-LO1": 7.5,
+     "Listening-LO2": 7.5,
+     "Speaking-LO2": 8.5,
+     "Writing-LO2": 7.5,
+     "Reading-LO2": 8.5
+    }
+   },
+   "P22": {
+    "March": {
+     "Listening-LO1": 8,
+     "Listening-LO2": 8,
+     "Speaking-LO1": 8,
+     "Speaking-LO2": 8,
+     "Writing-LO1": 8,
+     "Writing-LO2": 8,
+     "Reading-LO1": 8,
+     "Reading-LO2": 8
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   },
+   "P23": {
+    "March": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    },
+    "May": {
+     "Listening-LO1": 9,
+     "Listening-LO2": 9,
+     "Speaking-LO1": 9,
+     "Speaking-LO2": 9,
+     "Writing-LO1": 9,
+     "Writing-LO2": 9,
+     "Reading-LO1": 9,
+     "Reading-LO2": 9
+    }
+   }
+  },
+  "spelling": {
+   "P01": {
+    "March": {
+     "1": {
+      "s": 18.0,
+      "t": 20
+     },
+     "2": {
+      "s": 18.0,
+      "t": 20
+     },
+     "3": {
+      "s": 18.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18.0,
+      "t": 20
+     },
+     "2": {
+      "s": 18.0,
+      "t": 20
+     },
+     "3": {
+      "s": 18.0,
+      "t": 20
+     }
+    }
+   },
+   "P02": {
+    "March": {
+     "1": {
+      "s": 17.0,
+      "t": 20
+     },
+     "2": {
+      "s": 17.0,
+      "t": 20
+     },
+     "3": {
+      "s": 17.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 17.0,
+      "t": 20
+     },
+     "2": {
+      "s": 17.0,
+      "t": 20
+     },
+     "3": {
+      "s": 17.0,
+      "t": 20
+     }
+    }
+   },
+   "P03": {
+    "March": {
+     "1": {
+      "s": 16.8,
+      "t": 20
+     },
+     "2": {
+      "s": 16.8,
+      "t": 20
+     },
+     "3": {
+      "s": 16.8,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 16.8,
+      "t": 20
+     },
+     "2": {
+      "s": 16.8,
+      "t": 20
+     },
+     "3": {
+      "s": 16.8,
+      "t": 20
+     }
+    }
+   },
+   "P04": {
+    "March": {
+     "1": {
+      "s": 15.0,
+      "t": 20
+     },
+     "2": {
+      "s": 15.0,
+      "t": 20
+     },
+     "3": {
+      "s": 15.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 15.0,
+      "t": 20
+     },
+     "2": {
+      "s": 15.0,
+      "t": 20
+     },
+     "3": {
+      "s": 15.0,
+      "t": 20
+     }
+    }
+   },
+   "P05": {
+    "March": {
+     "1": {
+      "s": 14.8,
+      "t": 20
+     },
+     "2": {
+      "s": 14.8,
+      "t": 20
+     },
+     "3": {
+      "s": 14.8,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 14.8,
+      "t": 20
+     },
+     "2": {
+      "s": 14.8,
+      "t": 20
+     },
+     "3": {
+      "s": 14.8,
+      "t": 20
+     }
+    }
+   },
+   "P06": {
+    "March": {
+     "1": {
+      "s": 13.0,
+      "t": 20
+     },
+     "2": {
+      "s": 13.0,
+      "t": 20
+     },
+     "3": {
+      "s": 13.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 13.0,
+      "t": 20
+     },
+     "2": {
+      "s": 13.0,
+      "t": 20
+     },
+     "3": {
+      "s": 13.0,
+      "t": 20
+     }
+    }
+   },
+   "P07": {
+    "March": {
+     "1": {
+      "s": 12.8,
+      "t": 20
+     },
+     "2": {
+      "s": 12.8,
+      "t": 20
+     },
+     "3": {
+      "s": 12.8,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 12.8,
+      "t": 20
+     },
+     "2": {
+      "s": 12.8,
+      "t": 20
+     },
+     "3": {
+      "s": 12.8,
+      "t": 20
+     }
+    }
+   },
+   "P08": {
+    "March": {
+     "1": {
+      "s": 11.0,
+      "t": 20
+     },
+     "2": {
+      "s": 11.0,
+      "t": 20
+     },
+     "3": {
+      "s": 11.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 11.0,
+      "t": 20
+     },
+     "2": {
+      "s": 11.0,
+      "t": 20
+     },
+     "3": {
+      "s": 11.0,
+      "t": 20
+     }
+    }
+   },
+   "P09": {
+    "March": {
+     "1": {
+      "s": 10.0,
+      "t": 20
+     },
+     "2": {
+      "s": 10.0,
+      "t": 20
+     },
+     "3": {
+      "s": 10.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 10.0,
+      "t": 20
+     },
+     "2": {
+      "s": 10.0,
+      "t": 20
+     },
+     "3": {
+      "s": 10.0,
+      "t": 20
+     }
+    }
+   },
+   "P10": {
+    "March": {
+     "1": {
+      "s": 8.0,
+      "t": 20
+     },
+     "2": {
+      "s": 8.0,
+      "t": 20
+     },
+     "3": {
+      "s": 8.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 8.0,
+      "t": 20
+     },
+     "2": {
+      "s": 8.0,
+      "t": 20
+     },
+     "3": {
+      "s": 8.0,
+      "t": 20
+     }
+    }
+   },
+   "P11": {
+    "March": {
+     "1": {
+      "s": 0.0,
+      "t": 20
+     },
+     "2": {
+      "s": 0.0,
+      "t": 20
+     },
+     "3": {
+      "s": 0.0,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 0.0,
+      "t": 20
+     },
+     "2": {
+      "s": 0.0,
+      "t": 20
+     },
+     "3": {
+      "s": 0.0,
+      "t": 20
+     }
+    }
+   },
+   "P12": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P13": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P14": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P15": {
+    "March": {
+     "1": {
+      "s": 16,
+      "t": 20
+     },
+     "2": {
+      "s": 16,
+      "t": 20
+     },
+     "3": {
+      "s": 16,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P16": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P17": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 19,
+      "t": 20
+     },
+     "3": {
+      "s": null,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 19,
+      "t": 20
+     },
+     "3": {
+      "s": null,
+      "t": 20
+     }
+    }
+   },
+   "P18": {
+    "March": {
+     "1": {
+      "s": null,
+      "t": 20
+     },
+     "2": {
+      "s": null,
+      "t": 20
+     },
+     "3": {
+      "s": null,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": null,
+      "t": 20
+     },
+     "2": {
+      "s": null,
+      "t": 20
+     },
+     "3": {
+      "s": null,
+      "t": 20
+     }
+    }
+   },
+   "P19": {
+    "March": {
+     "1": {
+      "s": 25,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 25,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P20": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P21": {
+    "March": {
+     "1": {
+      "s": 17,
+      "t": 20
+     },
+     "2": {
+      "s": 18.5,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 17,
+      "t": 20
+     },
+     "2": {
+      "s": 18.5,
+      "t": 20
+     }
+    }
+   },
+   "P22": {
+    "March": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   },
+   "P23": {
+    "March": {
+     "1": {
+      "s": null,
+      "t": 20
+     },
+     "2": {
+      "s": null,
+      "t": 20
+     },
+     "3": {
+      "s": null,
+      "t": 20
+     }
+    },
+    "May": {
+     "1": {
+      "s": 18,
+      "t": 20
+     },
+     "2": {
+      "s": 18,
+      "t": 20
+     },
+     "3": {
+      "s": 18,
+      "t": 20
+     }
+    }
+   }
+  },
+  "daily": {
+   "P01": {
+    "March": {
+     "1": {
+      "s": 9.0,
+      "t": 10
+     },
+     "2": {
+      "s": 9.0,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9.0,
+      "t": 10
+     },
+     "2": {
+      "s": 9.0,
+      "t": 10
+     }
+    }
+   },
+   "P02": {
+    "March": {
+     "1": {
+      "s": 8.5,
+      "t": 10
+     },
+     "2": {
+      "s": 8.5,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 8.5,
+      "t": 10
+     },
+     "2": {
+      "s": 8.5,
+      "t": 10
+     }
+    }
+   },
+   "P03": {
+    "March": {
+     "1": {
+      "s": 8.4,
+      "t": 10
+     },
+     "2": {
+      "s": 8.4,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 8.4,
+      "t": 10
+     },
+     "2": {
+      "s": 8.4,
+      "t": 10
+     }
+    }
+   },
+   "P04": {
+    "March": {
+     "1": {
+      "s": 7.5,
+      "t": 10
+     },
+     "2": {
+      "s": 7.5,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 7.5,
+      "t": 10
+     },
+     "2": {
+      "s": 7.5,
+      "t": 10
+     }
+    }
+   },
+   "P05": {
+    "March": {
+     "1": {
+      "s": 7.4,
+      "t": 10
+     },
+     "2": {
+      "s": 7.4,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 7.4,
+      "t": 10
+     },
+     "2": {
+      "s": 7.4,
+      "t": 10
+     }
+    }
+   },
+   "P06": {
+    "March": {
+     "1": {
+      "s": 6.5,
+      "t": 10
+     },
+     "2": {
+      "s": 6.5,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 6.5,
+      "t": 10
+     },
+     "2": {
+      "s": 6.5,
+      "t": 10
+     }
+    }
+   },
+   "P07": {
+    "March": {
+     "1": {
+      "s": 6.4,
+      "t": 10
+     },
+     "2": {
+      "s": 6.4,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 6.4,
+      "t": 10
+     },
+     "2": {
+      "s": 6.4,
+      "t": 10
+     }
+    }
+   },
+   "P08": {
+    "March": {
+     "1": {
+      "s": 5.5,
+      "t": 10
+     },
+     "2": {
+      "s": 5.5,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 5.5,
+      "t": 10
+     },
+     "2": {
+      "s": 5.5,
+      "t": 10
+     }
+    }
+   },
+   "P09": {
+    "March": {
+     "1": {
+      "s": 5.0,
+      "t": 10
+     },
+     "2": {
+      "s": 5.0,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 5.0,
+      "t": 10
+     },
+     "2": {
+      "s": 5.0,
+      "t": 10
+     }
+    }
+   },
+   "P10": {
+    "March": {
+     "1": {
+      "s": 4.0,
+      "t": 10
+     },
+     "2": {
+      "s": 4.0,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 4.0,
+      "t": 10
+     },
+     "2": {
+      "s": 4.0,
+      "t": 10
+     }
+    }
+   },
+   "P11": {
+    "March": {
+     "1": {
+      "s": 0.0,
+      "t": 10
+     },
+     "2": {
+      "s": 0.0,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 0.0,
+      "t": 10
+     },
+     "2": {
+      "s": 0.0,
+      "t": 10
+     }
+    }
+   },
+   "P12": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P13": {
+    "March": {
+     "1": {
+      "s": null,
+      "t": 10
+     },
+     "2": {
+      "s": null,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": null,
+      "t": 10
+     },
+     "2": {
+      "s": null,
+      "t": 10
+     }
+    }
+   },
+   "P14": {
+    "March": {
+     "1": {
+      "s": null,
+      "t": 10
+     },
+     "2": {
+      "s": null,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": null,
+      "t": 10
+     },
+     "2": {
+      "s": null,
+      "t": 10
+     }
+    }
+   },
+   "P15": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P16": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P17": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P18": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P19": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P20": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P21": {
+    "March": {
+     "1": {
+      "s": 8.5,
+      "t": 10
+     },
+     "2": {
+      "s": 8.75,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 8.5,
+      "t": 10
+     },
+     "2": {
+      "s": 8.75,
+      "t": 10
+     }
+    }
+   },
+   "P22": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   },
+   "P23": {
+    "March": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    },
+    "May": {
+     "1": {
+      "s": 9,
+      "t": 10
+     },
+     "2": {
+      "s": 9,
+      "t": 10
+     }
+    }
+   }
+  },
+  "tests": {
+   "P01": {
+    "midterm": {
+     "s": 45.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 45.0,
+     "t": 50
+    },
+    "written": {
+     "s": 90.0,
+     "t": 100
+    }
+   },
+   "P02": {
+    "midterm": {
+     "s": 42.5,
+     "t": 50
+    },
+    "oral": {
+     "s": 42.5,
+     "t": 50
+    },
+    "written": {
+     "s": 85.0,
+     "t": 100
+    }
+   },
+   "P03": {
+    "midterm": {
+     "s": 42.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 42.0,
+     "t": 50
+    },
+    "written": {
+     "s": 84.0,
+     "t": 100
+    }
+   },
+   "P04": {
+    "midterm": {
+     "s": 37.5,
+     "t": 50
+    },
+    "oral": {
+     "s": 37.5,
+     "t": 50
+    },
+    "written": {
+     "s": 75.0,
+     "t": 100
+    }
+   },
+   "P05": {
+    "midterm": {
+     "s": 37.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 37.0,
+     "t": 50
+    },
+    "written": {
+     "s": 74.0,
+     "t": 100
+    }
+   },
+   "P06": {
+    "midterm": {
+     "s": 32.5,
+     "t": 50
+    },
+    "oral": {
+     "s": 32.5,
+     "t": 50
+    },
+    "written": {
+     "s": 65.0,
+     "t": 100
+    }
+   },
+   "P07": {
+    "midterm": {
+     "s": 32.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 32.0,
+     "t": 50
+    },
+    "written": {
+     "s": 64.0,
+     "t": 100
+    }
+   },
+   "P08": {
+    "midterm": {
+     "s": 27.5,
+     "t": 50
+    },
+    "oral": {
+     "s": 27.5,
+     "t": 50
+    },
+    "written": {
+     "s": 55.0,
+     "t": 100
+    }
+   },
+   "P09": {
+    "midterm": {
+     "s": 25.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 25.0,
+     "t": 50
+    },
+    "written": {
+     "s": 50.0,
+     "t": 100
+    }
+   },
+   "P10": {
+    "midterm": {
+     "s": 20.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 20.0,
+     "t": 50
+    },
+    "written": {
+     "s": 40.0,
+     "t": 100
+    }
+   },
+   "P11": {
+    "midterm": {
+     "s": 0.0,
+     "t": 50
+    },
+    "oral": {
+     "s": 0.0,
+     "t": 50
+    },
+    "written": {
+     "s": 0.0,
+     "t": 100
+    }
+   },
+   "P12": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": null,
+     "t": 100
+    }
+   },
+   "P13": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": null,
+     "t": 50
+    },
+    "written": {
+     "s": null,
+     "t": 100
+    }
+   },
+   "P14": {
+    "midterm": {
+     "s": null,
+     "t": 50
+    },
+    "oral": {
+     "s": null,
+     "t": 50
+    },
+    "written": {
+     "s": null,
+     "t": 100
+    }
+   },
+   "P15": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P16": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P17": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P18": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P19": {
+    "midterm": {
+     "s": 60,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P20": {
+    "midterm": {
+     "s": null,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P21": {
+    "midterm": {
+     "s": 44.5,
+     "t": 50
+    },
+    "oral": {
+     "s": 44.5,
+     "t": 50
+    },
+    "written": {
+     "s": 89,
+     "t": 100
+    }
+   },
+   "P22": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   },
+   "P23": {
+    "midterm": {
+     "s": 45,
+     "t": 50
+    },
+    "oral": {
+     "s": 45,
+     "t": 50
+    },
+    "written": {
+     "s": 90,
+     "t": 100
+    }
+   }
+  }
+ },
+ "expected": {
+  "P01": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 90.0,
+   "letter": "A*"
+  },
+  "P02": {
+   "parts": {
+    "Listening": 85.0,
+    "Speaking": 85.0,
+    "Writing": 85.0,
+    "Reading": 85.0,
+    "Spelling": 85.0,
+    "Daily Assignments": 85.0,
+    "Mid-Term": 85.0,
+    "Oral": 85.0,
+    "Written": 85.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 85.0,
+   "letter": "A*"
+  },
+  "P03": {
+   "parts": {
+    "Listening": 84.0,
+    "Speaking": 84.0,
+    "Writing": 84.0,
+    "Reading": 84.0,
+    "Spelling": 84.0,
+    "Daily Assignments": 84.0,
+    "Mid-Term": 84.0,
+    "Oral": 84.0,
+    "Written": 84.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 84.0,
+   "letter": "A"
+  },
+  "P04": {
+   "parts": {
+    "Listening": 75.0,
+    "Speaking": 75.0,
+    "Writing": 75.0,
+    "Reading": 75.0,
+    "Spelling": 75.0,
+    "Daily Assignments": 75.0,
+    "Mid-Term": 75.0,
+    "Oral": 75.0,
+    "Written": 75.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 75.0,
+   "letter": "A"
+  },
+  "P05": {
+   "parts": {
+    "Listening": 74.0,
+    "Speaking": 74.0,
+    "Writing": 74.0,
+    "Reading": 74.0,
+    "Spelling": 74.0,
+    "Daily Assignments": 74.0,
+    "Mid-Term": 74.0,
+    "Oral": 74.0,
+    "Written": 74.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 74.0,
+   "letter": "B"
+  },
+  "P06": {
+   "parts": {
+    "Listening": 65.0,
+    "Speaking": 65.0,
+    "Writing": 65.0,
+    "Reading": 65.0,
+    "Spelling": 65.0,
+    "Daily Assignments": 65.0,
+    "Mid-Term": 65.0,
+    "Oral": 65.0,
+    "Written": 65.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 65.0,
+   "letter": "B"
+  },
+  "P07": {
+   "parts": {
+    "Listening": 64.0,
+    "Speaking": 64.0,
+    "Writing": 64.0,
+    "Reading": 64.0,
+    "Spelling": 64.0,
+    "Daily Assignments": 64.0,
+    "Mid-Term": 64.0,
+    "Oral": 64.0,
+    "Written": 64.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 64.0,
+   "letter": "C"
+  },
+  "P08": {
+   "parts": {
+    "Listening": 55.0,
+    "Speaking": 55.0,
+    "Writing": 55.0,
+    "Reading": 55.0,
+    "Spelling": 55.0,
+    "Daily Assignments": 55.0,
+    "Mid-Term": 55.0,
+    "Oral": 55.0,
+    "Written": 55.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 55.0,
+   "letter": "C"
+  },
+  "P09": {
+   "parts": {
+    "Listening": 50.0,
+    "Speaking": 50.0,
+    "Writing": 50.0,
+    "Reading": 50.0,
+    "Spelling": 50.0,
+    "Daily Assignments": 50.0,
+    "Mid-Term": 50.0,
+    "Oral": 50.0,
+    "Written": 50.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 50.0,
+   "letter": "D"
+  },
+  "P10": {
+   "parts": {
+    "Listening": 40.0,
+    "Speaking": 40.0,
+    "Writing": 40.0,
+    "Reading": 40.0,
+    "Spelling": 40.0,
+    "Daily Assignments": 40.0,
+    "Mid-Term": 40.0,
+    "Oral": 40.0,
+    "Written": 40.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 40.0,
+   "letter": "U"
+  },
+  "P11": {
+   "parts": {
+    "Listening": 0.0,
+    "Speaking": 0.0,
+    "Writing": 0.0,
+    "Reading": 0.0,
+    "Spelling": 0.0,
+    "Daily Assignments": 0.0,
+    "Mid-Term": 0.0,
+    "Oral": 0.0,
+    "Written": 0.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 0.0,
+   "letter": "U"
+  },
+  "P12": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": null
+   },
+   "assessed": 8,
+   "gate": "provisional",
+   "final": 72.0,
+   "letter": "B"
+  },
+  "P13": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": null,
+    "Mid-Term": 90.0,
+    "Oral": null,
+    "Written": null
+   },
+   "assessed": 6,
+   "gate": "provisional",
+   "final": 54.0,
+   "letter": "D"
+  },
+  "P14": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": null,
+    "Mid-Term": null,
+    "Oral": null,
+    "Written": null
+   },
+   "assessed": 5,
+   "gate": "not-assessed",
+   "final": 45.0,
+   "letter": null
+  },
+  "P15": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 85.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 89.5,
+   "letter": "A*"
+  },
+  "P16": {
+   "parts": {
+    "Listening": 80.0,
+    "Speaking": 80.0,
+    "Writing": 80.0,
+    "Reading": 80.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 86.0,
+   "letter": "A*"
+  },
+  "P17": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 92.5,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 90.25,
+   "letter": "A*"
+  },
+  "P18": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": null,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 8,
+   "gate": "provisional",
+   "final": 81.0,
+   "letter": "A"
+  },
+  "P19": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": null,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 8,
+   "gate": "provisional",
+   "final": 81.0,
+   "letter": "A"
+  },
+  "P20": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": null,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 8,
+   "gate": "provisional",
+   "final": 81.0,
+   "letter": "A"
+  },
+  "P21": {
+   "parts": {
+    "Listening": 80.0,
+    "Speaking": 80.0,
+    "Writing": 80.0,
+    "Reading": 80.0,
+    "Spelling": 88.75,
+    "Daily Assignments": 86.25,
+    "Mid-Term": 89.0,
+    "Oral": 89.0,
+    "Written": 89.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 85.1,
+   "letter": "A*"
+  },
+  "P22": {
+   "parts": {
+    "Listening": 85.0,
+    "Speaking": 85.0,
+    "Writing": 85.0,
+    "Reading": 85.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 88.0,
+   "letter": "A*"
+  },
+  "P23": {
+   "parts": {
+    "Listening": 90.0,
+    "Speaking": 90.0,
+    "Writing": 90.0,
+    "Reading": 90.0,
+    "Spelling": 90.0,
+    "Daily Assignments": 90.0,
+    "Mid-Term": 90.0,
+    "Oral": 90.0,
+    "Written": 90.0
+   },
+   "assessed": 9,
+   "gate": "final",
+   "final": 90.0,
+   "letter": "A*"
+  }
+ },
+ "expectedClass": {
+  "finalAvg": 71.8113636364,
+  "distribution": {
+   "A*": 8,
+   "A": 5,
+   "B": 3,
+   "C": 2,
+   "D": 2,
+   "U": 2
+  }
+ }
+}
