@@ -2017,7 +2017,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
 </script>
 <script>
-window.SPR_BUILD = { v: 'b84080d540', d: '2026-10-22' };
+window.SPR_BUILD = { v: '83aa1b9fb5', d: '2026-10-22' };
 /* =========================================================================
    Student's Performance Report — comparative analysis engine (pure, no DOM)
    Cross-semester class/student progress, RAG classification, SWOT remarks.
@@ -3998,7 +3998,9 @@ window.SPR_BUILD = { v: 'b84080d540', d: '2026-10-22' };
         if (c.lastPull) status.push('pulled ' + new Date(c.lastPull).toLocaleString());
         var link = shareLink();
         var sb = SB();
-        if (sb.url && sb.key && (c.provider === 'sb' || c.channel)) {
+        var shareDead = !!c.semId && !DB.semesters.some(function (x) { return x.id === c.semId; });
+        if (shareDead) status.push('The previously shared class (' + (c.shareName ? '“' + U.esc(c.shareName) + '”' : 'class') + ') is no longer in this browser — pick the class to share again; your co-teacher will need the new link.');
+        if (sb.url && sb.key && (c.provider === 'sb' || c.channel) && !shareDead) {
           var whenTxt = c.lastPush ? new Date(c.lastPush).toLocaleString() : 'never';
           return '<div class="panel">' +
             '<p class="small" style="margin-bottom:10px">Sharing <b>' + U.esc(c.shareName || 'one class') + '</b> — last saved ' + U.esc(whenTxt) + (c.lastPushBy ? ' by ' + U.esc(c.lastPushBy) : '') + '. After editing press <b>Save &amp; Share</b>; to get your co-teacher&rsquo;s newest version press <b>Open shared copy</b>. If they saved after your last sync, the app will offer it automatically. Only this one class is shared — your other classes never leave this browser.</p>' +
@@ -5369,9 +5371,14 @@ window.SPR_BUILD = { v: 'b84080d540', d: '2026-10-22' };
     const sem = DB.semesters.find((s) => s.id === semId);
     if (!sem) { toast('Pick the class to share first', true); return; }
     const c = getShare();
+    /* switching to a different class must never silently reuse the old
+       channel: the co-teacher's link would start serving different data */
+    const rotated = !!(c.semId && c.semId !== semId);
+    if (rotated) { c.channel = null; c.key = undefined; c.lastPush = null; c.lastPull = null; c.lastPushBy = null; }
     c.provider = 'sb'; c.semId = semId; c.shareName = name || (sem.className || sem.name);
     setShare(c);
     await sharePush();
+    if (rotated) toast('You are sharing a different class now — send your co-teacher the new link', true);
   }
   async function sharePush() {
     if (!subtle()) { toast('Save & Share needs the online (https) version of the app', true); return; }
@@ -5379,8 +5386,18 @@ window.SPR_BUILD = { v: 'b84080d540', d: '2026-10-22' };
     const sb = SB();
     /* ---------- Save & Share (Supabase, per class) ---------- */
     if ((c.provider === 'sb' || c.channel) && sb.url && sb.key) {
-      const sem = DB.semesters.find((s) => s.id === c.semId);
-      if (!c.semId || !sem) { toast('Pick the class to share first', true); return; }
+      let sem = DB.semesters.find((s) => s.id === c.semId);
+      if (!sem) {
+        /* the shared class vanished (deleted / replaced) - heal onto the
+           current class under a FRESH channel so the old link can never
+           serve data it was not sent for */
+        const fallback = cur();
+        if (!fallback) { toast('Create or load a class first, then share it', true); return; }
+        c.channel = null; c.key = undefined; c.lastPush = null; c.lastPull = null; c.lastPushBy = null;
+        c.semId = fallback.id; c.shareName = (fallback.className ? fallback.className + ' · ' : '') + fallback.name;
+        setShare(c); sem = fallback;
+        toast('The previously shared class is gone — sharing “' + c.shareName + '” under a new link', true);
+      }
       try {
         /* freshness guard: never silently overwrite a co-teacher's newer copy */
         let row = null;
