@@ -9,7 +9,7 @@
   'use strict';
   const Calc = (typeof window !== 'undefined' && window.Calc) || (typeof require === 'function' ? require('./calc.js') : null);
   const Util = (typeof window !== 'undefined' && window.Util) || (typeof require === 'function' ? require('./util.js') : null);
-  const XLSX = (typeof window !== 'undefined' && window.XLSX) || (typeof require === 'function' ? require('../libs/xlsx.full.min.js') : null);
+  const XLSX = (typeof window !== 'undefined' && window.XLSX) || (typeof require === 'function' ? require('./libs/xlsx.full.min.js') : null);
 
   const SKILLS = Calc.SKILLS;
   const MONTH_ORDER = Util.MONTHS;
@@ -51,10 +51,44 @@
         row: r,
         id: idStr,
         nameCn, nameEn,
-        gender: String(cell(rows, r, 4) ?? '').trim(),
+        gender: Util.normGender(cell(rows, r, 4)),   // 男->M, 女->F (D7)
       });
     }
     return out;
+  }
+
+  /* teacher names: workbooks place them differently (exported files use
+     row 2 col E; the school's own files label a cell "Teachers"/"教师" with
+     the names beside or below it). Scan the top rows of every sheet for the
+     label, take the next non-empty cell right/down, and merge everything
+     found. Falls back to the legacy fixed cell. (D8) */
+  const TEACHER_LABEL = /teach|教师|授课/i;
+  const splitNames = (raw) => String(raw || '').split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+  function findTeachers(sheets, legacy) {
+    const found = [];
+    const seen = new Set();
+    const add = (raw) => splitNames(raw).forEach((n) => {
+      const k = n.toLowerCase();
+      if (!seen.has(k) && !TEACHER_LABEL.test(n)) { seen.add(k); found.push(n); }
+    });
+    for (const sh of sheets) {
+      if (!sh) continue;
+      for (let r = 0; r < 7 && r < sh.rows.length; r++) {
+        for (let c = 0; c < 15; c++) {
+          const v = cell(sh.rows, r, c);
+          if (v === null || v === undefined || !TEACHER_LABEL.test(String(v))) continue;
+          if (String(v).trim().length > 24) continue;   // long prose mentioning teaching — not a label
+          for (let d = 1; d <= 4; d++) {
+            const right = cell(sh.rows, r, c + d);
+            if (right !== null && right !== undefined && String(right).trim()) { add(right); break; }
+          }
+          const below = cell(sh.rows, r + 1, c);
+          if (below !== null && below !== undefined && String(below).trim()) add(below);
+        }
+      }
+    }
+    if (!found.length && legacy) add(legacy);
+    return found.slice(0, 6);
   }
 
   /* months from row 1 (idx 0) starting col 6 (idx 5); block = cols per month */
@@ -84,12 +118,11 @@
     const roster = studentRows(rosterSrc.rows);
     if (!roster.length) throw new Error('No student rows found (columns: Index, ID, Chinese name, English name, Gender).');
 
-    /* school / class / teachers from first available sheet rows 1-2 (col B; teachers in col E) */
+    /* school / class / teachers: label scan first, legacy fixed cell as fallback */
     const metaSrc = obsS || spS || daS || teS;
     const school = String(cell(metaSrc.rows, 0, 1) ?? '').trim() || 'School';
     const className = String(cell(metaSrc.rows, 1, 1) ?? '').trim() || '';
-    const splitNames = (raw) => String(raw || '').split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
-    const teachers = splitNames(cell(metaSrc.rows, 1, 4));
+    const teachers = findTeachers([obsS, spS, daS, teS], cell(metaSrc.rows, 1, 4));
 
     /* months: prefer Observations sheet (8-col blocks), else Spelling (11-col blocks) */
     let months = [];
@@ -107,20 +140,24 @@
       observations: {}, spelling: {}, daily: {}, tests: {},
     };
     const sidByRow = new Map(roster.map((r) => [r.row, r.id]));
+    const warn = (msg) => { if (opts.warnings) opts.warnings.push(msg); };
 
-    /* observations: per month block of 8: L-LO1, L-LO2, S-LO1, … */
+    /* observations: per month block of 8: L-LO1, L-LO2, S-LO1, …
+       Out-of-range values (not 0-10) are dropped and reported (D5). */
     if (obsS) {
       for (const mb of monthBlocks(obsS.rows, 8)) {
         for (const r of roster) {
           const vals = {};
-          let any = false;
+          let any = false, bad = 0;
           SKILLS.forEach((sk, si) => {
             for (const lo of [1, 2]) {
               const v = numOrNull(cell(obsS.rows, r.row, mb.col + si * 2 + lo - 1));
+              if (v !== null && !Calc.validObs(v)) { bad++; continue; }
               if (v !== null) any = true;
               vals[sk + '-LO' + lo] = v;
             }
           });
+          if (bad) warn('Observations ' + mb.name + ': ' + bad + ' out-of-range score' + (bad > 1 ? 's' : '') + ' ignored for ' + (r.nameEn || r.nameCn || r.id) + ' (scores are 0-10)');
           if (any) {
             sem.observations[r.id] = sem.observations[r.id] || {};
             sem.observations[r.id][mb.name] = vals;
@@ -129,18 +166,22 @@
       }
     }
 
-    /* spelling & daily: per month block of 11: 5×(score,total) + avg col */
+    /* spelling & daily: per month block of 11: 5×(score,total) + avg col.
+       Pairs with a negative score or score above the total are dropped and
+       reported (D5). */
     for (const [sh, key] of [[spS, 'spelling'], [daS, 'daily']]) {
       if (!sh) continue;
       for (const mb of monthBlocks(sh.rows, 11)) {
         for (const r of roster) {
           const weeks = {};
-          let any = false;
+          let any = false, bad = 0;
           for (let w = 1; w <= 5; w++) {
-            const s = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2));
+            let s = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2));
             const t = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2 + 1));
+            if (s !== null && (s < 0 || (t !== null && (t <= 0 || s > t)))) { bad++; s = null; }
             if (s !== null || t !== null) { weeks[w] = { s, t }; any = true; }
           }
+          if (bad) warn(sh.name + ' ' + mb.name + ': ' + bad + ' impossible score' + (bad > 1 ? 's' : '') + ' (above the total or negative) ignored for ' + (r.nameEn || r.nameCn || r.id));
           if (any) {
             sem[key][r.id] = sem[key][r.id] || {};
             sem[key][r.id][mb.name] = weeks;
@@ -153,11 +194,14 @@
     if (teS) {
       for (const r of roster) {
         const t = {};
+        let bad = 0;
         for (const [kind, c0] of [['midterm', 5], ['oral', 8], ['written', 11]]) {
-          const s = numOrNull(cell(teS.rows, r.row, c0));
+          let s = numOrNull(cell(teS.rows, r.row, c0));
           const tt = numOrNull(cell(teS.rows, r.row, c0 + 1));
+          if (s !== null && (s < 0 || (tt !== null && (tt <= 0 || s > tt)))) { bad++; s = null; }
           if (s !== null || tt !== null) t[kind] = { s, t: tt };
         }
+        if (bad) warn('Tests: ' + bad + ' impossible score' + (bad > 1 ? 's' : '') + ' (above the total or negative) ignored for ' + (r.nameEn || r.nameCn || r.id));
         if (Object.keys(t).length) sem.tests[r.id] = t;
       }
     }
