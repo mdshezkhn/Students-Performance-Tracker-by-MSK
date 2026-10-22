@@ -301,6 +301,7 @@
           '<div class="rail-foot"><label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
+            '<div class="ds-status" id="dsStatus" role="status" aria-live="polite"></div>' +
             (function() { var u = currentUser(); if (!u) return '';
               var ini = (u.name || u.username).charAt(0).toUpperCase();
               return '<div class="user-chip"><span class="uc-avatar">' + U.esc(ini) + '</span>' +
@@ -320,6 +321,7 @@
     const ws = $('.wm-sub'); if (ws) ws.textContent = (sem && sem.school) || 'ESL performance tracker';
     const sel = $('#semSelect');
     if (sel) sel.innerHTML = DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('');
+    dsStatusRefresh();
   }
   function railActive(view) {
     const navId = view === 'student' ? 'students' : view;
@@ -2497,6 +2499,11 @@
       return;
     }
     if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
+    if (a === 'ds-conf-apply') { dsApplyConflicts(null); return; }
+    if (a === 'ds-conf-all-mine') { dsApplyConflicts('mine'); return; }
+    if (a === 'ds-conf-all-theirs') { dsApplyConflicts('theirs'); return; }
+    if (a === 'ds-conf-postpone') { dsPostponeConflicts(); return; }
+    if (a === 'ds-conf-open') { dsConflictDialog(); return; }
     if (a === 'share-native') { shareNative($('#shareLink') ? $('#shareLink').value : ''); return; }
     if (a === 'privacy-open') { openPrivacy(); return; }
     if (a === 'privacy-ack') { closeDlg(); return; } /* legacy: viewer closes plainly */
@@ -3056,8 +3063,11 @@
      random 256-bit sync key; only unreadable ciphertext reaches the cloud row.
      The key travels ONLY inside the pairing link (#pair=<channel>&k=<key>) and
      inside JSON backups. Automatic: debounced push after every save, pull-check
-     on admin sign-in. Last save wins; every payload carries a content digest
-     and an HMAC so tampered or identical copies are detected. */
+     on every sign-in. Divergent copies are merged cell by cell (three-way,
+     base snapshot in DSBASE_KEY); true conflicts are queued for the user and
+     never guessed. Last save wins ONLY before the first base snapshot exists.
+     Every payload carries a content digest and an HMAC so tampered or
+     identical copies are detected. */
   const DS_KEY = 'spr-devicesync-v1';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
   function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
@@ -3096,11 +3106,112 @@
     const k = await subtle().importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     return b64uFromBytes(new Uint8Array(await subtle().sign('HMAC', k, ctBytes)));
   }
+  /* ---- stable content digest over DECRYPTED state (the old digest hashed the
+     sealed blob, whose random IV changes on every save — useless across devices) ---- */
+  function dsLocalState() {
+    return { users: getAuth().users, wraps: (readV2() || {}).wraps || {}, db: DB };
+  }
+  async function dsStateSum(state) {
+    return dsSum(SPRMerge.stableStringify({ users: state.users || [], wraps: state.wraps || {}, db: state.db }));
+  }
+  /* ---- base snapshot: the state both sides last agreed on, sealed with the
+     sync key (never plaintext at rest), saved after every agreement ---- */
+  const DSBASE_KEY = 'spr-dsbase-v1';
+  let dsPendingMerge = null;
+  async function dsBaseSeal(state) {
+    const cfg = dsCfg();
+    const keyBytes = bytesFromB64u(cfg.key);
+    const pt = new TextEncoder().encode(JSON.stringify(state));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, pt));
+    return { sprBase: 1, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+  }
+  async function dsBaseSave(stateArg) {
+    if (!dsCfg()) return;
+    try {
+      const state = stateArg || dsLocalState();
+      const sum = await dsStateSum(state);
+      const env = await dsBaseSeal(state);
+      localStorage.setItem(DSBASE_KEY, JSON.stringify({ sum: sum, ts: Date.now(), by: (dsCfg().device || 'device'), env: env }));
+    } catch (e) { /* the base is an optimisation — never block a save on it */ }
+  }
+  async function dsBaseLoad() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(DSBASE_KEY));
+      if (!raw || !raw.env || raw.env.sprBase !== 1) return null;
+      const cfg = dsCfg(); if (!cfg) return null;
+      const keyBytes = bytesFromB64u(cfg.key);
+      const ctBytes = bytesFromB64u(raw.env.ct);
+      if (await dsHmac(keyBytes, ctBytes) !== raw.env.mac) return null;
+      const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+      const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(raw.env.iv) }, ck, ctBytes);
+      const state = JSON.parse(new TextDecoder().decode(pt));
+      if (!state || !state.db || !Array.isArray(state.users)) return null;
+      return { sum: raw.sum, ts: raw.ts, by: raw.by, state: state };
+    } catch (e) { return null; }
+  }
+  function dsBaseClear() { try { localStorage.removeItem(DSBASE_KEY); } catch (e) {} }
+  /* decrypt a cloud row into a mergeable state (all paired devices share the
+     same data key, because wraps+data travel as one unit) */
+  async function dsCloudState(row) {
+    const obj = await dsOpen(row);
+    const plain = await unsealDB(obj.v2.data, SESSION.dk);
+    const db = normalizeDB(JSON.parse(JSON.stringify(plain)));
+    return { users: obj.users || [], wraps: (obj.v2 && obj.v2.wraps) || {}, db: db };
+  }
+  /* seal an arbitrary merged state the same way dsSeal seals local */
+  async function dsSealState(state) {
+    const cfg = dsCfg();
+    const keyBytes = bytesFromB64u(cfg.key);
+    const sum = await dsStateSum(state);
+    const v2 = { fmt: 2, wraps: state.wraps || {}, data: await sealDB(state.db, SESSION.dk), ts: Date.now() };
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: state.users, v2: v2 });
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
+    return { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+  }
+  /* install a merged state WITHOUT a reload while a session is live */
+  async function dsInstallState(state, why) {
+    validateDB(state.db);
+    normalizeDB(state.db);
+    DB = state.db;
+    const v2 = readV2() || { fmt: 2, wraps: {} };
+    v2.wraps = state.wraps || {};
+    v2.data = await sealDB(DB, SESSION.dk);
+    v2.ts = Date.now();
+    writeV2(v2);
+    saveAuth({ users: state.users, session: getAuth().session });
+    try { sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e2) {}
+    buildShell(); route();
+  }
+  /* ---- calm status line (rail chip + Manage) ---- */
+  function dsStatus(text, tone) {
+    if (!text) return;
+    const el = $('#dsStatus');
+    if (el) { el.textContent = text; el.dataset.tone = tone || 'ok'; }
+    const mEl = $('#dsManageStatus');
+    if (mEl) mEl.textContent = text;
+  }
+  function dsStatusRefresh() {
+    const el = $('#dsStatus');
+    if (!el) return;
+    if (!dsOn()) { el.textContent = ''; return; }
+    if (dsPendingMerge) { dsStatus(dsPendingMerge.conflicts.length + (dsPendingMerge.conflicts.length === 1 ? ' conflict needs' : ' conflicts need') + ' your decision', 'warn'); return; }
+    const cfg = dsCfg();
+    if (!cfg) return;
+    if (cfg.lastResult === 'fail') { dsStatus('Cloud unreachable — your data is safe on this device', 'warn'); return; }
+    if (cfg.lastPush) {
+      const mins = Math.max(0, Math.round((Date.now() - new Date(cfg.lastPush).getTime()) / 60000));
+      dsStatus('Synced · ' + (mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : Math.round(mins / 60) + ' h ago'), 'ok');
+    }
+  }
   async function dsSeal() {
     const cfg = dsCfg();
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
-    const sum = await dsSum(dsContentString());
+    const sum = await dsStateSum(dsLocalState());
     const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: getAuth().users, v2: v2 });
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
@@ -3137,27 +3248,73 @@
   function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
   async function dsPushNow(interactive) {
     if (!dsOn() || !dsSyncActive()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
     const cfg = dsCfg();
     try {
+      if (dsPendingMerge) { dsConflictDialog(); return false; }   /* unresolved conflicts block every push */
+      dsStatus('Syncing…', 'busy');
       const env = await dsSeal();
-      const row = await sbGet(cfg.channel).catch(function () { return null; });
+      const row = await sbGet(cfg.channel).catch(function () { return 'neterr'; });
+      if (row === 'neterr') throw new Error('cloud unreachable');   /* bail: never treat a network failure as "no cloud row" */
       if (row && row.payload && row.payload.sum === env.sum) {
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+        await dsBaseSave();
+        dsStatusRefresh();
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
+      /* did the cloud move since this device last agreed with it? */
+      let pushEnv = env;
+      if (row && row.payload && row.payload.sprDS === 1) {
+        const base = await dsBaseLoad();
+        if (base && base.sum !== row.payload.sum) {
+          dsStatus('Merging…', 'busy');
+          const localState = dsLocalState();
+          const cloudState = await dsCloudState(row);
+          const r = SPRMerge.merge(base.state, localState, cloudState);
+          if (r.conflicts.length) {
+            dsPendingMerge = { conflicts: r.conflicts, merged: r.merged, row: row };
+            dsStatusRefresh();
+            dsConflictDialog();
+            return false;
+          }
+          const mergedSum = await dsStateSum(r.merged);
+          const localSum = await dsStateSum(localState);
+          if (mergedSum !== localSum) {
+            downloadBackup();   /* safety net before replacing local data */
+            await dsInstallState(r.merged, 'merge');
+            toast('Merged with the copy saved by ' + (row.pushed_by || 'another device'));
+          }
+          pushEnv = await dsSealState(r.merged);
+        } else if (!base) {
+          /* first sync after the upgrade (no base snapshot yet): last save wins,
+             but never silently clobber a NEWER cloud copy — ask first */
+          const cloudObj = await dsOpen(row);
+          if ((cloudObj.ts || 0) > DS_BOOT_TS) {
+            const ok = await confirmDlg('A newer copy is in the cloud',
+              'Saved <b>' + new Date(cloudObj.ts || 0).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>. This device has no merge base yet (first sync after the update).<br><br>Open the cloud copy here (a safety backup downloads first), or keep this device&rsquo;s copy and overwrite the cloud with it?',
+              'Keep mine — overwrite cloud');
+            if (!ok) { toast('Postponed — nothing was changed'); return false; }
+            downloadBackup();
+            dsInstall(cloudObj);
+            return false;
+          }
+        }
+      }
       const at = new Date().toISOString();
       const who = (cfg.device || 'device') + ' — ' + (SESSION.user || 'user');
-      let r = await sbSave(cfg.channel, env, 'devicesync', who, at, !row);
+      let r = await sbSave(cfg.channel, pushEnv, 'devicesync', who, at, !row);
       if (r === 'conflict') r = await sbSave(cfg.channel, env, 'devicesync', who, at, false);
       if (r !== 'ok') throw new Error('cloud save rejected');
       cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+      await dsBaseSave();
+      dsStatusRefresh();
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
       return true;
     } catch (e) {
       const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
+      dsStatusRefresh();
       if (interactive) toast('Cloud save failed — it will retry on your next change', true);
       /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
          new edit to get the data out */
@@ -3171,18 +3328,18 @@
     const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
     return !mine || !cloud || mine.hash !== cloud.hash;
   }
-  async function dsPullCheck(interactive) {
+  async function dsPullCheck(interactive, cutoffTs) {
     /* hold auto-pushes for the whole check INCLUDING the decision dialog —
        otherwise the 4s-debounced push could overwrite the newer cloud copy
        while the user is still deciding whether to open it */
     dsHoldPush = true;
-    try { await dsPullCheckInner(interactive); }
+    try { await dsPullCheckInner(interactive, cutoffTs); }
     finally {
       dsHoldPush = false;
       if (dsOn() && dsSyncActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
     }
   }
-  async function dsPullCheckInner(interactive) {
+  async function dsPullCheckInner(interactive, cutoffTs) {
     if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
     if (!dsSyncActive()) { if (interactive) toast('Sign in to check the cloud copy', true); return; }
     const cfg = dsCfg();
@@ -3194,12 +3351,47 @@
     let obj;
     try { obj = await dsOpen(row); }
     catch (e) { if (interactive) toast(e.message, true); return; }
-    const localSum = await dsSum(dsContentString());
-    if (obj.sum === localSum) { cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg); if (interactive) toast('This device already has the newest copy'); if (location.hash === '#/manage') renderManage(); return; }
+    const localState = dsLocalState();
+    const localSum = await dsStateSum(localState);
+    if (obj.sum === localSum) {
+      cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg);
+      await dsBaseSave();   /* local == cloud: this IS the agreed state */
+      dsStatusRefresh();
+      if (interactive) toast('This device already has the newest copy');
+      if (location.hash === '#/manage') renderManage();
+      return;
+    }
+    /* both sides changed since the base? merge instead of asking to replace */
+    const base = await dsBaseLoad();
+    if (base && base.sum !== obj.sum && base.sum !== localSum) {
+      dsStatus('Merging…', 'busy');
+      const cloudState = await dsCloudState(row);
+      const r = SPRMerge.merge(base.state, localState, cloudState);
+      if (r.conflicts.length) {
+        dsPendingMerge = { conflicts: r.conflicts, merged: r.merged, row: row };
+        dsStatusRefresh();
+        dsConflictDialog();
+        return;
+      }
+      const mergedSum = await dsStateSum(r.merged);
+      if (mergedSum !== localSum) { downloadBackup(); await dsInstallState(r.merged, 'pull-merge'); }
+      await dsPushNow(false);   /* publish the merged state */
+      dsStatusRefresh();
+      if (interactive) toast('Merged with the cloud copy saved by ' + (row.pushed_by || 'another device'));
+      return;
+    }
     const cloudTs = obj.ts || 0;
-    if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
+    const localAge = (cutoffTs !== undefined && cutoffTs !== null) ? cutoffTs : DS_BOOT_TS;
+    /* If this device has NOT changed since the last agreement (local == base),
+       the cloud copy is a pure successor — opening it cannot lose anything, so
+       offer it regardless of timestamps (login/logout saves stamp v2.ts "now"
+       without any user edit, which used to hide such copies). The timestamp
+       guard still protects the no-base legacy case and truly-divergent ones
+       (handled by the merge above). */
+    const localMovedSinceBase = base ? (base.sum !== localSum) : true;
+    if (localMovedSinceBase && cloudTs <= localAge) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
-      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
+      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(localAge).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
       (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
@@ -3225,6 +3417,81 @@
     DS_BOOT_TS = (obj.v2 && obj.v2.ts) || Date.now();
     return true;
   }
+  /* ---- conflict dialog: one row per divergent cell, keyboard-operable ---- */
+  function dsFmtVal(v) {
+    if (v === null || v === undefined) return '(deleted)';
+    if (typeof v === 'object') {
+      if (v.s !== undefined || v.t !== undefined) return (v.s === null || v.s === undefined ? '–' : v.s) + ' / ' + (v.t === null || v.t === undefined ? '–' : v.t);
+      try { return JSON.stringify(v); } catch (e) { return '?'; }
+    }
+    return String(v);
+  }
+  function dsConflictDialog() {
+    const pm = dsPendingMerge;
+    if (!pm) return;
+    const who = U.esc(String((pm.row && pm.row.pushed_by) || 'another device'));
+    const when = pm.row && pm.row.pushed_at ? new Date(pm.row.pushed_at).toLocaleString() : '';
+    const rows = pm.conflicts.map(function (c, i) {
+      return '<div class="ds-conf">' +
+        '<div class="ds-conf-what"><b>' + U.esc(c.studentName || c.semName || c.label || 'Item') + '</b>' +
+        (c.label ? ' · ' + U.esc(c.label) : '') +
+        (c.month ? ' · ' + U.esc(c.month) : '') +
+        (c.week !== null && c.week !== undefined ? ' · week ' + U.esc(String(c.week)) : '') + '</div>' +
+        '<div class="ds-conf-vals">' +
+          '<label class="ds-conf-opt"><input type="radio" name="dsc' + i + '" value="mine" checked><span>This device<b>' + U.esc(dsFmtVal(c.local)) + '</b></span></label>' +
+          '<label class="ds-conf-opt"><input type="radio" name="dsc' + i + '" value="theirs"><span>' + who + '<b>' + U.esc(dsFmtVal(c.cloud)) + '</b></span></label>' +
+        '</div></div>';
+    }).join('');
+    openDlg(
+      '<h3>' + pm.conflicts.length + (pm.conflicts.length === 1 ? ' change needs' : ' changes need') + ' your decision</h3>' +
+      '<p class="small">The same ' + (pm.conflicts.length === 1 ? 'cell was' : 'cells were') + ' changed both here and in the cloud copy saved by <b>' + who + '</b>' + (when ? ' at ' + when : '') + '. Everything else is already merged. Choose which value to keep.</p>' +
+      '<div class="ds-conf-list">' + rows + '</div>' +
+      '<div class="dlg-actions" style="flex-wrap:wrap">' +
+        '<button class="btn primary" data-action="ds-conf-apply">Keep my choices</button>' +
+        '<button class="btn" data-action="ds-conf-all-mine">All mine</button>' +
+        '<button class="btn" data-action="ds-conf-all-theirs">All theirs</button>' +
+        '<button class="btn" data-action="ds-conf-postpone">Decide later</button>' +
+      '</div>',
+      function (d) {
+        const first = d.querySelector('input[type="radio"]');
+        if (first) first.focus();
+        d.addEventListener('cancel', function (ev) { ev.preventDefault(); dsPostponeConflicts(); });   /* Esc = postpone, never lose data */
+      });
+  }
+  function dsPostponeConflicts() {
+    if (!dsPendingMerge) { closeDlg(); return; }
+    closeDlg();
+    dsStatusRefresh();
+    toast('Postponed — your changes stay on this device and the cloud copy stays as it is. Nothing is lost.');
+  }
+  async function dsApplyConflicts(preset) {
+    const pm = dsPendingMerge;
+    if (!pm) return;
+    const d = $('#dlg');
+    pm.conflicts.forEach(function (c, i) {
+      let choice = preset;
+      if (!choice) {
+        const el = d.querySelector('input[name="dsc' + i + '"]:checked');
+        choice = el ? el.value : 'mine';
+      }
+      SPRMerge.applyChoice(pm.merged, c, choice);
+    });
+    closeDlg();
+    const merged = pm.merged;
+    dsPendingMerge = null;
+    downloadBackup();   /* safety net before replacing local values */
+    try {
+      await dsInstallState(merged, 'conflicts');
+      toast('Decisions applied — syncing the merged copy');
+      await dsPushNow(false);
+      dsStatusRefresh();
+      if (location.hash === '#/manage') renderManage();
+    } catch (e) {
+      toast('Could not apply the decisions: ' + e.message, true);
+      dsPendingMerge = pm;   /* keep the decision available — never drop it */
+      dsStatusRefresh();
+    }
+  }
   function dsPair(channel, key) {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
     const cfg = dsCfg() || {};
@@ -3240,7 +3507,7 @@
     if (!dsAdminActive()) { toast('Sign in as the admin to turn on device sync', true); return; }
     (async () => {
       const ok = await confirmDlg('Turn on device sync?',
-        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change, and open it when the admin signs in on another system.<br><br>The copy is sealed with a random 256-bit key that lives <b>only in your pairing link</b> — the cloud never sees names, scores or passwords. Set up each of your systems once with that link, then just sign in normally.<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
+        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change, and open it when the admin signs in on another system.<br><br>The copy is sealed with a random 256-bit key that lives <b>only in your pairing link</b> — the cloud never sees names, scores or passwords. Set up each of your systems once with that link, then just sign in normally.<br><br>Changes from different systems are merged automatically; if the same cell was changed twice you will be asked which value to keep. Keep downloading occasional local backups too.', 'Turn on');
       if (!ok) return;
       const cfg = dsCfg() || {};
       cfg.on = true;
@@ -3302,6 +3569,8 @@
         toast(dead ? 'Cloud copy deleted' : 'The cloud copy could not be cleared — it stays encrypted and unreadable without your pairing link.', !dead);
       }
       dsSaveCfg(null);
+      dsBaseClear();
+      dsPendingMerge = null;
       toast('Device sync is off');
       if (location.hash === '#/manage') renderManage();
     })();
@@ -3314,13 +3583,18 @@
         '<span class="small muted" style="align-self:center">Optional — SPR works fully without it.</span></div></div>';
     }
     const when = function (iso) { return iso ? new Date(iso).toLocaleString() : '—'; };
-    return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync is on.</b> ' +
+    const confBanner = dsPendingMerge
+      ? '<div class="panel" style="margin-top:10px;border-color:#b45309"><p class="small" style="margin-bottom:8px"><b>' + dsPendingMerge.conflicts.length + ' change' + (dsPendingMerge.conflicts.length === 1 ? '' : 's') + ' need' + (dsPendingMerge.conflicts.length === 1 ? 's' : '') + ' your decision.</b> Syncing is paused until you choose.</p>' +
+        '<button class="btn sm primary" data-action="ds-conf-open">Review now</button></div>'
+      : '';
+    return confBanner + '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync is on.</b> ' +
       (cfg.lastResult === 'fail' ? '<span style="color:#b45309">Last cloud save failed — it will retry automatically.</span>'
                                   : 'An encrypted copy of everything is updated after each change.') + '</p>' +
       '<table class="tbl"><tbody>' +
       '<tr><td style="width:180px">This device</td><td>' + U.esc(cfg.device || '—') + '</td></tr>' +
       '<tr><td>Last cloud save</td><td>' + U.esc(when(cfg.lastPush)) + '</td></tr>' +
       '<tr><td>Last cloud check</td><td>' + U.esc(when(cfg.lastCheck)) + '</td></tr>' +
+      '<tr><td>Status</td><td><span id="dsManageStatus"></span></td></tr>' +
       '</tbody></table>' +
       '<div class="flex" style="margin-top:10px"><button class="btn sm" data-action="ds-now">Check for newer copy</button>' +
       '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
@@ -3411,7 +3685,8 @@
     saveAuth(auth);
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
-    if (dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user: keep this device current */
+    const preLoginTs = (readV2() || {}).ts || 0;   /* data age BEFORE the sign-in save stamps it now */
+    if (dsOn()) setTimeout(function () { dsPullCheck(false, preLoginTs); }, 1500);   /* any signed-in user: keep this device current */
     askPersistOnce();
     if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
