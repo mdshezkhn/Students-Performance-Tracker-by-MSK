@@ -57,6 +57,7 @@ for marker, path in [
     ('/*__CALC__*/', SRC / 'calc.js'),
     ('/*__EXCEL__*/', SRC / 'excel.js'),
     ('/*__ANALYSIS__*/', SRC / 'analysis.js'),
+    ('/*__CLASSSTORE__*/', SRC / 'classstore.js'),
     ('/*__APP__*/', SRC / 'app.js'),
 ]:
     assert marker in app_html, 'missing marker ' + marker
@@ -69,7 +70,7 @@ assert seed_obj.get('meta', '').startswith('SYNTHETIC'), 'refusing to embed a no
 seed_json = json.dumps(seed_obj, ensure_ascii=False)
 app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = ' + seed_json + ';', 1)
 assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed injection failed'
-for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__APP__'):
+for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__CLASSSTORE__', '__APP__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
 # ---------- service worker: version = content hash of the app HTML ----------

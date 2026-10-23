@@ -49,6 +49,15 @@ The build **aborts** when the published files no longer match the last
 committed build (`deploy/`), so hand edits cannot be clobbered unnoticed.
 Override with `--force` only if you really mean to discard them.
 
+## Class mode (per-class workbooks, roles, approvals)
+
+Each class can live in its own encrypted workbook with its own key: EAL
+teachers edit their class and approve observation changes proposed by their
+supporting teacher; managers see the whole school read-only; admins manage
+accounts, pairing and migration. Agreed-rule control between colleagues —
+see `docs/CLASS-MODE.md` for the full role matrix, the key model, the audit
+log, the migration wizard and the honest-security notes.
+
 ## Development & tests
 
 Everything runs from a clean clone — no build tools beyond Python 3 and Node:

@@ -36,5 +36,5 @@ jobs:
       - name: Unit + regression tests
         run: npm test
 
-      - name: Device-sync browser suite (jsdom)
-        run: node tests/test-device-sync.js
+      - name: Browser suites (jsdom)
+        run: npm run test:jsdom
