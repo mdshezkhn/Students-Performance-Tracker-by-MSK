@@ -239,7 +239,7 @@ eq(CS.normalizeRole('principal'), null, 'unknown role rejected');
 
     ok(CS.pwOk('admin', 'short') !== null && CS.pwOk('manager', 'a'.repeat(13)) !== null, 'admin/manager need 14+ characters');
     ok(CS.pwOk('admin', 'fourteen-chars!') === null, '14 characters accepted for admin');
-    ok(CS.pwOk('eal', 'teacher1') === null && CS.pwOk('support', 'short') !== null, 'teachers keep the 8-character floor');
+    ok(CS.pwOk('eal', 'a'.repeat(11)) !== null && CS.pwOk('support', 'a'.repeat(12)) === null, 'teacher floor is 12 characters (11 rejected, 12 accepted)');
     ok(CS.pwOk('admin', '') !== null, 'empty password rejected');
 
     const key = CS.genKey();

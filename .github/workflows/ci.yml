@@ -30,6 +30,8 @@ jobs:
           cmp --silent dist/app/index.html app/index.html             || (echo "::error::app/index.html is stale - run 'python source/build2.py', copy deploy/app/* to app/ + deploy/index.html to ./index.html, and commit"; exit 1)
           cmp --silent dist/app/sw.js app/sw.js             || (echo "::error::app/sw.js is stale - run 'python source/build2.py', copy deploy/app/* to app/, and commit"; exit 1)
 
+          cmp --silent dist/index.html index.html             || (echo "::error::index.html (landing) is stale - run 'python source/build2.py', copy deploy/index.html to ./index.html, and commit"; exit 1)
+
       - name: Install dev dependencies (jsdom)
         run: npm install --no-audit --no-fund
 

@@ -36,6 +36,7 @@ const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 const SB_FETCH_SRC =
   'function (url, opts) {' +
   ' url = String(url); opts = opts || {};' +
+  ' try { window.__fetchLog = window.__fetchLog || []; window.__fetchLog.push(url); } catch (e) {}' +
   ' var SB = window.__SB;' +
   ' function chanIdFrom(u) {' +
   '   var i = u.indexOf("/rest/v1/spr_channels");' +
@@ -133,6 +134,22 @@ function loginAs(B, user, pass) {
   setVal(B, B.d.getElementById('loginUser'), user);
   setVal(B, B.d.getElementById('loginPass'), pass);
   click(B, B.d.querySelector('[data-action="do-login"]'));
+}
+/* P1.2: the explicit cloud-copy lookup — the ONLY way a fresh browser now
+   reaches the cloud at sign-in (no automatic lookup anymore) */
+async function loginCloudAs(B, user, pass) {
+  click(B, B.d.querySelector('[data-action="login-other-device"]'));
+  await sleep(200);
+  setVal(B, B.d.getElementById('odUser'), user);
+  setVal(B, B.d.getElementById('odPass'), pass);
+  click(B, B.d.querySelector('#dlg [data-x="1"]'));
+  const confirmed = await waitFor(function () {
+    return /Open the cloud copy here/.test(dlgText(B));
+  }, 20000);
+  if (!confirmed) return false;
+  const okBtn = B.d.querySelector('#dlg .dlg-actions [data-x="1"]');
+  click(B, okBtn);
+  return waitFor(function () { return !B.d.body.classList.contains('auth-gate'); }, 25000);
 }
 
 (async () => {
@@ -247,11 +264,10 @@ function loginAs(B, user, pass) {
   const wrongPw = await waitFor(function () {
     return ((Bb.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1;
   }, 20000);   // wrong-password unwrap still pays PBKDF2-310k under load
-  ok(wrongPw, 'wrong password rejected');
-  loginAs(Bb, ADMIN, PW);
-  await waitFor(function () { return !Bb.d.body.classList.contains('auth-gate'); }, 20000);
+  ok(wrongPw, 'wrong password rejected locally (no cloud contact made)');
+  const s4In = await loginCloudAs(Bb, ADMIN, PW);
   await ackPrivacy(Bb);
-  ok(!Bb.d.body.classList.contains('auth-gate'), 'second browser signed in');
+  ok(s4In, 'second browser signed in via the explicit other-device lookup');
   const dbB = Bb.w.SPR_DEBUG_GET_DB();
   ok(dbB.semesters.length === dbA.semesters.length, 'data arrived from the cloud (' + dbB.semesters.length + ' semesters)');
   syncSB(Bb);
@@ -264,13 +280,9 @@ function loginAs(B, user, pass) {
   await sleep(300);
   await ackGate(C);
   ok(!!C.d.getElementById('loginUser'), 'non-fresh browser shows its sign-in card');
-  loginAs(C, ADMIN, PW);
-  const dlgUp = await waitFor(function () { return dlgText(C).indexOf('cloud copy') !== -1; }, 20000);
-  ok(dlgUp, 'cloud-copy dialog offered for the unknown account');
-  confirmYes(C);
-  await waitFor(function () { return !C.d.body.classList.contains('auth-gate'); }, 20000);
+  const s5In = await loginCloudAs(C, ADMIN, PW);
   await ackPrivacy(C);
-  ok(!C.d.body.classList.contains('auth-gate'), 'cloud account signed in on the non-fresh browser');
+  ok(s5In, 'unknown account installed from the cloud via the explicit lookup');
   syncSB(C);
   const dbC = C.w.SPR_DEBUG_GET_DB();
   ok(dbC.semesters.length === dbA.semesters.length, 'cloud data present on device C (' + dbC.semesters.length + ' semesters)');
@@ -320,9 +332,10 @@ function loginAs(B, user, pass) {
   loginAs(D3, ADMIN, PW);
   await waitFor(function () { return !D3.d.body.classList.contains('auth-gate'); }, 20000);
   await ackPrivacy(D3);
-  const offerUp = await waitFor(function () { return dlgText(D3).indexOf('cloud copy') !== -1; }, 20000);
-  ok(offerUp, 'sign-in on a same-account browser offers the cloud copy');
-  click(D3, D3.d.querySelector('#dlg [data-x="0"]'));   // keep this device's data for now
+  /* P1.2: signing in with sync OFF must NOT auto-contact the cloud - the
+     offer now lives behind the explicit Manage action instead */
+  const offers = await waitFor(function () { return dlgText(D3).indexOf('cloud copy') !== -1; }, 3000).catch(function () { return false; });
+  ok(offers === false, 'sign-in on a same-account browser does NOT auto-offer the cloud copy anymore');
   await sleep(400);
   D3.w.location.hash = '#/manage';
   await sleep(250);
@@ -388,6 +401,7 @@ function loginAs(B, user, pass) {
   /* ---------- S7: teacher transport on the paired device ---------- */
   console.log('== S7: teacher on a paired device (all-users transport) ==');
   const TEA = 'tea1', TEAPW = 'teacher-pass-1';
+  let TEAPW_NOW = TEAPW;   /* tracks self-service changes */
   syncSB(Bb);
   const ctBeforeAdd = (SB[rows[0]] || {}).payload ? SB[rows[0]].payload.ct : null;
   Bb.w.location.hash = '#/manage';
@@ -449,13 +463,72 @@ function loginAs(B, user, pass) {
   ok(Object.keys(SB).filter(function (id) { return SB[id].payload && SB[id].payload.sprDS === 1; }).length === 1, 'still exactly one DATA row for the school');
   ok(Object.keys(SB).filter(function (id) { return SB[id].payload && SB[id].payload.sprPTR === 1; }).length === 1, 'plus exactly one pointer row (teacher bootstrap)');
 
-  /* ---------- S8: teacher sign-in-anywhere (cloud pointer) ---------- */
-  console.log('== S8: teacher signs in on a FRESH browser via cloud pointer ==');
-  const TEAPW2 = 'teacher-pass-2-reset';
+
   syncSB(Bt);
   const allRows = Object.keys(SB);
   const dataRows = allRows.filter(function (id) { return SB[id].payload && SB[id].payload.sprDS === 1; });
   const ptrRows = allRows.filter(function (id) { return SB[id].payload && SB[id].payload.sprPTR === 1; });
+  /* ---------- S7.5 (P1.2): self-service password change re-seals the pointer ---------- */
+  console.log('== S7.5: self-service password change re-seals the cloud pointer ==');
+  const TEAPW3 = 'self-service-pass-3';
+  syncSB(Bt);
+  const ptrCtSelf = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
+  Bt.w.location.hash = '#/manage';
+  await sleep(300);
+  click(Bt, Bt.d.querySelector('[data-action="change-pass-open"]'));
+  await sleep(200);
+  setVal(Bt, Bt.d.getElementById('cpCur'), TEAPW);
+  setVal(Bt, Bt.d.getElementById('cpNew'), TEAPW3);
+  setVal(Bt, Bt.d.getElementById('cpConf'), TEAPW3);
+  click(Bt, Bt.d.querySelector('[data-action="change-pass-save"]'));
+  syncSB(Bt);
+  const dataCtSelf = SB[dataRows[0]] ? SB[dataRows[0]].payload.ct : null;
+  const selfResealed = await waitFor(function () {
+    syncSB(Bt);
+    return SB[ptrRows[0]] && SB[ptrRows[0]].payload.ct !== ptrCtSelf;
+  }, 25000);
+  ok(selfResealed, 'self-service change re-sealed the POINTER row (no admin involved)');
+  const dataRekeyed = await waitFor(function () {
+    syncSB(Bt);
+    return SB[dataRows[0]] && SB[dataRows[0]].payload.ct !== dataCtSelf;
+  }, 35000);
+  ok(dataRekeyed, 'the re-keyed account reached the DATA row before the bootstrap test');
+  /* the fresh browser now bootstraps with the SELF-changed password */
+  const G6 = boot();
+  await sleep(300);
+  await ackGate(G6);
+  const selfBoot = await loginCloudAs(G6, TEA, TEAPW3);
+  {
+    const au = JSON.parse(G6.w.localStorage.getItem('spr-auth-v1') || '{}');
+    const tea = (au.users || []).find((x) => x.username === 'tea1') || null;
+    Promise.resolve().then(async () => {
+      let v1 = 'no-user', v2v = 'n/a';
+      try { v1 = await G6.w.ClassStore.verifyLogin(tea.login, 'self-service-pass-3'); } catch (e) { v1 = 'ERR ' + e.message; }
+      console.error('  [idbg] inst:', JSON.stringify(G6.w.__instDbg), '| vpLog:', JSON.stringify(G6.w.__vpLog), '| lk:', JSON.stringify(G6.w.__lk), '| [vdbg] stored wrap:', JSON.stringify(tea && tea.login).slice(0, 70), '| verifies:', JSON.stringify(v1), '| authKeys:', Object.keys(au).join(','), '| session:', JSON.stringify(au.session));
+    });
+  }
+  ok(selfBoot, 'fresh browser bootstraps with the self-changed password');
+  ok(selfBoot && G6.w.SPR_DEBUG_GET_DB().semesters.length > 0, 'self-service bootstrap sees the classes');
+  /* and the old password is dead on the pointer */
+  const G7 = boot();
+  await sleep(300);
+  await ackGate(G7);
+  click(G7, G7.d.querySelector('[data-action="login-other-device"]'));
+  await sleep(200);
+  setVal(G7, G7.d.getElementById('odUser'), TEA);
+  setVal(G7, G7.d.getElementById('odPass'), TEAPW);
+  click(G7, G7.d.querySelector('#dlg [data-x="1"]'));
+  const oldDead = await waitFor(function () {
+    return (((G7.d.getElementById('odErr') || {}).textContent || '').indexOf('Wrong password') !== -1);
+  }, 25000);
+  ok(oldDead, 'old password is rejected by the re-sealed pointer');
+  /* back on the teacher device: continue signed-in as the teacher with the NEW password */
+  TEAPW_NOW = TEAPW3;
+
+  /* ---------- S8: teacher sign-in-anywhere (cloud pointer) ---------- */
+  console.log('== S8: teacher signs in on a FRESH browser via cloud pointer ==');
+  const TEAPW2 = 'teacher-pass-2-reset';
+
   ok(dataRows.length === 1, 'exactly one data row (no fork)');
   ok(ptrRows.length === 1, 'pointer row exists for the teacher account');
   ok(ptrRows.length === 1 && SB[ptrRows[0]].payload.ct, 'pointer payload is sealed ciphertext');
@@ -464,9 +537,8 @@ function loginAs(B, user, pass) {
   const G1 = boot();
   await sleep(300);
   await ackGate(G1);
-  loginAs(G1, TEA, TEAPW);
-  const teaBoot1 = await waitFor(function () { return !G1.d.body.classList.contains('auth-gate'); }, 25000);
-  ok(teaBoot1, 'teacher fresh-browser sign-in restored the whole markbook');
+  const teaBoot1 = await loginCloudAs(G1, TEA, TEAPW_NOW);
+  ok(teaBoot1, 'explicit other-device lookup restored the whole markbook (no automatic contact)');
   ok(teaBoot1 && G1.w.SPR_DEBUG_GET_DB().semesters.length > 0, 'teacher sees the classes');
   const cfgG1 = JSON.parse(G1.w.localStorage.getItem('spr-devicesync-v1') || 'null');
   ok(!!(cfgG1 && cfgG1.channel === dataRows[0] && cfgG1.owner === ADMIN && cfgG1.adoptedAcct === true), 'teacher device joined the OWNER channel (cfg.owner=admin)');
@@ -519,9 +591,8 @@ function loginAs(B, user, pass) {
     const G4 = boot();
     await sleep(300);
     await ackGate(G4);
-    loginAs(G4, TEA, TEAPW2);
-    const newPwWorks = await waitFor(function () { return !G4.d.body.classList.contains('auth-gate'); }, 25000);
-    ok(newPwWorks, 'new teacher password bootstraps a fresh browser');
+    const newPwWorks = await loginCloudAs(G4, TEA, TEAPW2);
+    ok(newPwWorks, 'new teacher password bootstraps a fresh browser (explicit lookup)');
   } else console.log('  SKIP (known sync race, RemoteStore phase): fresh-browser bootstrap checks');
   /* removing the sign-in kills its pointer; the data row survives */
   syncSB(Bt);
@@ -539,8 +610,15 @@ function loginAs(B, user, pass) {
   const G5 = boot();
   await sleep(300);
   await ackGate(G5);
-  loginAs(G5, TEA, TEAPW2);
-  const goneRej = await waitFor(function () { return ((G5.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+  click(G5, G5.d.querySelector('[data-action="login-other-device"]'));
+  await sleep(200);
+  setVal(G5, G5.d.getElementById('odUser'), TEA);
+  setVal(G5, G5.d.getElementById('odPass'), TEAPW2);
+  click(G5, G5.d.querySelector('#dlg [data-x="1"]'));
+  const goneRej = await waitFor(function () {
+    const t = ((G5.d.getElementById('odErr') || {}).textContent || '');
+    return t.indexOf('No cloud copy') !== -1 || t.indexOf('Wrong password') !== -1;
+  }, 25000);
   ok(goneRej, 'deleted teacher account cannot sign in anywhere anymore');
 
   /* ---------- S9: no surprise .json downloads; in-app safety copies ---------- */
@@ -561,13 +639,9 @@ function loginAs(B, user, pass) {
   await sleep(800);   /* let the setup persist settle */
   const H2 = boot(JSON.parse(JSON.stringify((function () { const o = {}; for (let i = 0; i < H.w.localStorage.length; i++) { const k = H.w.localStorage.key(i); o[k] = H.w.localStorage.getItem(k); } return o; })())));
   await sleep(500);
-  loginAs(H2, ADMIN, PW);
-  await waitFor(function () {
-    const d = H2.d.getElementById('dlg');
-    return d && d.open && d.textContent.indexOf('cloud copy') !== -1;
-  }, 25000);
-  click(H2, H2.d.querySelector('#dlg [data-x="1"]'));
-  await sleep(2500);
+  const h2In = await loginCloudAs(H2, ADMIN, PW);   /* explicit lookup: the ONLY cloud contact */
+  ok(h2In, 'adoption over existing data signed in via the explicit lookup');
+  await sleep(1500);
   ok(H2.w.__downloads.length === 0, 'adoption over existing data: no .json downloaded');
   const stashH = JSON.parse(H2.w.localStorage.getItem('spr-safety-backups-v1') || '[]');
   ok(stashH.length === 1 && stashH[0].db && Array.isArray(stashH[0].db.semesters), 'safety copy stashed in-app instead');

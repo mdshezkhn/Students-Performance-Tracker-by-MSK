@@ -96,9 +96,9 @@
   }
 
   /* ---------------- password policy + generator ---------------- */
-  const PW_MIN = { admin: 14, manager: 14, teacher: 8, eal: 8, support: 8 };
+  const PW_MIN = { admin: 14, manager: 14, teacher: 12, eal: 12, support: 12 };
   function pwOk(role, pw) {
-    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 8;
+    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 12;
     if (!pw || typeof pw !== 'string') return 'Enter a password.';
     if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
     return null;   /* ok */

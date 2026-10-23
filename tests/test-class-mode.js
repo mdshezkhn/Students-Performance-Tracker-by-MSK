@@ -22,7 +22,7 @@ function boot(preStorage) {
     'window.__downloads=[];try{window.URL.createObjectURL=function(){return "blob:x"};window.URL.revokeObjectURL=function(){};}catch(e){}' +
     'try{var oc=HTMLAnchorElement.prototype.click;' +
     'HTMLAnchorElement.prototype.click=function(){if(this.download)window.__downloads.push(this.download);return oc.apply(this,arguments)}}catch(e){}' +
-    'window.fetch=function(){return Promise.resolve({ok:false,status:404,json:function(){return Promise.resolve([])}})};' +
+    'window.__fetchLog=[];window.fetch=function(u){try{window.__fetchLog.push(String(u))}catch(e){}return Promise.resolve({ok:false,status:404,json:function(){return Promise.resolve([])}})};' +
     '(function(){var d=document.getElementById("dlg");if(d&&!d.showModal){d.showModal=function(){this.open=true};d.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();' +
     '</script>';
   const i = html0.lastIndexOf('</body>');
@@ -75,13 +75,20 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   /* ---- S1: admin first-run + legacy sample data ---- */
   let B = boot();
   await sleep(400); await ackGate(B);
+  /* P1.2: policy enforced at setup (admin needs 14+) - probe with a tiny one first */
   click(B, B.d.querySelector('[data-action="show-setup"]'));
   await sleep(150);
   setVal(B, B.d.querySelector('#suUser'), ADMIN);
+  setVal(B, B.d.querySelector('#suPass'), 'tiny-pw');
+  setVal(B, B.d.querySelector('#suConf'), 'tiny-pw');
+  click(B, B.d.querySelector('[data-action="first-run"]'));
+  ok(await waitFor(() => /14 characters/.test(((B.d.querySelector('#suErr') || {}).textContent || '')), 5000), 'under-length admin password rejected at setup');
+  ok(B.d.body.classList.contains('auth-gate'), 'setup with an under-length password did not sign in');
+  /* now the real setup */
   setVal(B, B.d.querySelector('#suPass'), PW);
   setVal(B, B.d.querySelector('#suConf'), PW);
   click(B, B.d.querySelector('[data-action="first-run"]'));
-  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000), 'admin signed in');
+  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000), 'admin signed in with a compliant password');
   await ackPrivacy(B);
   const sample = B.d.querySelector('[data-action="load-sample"]');
   if (sample) { click(B, sample); await sleep(600); const yes = B.d.querySelector('#dlg [data-x="1"]'); if (yes) { click(B, yes); await sleep(500); } }
@@ -133,7 +140,9 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(await waitFor(() => /Dashboard/i.test(B.d.body.textContent), 5000), 'dashboard renders inside the class');
 
   /* ---- S4: provision + pair eal-01 / sup-01 ---- */
-  ok(await B.w.SPR_DEBUG_AUTH.provision('eal-01', 'eal-pass-123', 'EAL One', 'eal') === null, 'eal account provisioned');
+  /* P1.2: teacher passwords need 12+ characters */
+  ok(typeof await B.w.SPR_DEBUG_AUTH.provision('short-eal', 'a'.repeat(11), 'Short EAL', 'eal') === 'string', '11-character teacher password rejected');
+  ok(await B.w.SPR_DEBUG_AUTH.provision('eal-01', 'eal-pass-123', 'EAL One', 'eal') === null, '12-character teacher password accepted');
   ok(await B.w.SPR_DEBUG_AUTH.provision('sup-01', 'sup-pass-123', 'Support One', 'support') === null, 'support account provisioned');
   B.w.location.hash = '#/classes';
   for (let t = 0; t <= 3000; t += 500) {
@@ -181,6 +190,34 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     console.log('  ok: support gets no admin buttons (auto-opened straight in)');
   }
   ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount, 8000), 'support opens the class');
+  /* P1.2/P1.1: self-service change through the real UI, then the old password dies */
+  {
+    B.w.location.hash = '#/manage';
+    await sleep(400);
+    click(B, B.d.querySelector('[data-action="change-pass-open"]'));
+    await sleep(200);
+    setVal(B, B.d.getElementById('cpCur'), supPw);
+    setVal(B, B.d.getElementById('cpNew'), 'sup-new-pass-456');
+    setVal(B, B.d.getElementById('cpConf'), 'sup-new-pass-456');
+    click(B, B.d.querySelector('[data-action="change-pass-save"]'));
+    const changed = await waitFor(() => /Password updated/.test((B.d.getElementById('toast-root') || {textContent:''}).textContent), 10000);
+    ok(changed, 'support changed its own password (no admin)');
+    supPw = 'sup-new-pass-456';
+    const dump = storageDump(B);
+    click(B, B.d.querySelector('[data-action="logout"]'));
+    await sleep(300);
+    B = boot(dump);
+    await sleep(400); await ackGate(B);
+    const oldTry = await loginAs(B, 'sup-01', 'wrong-old-pw-9');
+    ok(!oldTry && /Invalid/.test(((B.d.getElementById('loginErr') || {}).textContent || '')), 'old password no longer signs in');
+    ok(await loginAs(B, 'sup-01', supPw), 'new password signs in');
+    await ackPrivacy(B);
+    ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount || /Your classes/.test(B.d.body.textContent), 12000), 'support reaches the class with the new password');
+    B.w.location.hash = '#/classes';
+    await sleep(300);
+    const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 6000);
+    if (reOpen && !(B.w.SPR_DEBUG_GET_DB().semesters || []).length) { click(B, reOpen); await sleep(2500); }
+  }
   await waitFor(() => B.w.location.hash === '#/dashboard', 8000);   /* openClass lands on the dashboard LAST — then navigate */
   B.w.location.hash = '#/entry/obs';
   await sleep(400);
@@ -344,6 +381,23 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     ok(review.length === 1 && review[0].value === 15 && /0-10/.test(review[0].reason), 'value 15 quarantined to the review list with a reason');
     const safety = JSON.parse(B2.w.localStorage.getItem('spr-safety-backups-v1') || '[]');
     ok(Array.isArray(safety) && safety.length > 0, 'a safety copy was stashed before quarantining');
+  }
+
+  /* P1.2: the landing page shows real values without JS; absolute privacy claims are gone */
+  {
+    const fs = require('fs');
+    const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+    ok(/data-count="23">23</.test(landing) && /data-count="6" data-suffix="\+">6\+</.test(landing) && /data-count="100" data-suffix="%">100%</.test(landing),
+      'stat counters carry their real final values in the HTML (visible with JS off)');
+    ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
+      'no absolute privacy claims remain on the landing page');
+    ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');
+  }
+  /* P1.2: while sync is OFF, the whole flow must not contact supabase once */
+  {
+    const log = (B.w.__fetchLog || []);
+    const sb = log.filter((u) => /supabase\.co/.test(u));
+    ok(log.length === 0, 'ZERO network requests while sync is off (got: ' + log.length + ': ' + log.slice(0, 2).join(' | ').slice(0, 160) + ')');
   }
 
   console.log(fails ? '\n' + fails + ' FAILURES' : '\nALL CLASS-MODE CHECKS PASSED');

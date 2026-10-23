@@ -163,3 +163,28 @@ observation over 10), loading moves it to a per-semester **review list**
 points at it, Manage lists each quarantined value with its reason, and a
 safety copy is stashed before anything moves. Discarding an entry removes it
 from the review list only.
+## P1.2 — privacy-true defaults
+
+- **No cloud contact until you choose it.** Signing in, first-run setup and loading
+  the sample never touch Supabase (verified by a zero-network-request test). Users
+  coming from another device press **I use SPR on another device** on the sign-in
+  card; admins use **Turn on device sync** or **Check for newer copy** in Manage.
+- **Password floor for teachers is 12 characters** (admin/manager 14) at setup,
+  reset and self-service change.
+- **Self-service password change now re-seals the cloud pointer row**, so a fresh
+  browser bootstraps with the NEW password without any admin involvement. If the
+  pointer cannot be updated (offline), the change still succeeds and says so.
+- **The classic npoint.io channel is retired**: its UI, code paths and CSP entry
+  are gone. Old npoint links explain they are retired instead of fetching anything.
+- **One privacy notice per first-run**: the entry gate is the notice; it no longer
+  re-opens after setup or sign-in.
+- **Landing page**: no absolute privacy claims (the honest sentence is
+  *"No student data leaves this device unless you turn on sync or Save & Share —
+  and then only an encrypted copy"*), the mockup chip reads
+  "Encrypted on this device" instead of "Synced", and the four stat counters
+  carry their real final values in the HTML (visible with JavaScript disabled;
+  the count-up animation only runs for JS visitors).
+- **Fixed a real P1.1 bug found by these tests**: the three cloud-lookup call
+  sites treated `verifyUserPw`'s `{ok:false}` object as truthy (any password
+  passed the account check once GCM had succeeded elsewhere). All sites now
+  check `.ok` explicitly.
