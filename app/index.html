@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src https://api.npoint.io https://*.supabase.co; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1e3b32">
@@ -529,6 +529,19 @@ body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none
 #sw-update .btn.sm, .btn.sm { cursor: pointer; }
 @media print { .tabs, .sheet-toolbar { display: none !important; } }
 
+/* ---- class mode: class home, review, propose ---- */
+.class-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+.class-card { display:flex; justify-content:space-between; gap:12px; border:1px solid #d8e2d8; border-radius:10px; padding:14px 16px; background:#fff; flex-wrap:wrap; }
+.cc-name { font-size:17px; font-family:var(--font-display); }
+.cc-school { color:#5b6a62; font-size:12.5px; margin-left:8px; }
+.cc-pair { margin-top:6px; }
+.cc-side { display:flex; flex-direction:column; align-items:flex-end; gap:6px; justify-content:center; }
+.cc-role { font-size:11.5px; background:#eef4ee; border:1px solid #d8e2d8; border-radius:99px; padding:2px 10px; color:#33513f; }
+.pend-badge { font-size:12px; background:#fdeeee; color:#a33; border:1px solid #e5c2c2; border-radius:99px; padding:2px 10px; font-weight:600; }
+.prop-new { color:#a33; }
+input[data-propose] { background:#fffdf5; border-color:#c9973b; cursor:pointer; }
+input[data-propose]:hover { box-shadow:0 0 0 2px rgba(201,151,59,.25); }
+input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
 </style>
 </head>
 <body>
@@ -1065,14 +1078,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
      Grading rules are untouched — this only removes values that could never
      have come from the school's workbook. ---------------------------------- */
   const coerceNum = (x) => (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x)) ? Number(x) : x);
+  /* Quarantines invalid scores instead of destroying them: each moved value is
+     recorded as {area, sid, month, key, value, reason} and the live cell is
+     cleared so grades stay correct. Returns the array of moved items (empty =
+     nothing wrong). Callers decide where the review list lives (sem.review). */
   function sanitizeSemester(sem) {
-    let dropped = 0;
-    const fixPair = (e) => {          // e = {s,t} score/total holder (mutated)
+    const moved = [];
+    const note = (area, sid, month, key, value, reason) =>
+      moved.push({ area: area, sid: sid, month: month || null, key: key, value: value, reason: reason });
+    const fixPair = (e, area, sid, month, key) => {   // e = {s,t} holder (mutated)
       e.s = coerceNum(e.s); e.t = coerceNum(e.t);
       // invalid total (present but unusable) -> clear it, keep the score for later
-      if (!EMPTY(e.t) && !validTotal(e.t)) { e.t = null; dropped++; }
+      if (!EMPTY(e.t) && !validTotal(e.t)) { note(area, sid, month, key + ':t', e.t, 'total must be a positive number'); e.t = null; }
       // invalid score (present but negative/non-finite/above total) -> clear it, keep total
-      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) { e.s = null; dropped++; }
+      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) {
+        note(area, sid, month, key + ':s', e.s, (!EMPTY(e.t) && e.s > e.t) ? 'score above total' : 'score must be 0 or more');
+        e.s = null;
+      }
       return (EMPTY(e.s) && EMPTY(e.t));   // nothing left -> caller deletes
     };
     for (const sid of Object.keys(sem.observations || {})) {
@@ -1081,7 +1103,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         for (const k of Object.keys(cell)) {
           const v = coerceNum(cell[k]);
           if (EMPTY(v)) { delete cell[k]; continue; }          // absent -> prune, not "invalid"
-          if (!validObs(v)) { delete cell[k]; dropped++; continue; }
+          if (!validObs(v)) { note('obs', sid, m, k, v, 'observation scores are 0-10'); delete cell[k]; continue; }
           cell[k] = v;
         }
         if (!Object.keys(cell).length) delete sem.observations[sid][m];
@@ -1092,7 +1114,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (const sid of Object.keys(sem[metric] || {})) {
         for (const m of Object.keys(sem[metric][sid])) {
           const rec = sem[metric][sid][m];
-          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w])) delete rec[w];
+          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w], metric, sid, m, 'week ' + w)) delete rec[w];
           if (!Object.keys(rec).length) delete sem[metric][sid][m];
         }
         if (!Object.keys(sem[metric][sid] || {}).length) delete sem[metric][sid];
@@ -1100,11 +1122,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     for (const sid of Object.keys(sem.tests || {})) {
       for (const kind of Object.keys(sem.tests[sid])) {
-        if (fixPair(sem.tests[sid][kind])) delete sem.tests[sid][kind];
+        if (fixPair(sem.tests[sid][kind], 'test', sid, null, kind)) delete sem.tests[sid][kind];
       }
       if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
     }
-    return dropped;
+    return moved;
   }
 
   return {
@@ -1366,7 +1388,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     return wb;
   }
 
-  function exportWorkbook(sem) {
+  function exportWorkbook(sem, audit) {
     const wb = stampProps(XLSX.utils.book_new(), {
       Title: [sem.school, sem.className, 'SPR', sem.name].filter(Boolean).join(' - '),
       Company: sem.school || 'SPR — by Teacher Mo'
@@ -1519,6 +1541,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const wsG = XLSX.utils.aoa_to_sheet(gRows);
     wsG['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 7 }];
     XLSX.utils.book_append_sheet(wb, wsG, 'Grading');
+    /* class mode: the per-class audit log rides along in every Excel export */
+    if (audit && audit.length) {
+      const aRows = [['When', 'By', 'Action', 'Cell', 'Old', 'New', 'Note']]
+        .concat(audit.map((a) => [new Date(a.t || 0).toLocaleString(), a.by || '', a.action || '', a.cell || '',
+          (a.old === null || a.old === undefined) ? '' : a.old, (a.new === null || a.new === undefined) ? '' : a.new, a.note || '']));
+      const wsA = XLSX.utils.aoa_to_sheet(aRows);
+      wsA['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 8 }, { wch: 8 }, { wch: 44 }];
+      XLSX.utils.book_append_sheet(wb, wsA, 'Audit Log');
+    }
 
     return wb;
   }
@@ -2166,6 +2197,440 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 </script>
 <script>
 /* =========================================================================
+   ClassStore — per-class workbooks, role scoping and observation approvals
+   (client-side agreed-rule model; NO backend)
+
+   Every class is its own encrypted workbook sealed with its own random key.
+   Keys are handed out wrapped under each account's password (PBKDF2-SHA256
+   310k -> AES-GCM, same parameters as the app's master key). Only holders of
+   a class key can open that class — enforced by cryptography, not by UI.
+
+   HONEST SECURITY BOUNDARY (also stated in the UI and docs): this is an
+   agreed-rule control between colleagues. Anyone who HOLDS a class key (or a
+   password of an account that does) can decrypt the workbook and re-encrypt
+   anything they like — the audit log inside the workbook is append-only by
+   convention, not tamper-proof against a key holder.
+
+   Node-safe: no DOM. In browser: window.ClassStore; in node: module.exports.
+   ========================================================================= */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ClassStore = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  /* ---------------- base64url + crypto helpers ---------------- */
+  const B64U = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  function b64uFromBytes(bytes) {
+    let s = '', bits = 0, acc = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      acc = (acc << 8) | bytes[i]; bits += 8;
+      while (bits >= 6) { bits -= 6; s += B64U[(acc >> bits) & 63]; }
+    }
+    if (bits) s += B64U[(acc << (6 - bits)) & 63];
+    return s;
+  }
+  function bytesFromB64u(s) {
+    s = String(s || '').replace(/=+$/, '');
+    const out = []; let bits = 0, acc = 0;
+    for (let i = 0; i < s.length; i++) {
+      const v = B64U.indexOf(s[i]);
+      if (v < 0) throw new Error('bad base64url data');
+      acc = (acc << 6) | v; bits += 6;
+      if (bits >= 8) { bits -= 8; out.push((acc >> bits) & 255); }
+    }
+    return new Uint8Array(out);
+  }
+  function C() {
+    const c = (typeof self !== 'undefined' && self.crypto) || (typeof globalThis !== 'undefined' && globalThis.crypto);
+    if (!c || !c.subtle) throw new Error('WebCrypto unavailable (needs https or Node >= 19)');
+    return c;
+  }
+  function TE() { return (typeof self !== 'undefined' && self.TextEncoder) || globalThis.TextEncoder; }
+  function TD() { return (typeof self !== 'undefined' && self.TextDecoder) || globalThis.TextDecoder; }
+
+  async function deriveBits(password, salt, iterations) {
+    const c = C();
+    const base = await c.subtle.importKey('raw', new (TE())().encode(password), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await c.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256' }, base, 256));
+  }
+  async function aesKey(raw, usages) {
+    return C().subtle.importKey('raw', raw, 'AES-GCM', false, usages || ['encrypt', 'decrypt']);
+  }
+
+  /* ---------------- class keys ---------------- */
+  function genKey() { return C().getRandomValues(new Uint8Array(32)); }
+  /* Wrap format v2: {v:2, it:600000, salt, iv, ct}. Wraps made before P1.1
+     carry no v/it fields (read as v1, PBKDF2 310k) and keep working; unwrap
+     always honours the wrap's own iteration count. */
+  const PBKDF2_V1 = 310000, PBKDF2_V2 = 600000;
+  async function wrapKey(keyBytes, password, itOverride) {
+    const c = C();
+    const it = itOverride || PBKDF2_V2;
+    const salt = c.getRandomValues(new Uint8Array(16));
+    const kb = await deriveBits(password, salt, it);
+    const k = await aesKey(kb);
+    const iv = c.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await c.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, keyBytes));
+    return { v: it >= PBKDF2_V2 ? 2 : 1, it: it, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+  }
+  async function unwrapKey(w, password) {
+    const kb = await deriveBits(password, bytesFromB64u(w.salt), w.it || PBKDF2_V1);
+    const k = await aesKey(kb);
+    return new Uint8Array(await C().subtle.decrypt({ name: 'AES-GCM', iv: bytesFromB64u(w.iv) }, k, bytesFromB64u(w.ct)));
+  }
+  function wrapNeedsUpgrade(w) { return (w.it || PBKDF2_V1) < PBKDF2_V2; }
+  /* re-wrap one wrap (e.g. a class key) under a NEW password at v2 strength */
+  async function rewrapKey(w, oldPw, newPw) { return wrapKey(await unwrapKey(w, oldPw), newPw); }
+
+  /* ---------------- login wraps (password verification WITHOUT a hash) ------
+     A login wrap seals a random 32-byte token under the account's password.
+     Verification = a successful AES-GCM unlock; a wrong password fails the
+     GCM auth tag. No password hash is ever stored or synced. */
+  async function loginWrap(password) { return wrapKey(genKey(), password); }
+  async function verifyLogin(w, password) {
+    if (!w || !w.salt || !w.iv || !w.ct) return false;
+    try { await unwrapKey(w, password); return true; } catch (e) { return false; }
+  }
+
+  /* ---------------- password policy + generator ---------------- */
+  const PW_MIN = { admin: 14, manager: 14, teacher: 12, eal: 12, support: 12 };
+  function pwOk(role, pw) {
+    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 12;
+    if (!pw || typeof pw !== 'string') return 'Enter a password.';
+    if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
+    return null;   /* ok */
+  }
+  /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:
+     30^20 = 2^98 bits of entropy straight from crypto.getRandomValues. */
+  const PW_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyu';   /* 30 unambiguous symbols */
+  function genPassword() {
+    const c = C();
+    const groups = [];
+    for (let g = 0; g < 4; g++) {
+      const bytes = c.getRandomValues(new Uint8Array(5));
+      let part = '';
+      for (let i = 0; i < 5; i++) part += PW_ALPHABET[bytes[i] % PW_ALPHABET.length];
+      groups.push(part);
+    }
+    return groups.join('-');
+  }
+  function genPasswordBits() { return Math.floor(20 * Math.log2(PW_ALPHABET.length)); }   /* 20 chars * log2(30) = 98 */
+
+  /* ---------------- class blob (encrypted workbook) ---------------- */
+  async function sealClass(obj, keyBytes) {
+    const c = C();
+    const iv = c.getRandomValues(new Uint8Array(12));
+    const k = await aesKey(keyBytes);
+    const pt = new (TE())().encode(JSON.stringify(obj));
+    const ct = new Uint8Array(await c.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, pt));
+    return { v: 1, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), sum: await contentSum(obj) };
+  }
+  async function openClass(blob, keyBytes) {
+    const k = await aesKey(keyBytes);
+    const pt = await C().subtle.decrypt({ name: 'AES-GCM', iv: bytesFromB64u(blob.iv) }, k, bytesFromB64u(blob.ct));
+    return JSON.parse(new (TD())().decode(pt));
+  }
+  /* stable content digest of the DECRYPTED workbook — the blob ciphertext
+     changes on every seal (fresh IV), so change detection uses this instead */
+  async function contentSum(obj) {
+    const d = await C().subtle.digest('SHA-256', new (TE())().encode(JSON.stringify(obj)));
+    return b64uFromBytes(new Uint8Array(d)).slice(0, 22);
+  }
+
+  /* ---------------- roles ---------------- */
+  const ROLES = ['admin', 'manager', 'eal', 'support'];
+  const ROLE_LABEL = { admin: 'Admin', manager: 'Manager (read-only)', eal: 'EAL teacher', support: 'Supporting teacher' };
+  const ROLE_ALIASES = [
+    [/admin/i, 'admin'], [/^manager\b|management|sees whole school/i, 'manager'],
+    [/^eal\b|eal teacher/i, 'eal'], [/support/i, 'support'], [/^teacher$/i, 'eal'],
+  ];
+  function normalizeRole(s) {
+    const t = String(s || '').trim();
+    for (const [re, r] of ROLE_ALIASES) if (re.test(t)) return r;
+    return null;
+  }
+  function roleLabel(r) { return ROLE_LABEL[r] || r || ''; }
+  function isClassOf(user, cls) {
+    if (!cls) return false;
+    return cls.eal === user.username || cls.support === user.username;
+  }
+  /* The single permission matrix. Actions:
+     view          — open the class workbook (read)
+     edit.obs      — edit observation cells directly
+     edit.scores   — edit spelling / daily assignment / test cells
+     edit.roster   — add/remove/edit students of the class
+     request.obs   — propose an observation change (goes to the EAL for approval)
+     review        — approve / reject proposed observation changes
+     export.class  — export / print / back up this class
+     audit.view    — read the class audit log
+     manage.accounts / manage.classes / migrate / export.all — admin only
+  */
+  function can(user, action, cls) {
+    if (!user || !user.username) return false;
+    const r = user.role;
+    if (r === 'admin') return true;
+    if (action === 'manage.accounts' || action === 'manage.classes' || action === 'migrate' || action === 'export.all') return false;
+    if (r === 'manager') return action === 'view' || action === 'audit.view';
+    if (!isClassOf(user, cls)) return false;
+    if (r === 'eal') {
+      return ['view', 'edit.obs', 'edit.scores', 'edit.roster', 'review', 'export.class', 'audit.view'].indexOf(action) !== -1;
+    }
+    if (r === 'support') {
+      return ['view', 'edit.scores', 'request.obs', 'audit.view'].indexOf(action) !== -1;
+    }
+    return false;
+  }
+  /* classes a user may see at all (admin/manager: all; eal/support: theirs) */
+  function classesFor(user, index) {
+    if (!user) return [];
+    if (user.role === 'admin' || user.role === 'manager') return index.slice();
+    return index.filter((c) => isClassOf(user, c));
+  }
+
+  /* ---------------- audit log (append-only by convention) ---------------- */
+  const AUDIT_MAX = 5000;   /* localStorage is finite; the OLDEST entries drop
+                               off first and the docs say so. Full history also
+                               lives in every downloaded backup. */
+  function logAudit(wb, entry) {
+    if (!Array.isArray(wb.audit)) wb.audit = [];
+    wb.audit.push(Object.assign({ t: Date.now() }, entry));
+    if (wb.audit.length > AUDIT_MAX) wb.audit = wb.audit.slice(wb.audit.length - AUDIT_MAX);
+    return wb.audit.length;
+  }
+
+  /* ---------------- pending observation changes ----------------
+     A supporting teacher's observation edit NEVER touches the score: it is
+     stored as a proposal and applied only when the paired EAL approves. */
+  function obsCell(wb, semId, sid, month, key) {
+    const sem = (wb.semesters || []).find((s) => s.id === semId);
+    if (!sem) return undefined;
+    return sem.observations && sem.observations[sid] && sem.observations[sid][month] && sem.observations[sid][month][key];
+  }
+  function requestChange(wb, req) {
+    if (!req || !req.semId || !req.sid || !req.month || !req.key) return { error: 'incomplete request' };
+    if (req.newValue === null || req.newValue === undefined || typeof req.newValue !== 'number') return { error: 'newValue must be a number' };
+    if (!Array.isArray(wb.pending)) wb.pending = [];
+    const oldValue = obsCell(wb, req.semId, req.sid, req.month, req.key);
+    const id = 'pc-' + Date.now().toString(36) + '-' + (wb.pending.length + 1);
+    wb.pending.push({
+      id: id, kind: 'obs', semId: req.semId, sid: req.sid, month: req.month, key: req.key,
+      oldValue: oldValue === undefined ? null : oldValue, newValue: req.newValue,
+      requestedBy: req.by || '', time: req.t || Date.now(), note: String(req.note || '').slice(0, 300),
+    });
+    logAudit(wb, { by: req.by || '', action: 'obs.request', cell: req.semId + '/' + req.sid + '/' + req.month + '/' + req.key, old: oldValue === undefined ? null : oldValue, new: req.newValue, note: req.note || '' });
+    return { ok: true, id: id };
+  }
+  function applyObs(wb, p) {
+    const sem = (wb.semesters || []).find((s) => s.id === p.semId);
+    if (!sem) return 'semester missing';
+    if (!sem.observations[p.sid]) sem.observations[p.sid] = {};
+    if (!sem.observations[p.sid][p.month]) sem.observations[p.sid][p.month] = {};
+    sem.observations[p.sid][p.month][p.key] = p.newValue;
+    return null;
+  }
+  function approveChange(wb, id, decision) {
+    const i = (wb.pending || []).findIndex((p) => p.id === id);
+    if (i < 0) return { error: 'no such pending change' };
+    const p = wb.pending[i];
+    const cell = p.semId + '/' + p.sid + '/' + p.month + '/' + p.key;
+    const err = applyObs(wb, p);
+    if (err) return { error: err };
+    wb.pending.splice(i, 1);   /* apply + remove + audit as one mutation set */
+    logAudit(wb, { by: (decision && decision.by) || '', action: 'obs.approve', cell: cell, old: p.oldValue, new: p.newValue, note: 'requested by ' + p.requestedBy + ((decision && decision.reason) ? ' — ' + decision.reason : '') });
+    return { ok: true };
+  }
+  function rejectChange(wb, id, decision) {
+    const i = (wb.pending || []).findIndex((p) => p.id === id);
+    if (i < 0) return { error: 'no such pending change' };
+    const p = wb.pending[i];
+    wb.pending.splice(i, 1);   /* the stored score is never touched */
+    logAudit(wb, { by: (decision && decision.by) || '', action: 'obs.reject', cell: p.semId + '/' + p.sid + '/' + p.month + '/' + p.key, old: p.oldValue, new: p.newValue, note: 'requested by ' + p.requestedBy + ((decision && decision.reason) ? ' — ' + decision.reason : '') });
+    return { ok: true };
+  }
+
+  /* ---------------- migration planner (single markbook -> classes) ---------------- */
+  function classKeyOf(sem) { return (String(sem.school || '').trim() + '·' + String(sem.className || '').trim() || '·') ; }
+  function slug(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'class'; }
+  function countCells(sem) {
+    let n = 0;
+    const bump = (o) => { if (o && typeof o === 'object') for (const k of Object.keys(o)) { const v = o[k]; if (typeof v === 'number') n++; else if (v && typeof v === 'object') bump(v); } };
+    bump(sem.observations); bump(sem.spelling); bump(sem.daily); bump(sem.tests);
+    return n;
+  }
+  /* Dry run: group semesters into classes, count what will move, flag problems.
+     NEVER mutates db. */
+  function planMigration(db) {
+    const groups = new Map();
+    for (const sem of (db && db.semesters) || []) {
+      const k = classKeyOf(sem);
+      if (!groups.has(k)) groups.set(k, { school: String(sem.school || '').trim(), name: String(sem.className || '').trim() || 'Unassigned class', semesters: [] });
+      groups.get(k).semesters.push(sem);
+    }
+    const classes = [];
+    const warnings = [];
+    for (const g of groups.values()) {
+      const students = new Set();
+      let cells = 0;
+      for (const s of g.semesters) { cells += countCells(s); for (const st of s.students || []) students.add(st.id); }
+      const id = 'c-' + slug(g.name) + '-' + Math.random().toString(36).slice(2, 6);
+      classes.push({ id: id, name: g.name, school: g.school, eal: '', support: '', semCount: g.semesters.length, studentCount: students.size, cellCount: cells, semIds: g.semesters.map((s) => s.id) });
+      if (!String(g.name || '').trim()) warnings.push('One group has no class name — review it before migrating (shown as "Unassigned class").');
+    }
+    const legacyTeachers = ((db && db.settings && db.settings._usernames) || []);
+    if (classes.length > 1) warnings.push(classes.length + ' separate classes were found in the single markbook — each becomes its own workbook after migration.');
+    return { classes: classes, warnings: warnings.filter((w, i, a) => a.indexOf(w) === i) };
+  }
+  /* Apply: seal each class under a fresh random key, wrap keys per account.
+     opts = {
+       plan, db,
+       pairings:  { classId: {eal, support} },
+       users:     [{username, role}] (roles already migrated: teacher->eal),
+       passwords: { username: password } for accounts keyed NOW (admin's own
+                   password must be here); others get generated passwords back
+     }
+     Returns everything the caller must persist — db itself is not touched. */
+  async function applyMigration(db, opts) {
+    const plan = opts.plan;
+    const byId = new Map();
+    for (const g of plan.classes) byId.set(g.id, Object.assign({}, g, { semesters: [] }));
+    for (const sem of db.semesters) {
+      const g = plan.classes.find((c) => c.semIds.indexOf(sem.id) !== -1);
+      if (g) byId.get(g.id).semesters.push(sem);
+    }
+    const index = [];
+    const blobs = {};
+    const keyrings = {};
+    const newPasswords = {};
+    for (const c of plan.classes) {
+      const grp = byId.get(c.id);   /* plan rows carry ids only; byId rows carry the semesters */
+      const pair = (opts.pairings && opts.pairings[c.id]) || {};
+      const key = genKey();
+      const wb = {
+        sprClass: 1, id: c.id, name: c.name, school: c.school,
+        eal: pair.eal || '', support: pair.support || '',
+        settings: Object.assign({}, db.settings || {}),
+        currentSemesterId: grp.semesters.length ? grp.semesters[grp.semesters.length - 1].id : null,
+        semesters: grp.semesters, pending: [], audit: [],
+      };
+      logAudit(wb, { by: (opts.adminUser || ''), action: 'migrate', note: 'split from the single markbook (' + grp.semesters.length + ' semester(s))' });
+      blobs[c.id] = await sealClass(wb, key);
+      index.push({ id: c.id, name: c.name, school: c.school, eal: pair.eal || '', support: pair.support || '', createdAt: Date.now(), updatedAt: Date.now() });
+      /* who gets this class's key? admin + managers: all; eal/support: their own */
+      for (const u of opts.users || []) {
+        const mine = u.role === 'admin' || u.role === 'manager' || pair.eal === u.username || pair.support === u.username;
+        if (!mine) continue;
+        let pw = (opts.passwords || {})[u.username];
+        if (!pw) { pw = (opts.generatePassword ? opts.generatePassword(u.username) : null) || ('spr-' + Math.random().toString(36).slice(2, 10)); newPasswords[u.username] = pw; }
+        keyrings[u.username] = keyrings[u.username] || {};
+        keyrings[u.username][c.id] = await wrapKey(key, pw);
+      }
+    }
+    return { mode: 'class', index: index, blobs: blobs, keyrings: keyrings, newPasswords: newPasswords };
+  }
+
+  /* ---------------- roster CSV (account template) ---------------- */
+  function csvRows(text) {
+    const s = String(text || '').replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [], field = '', q = false;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        if (ch === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else q = false; }
+        else field += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && s[i + 1] === '\n') i++;
+        row.push(field); field = '';
+        if (row.some((f) => f.trim() !== '')) rows.push(row);
+        row = [];
+      } else field += ch;
+    }
+    row.push(field);
+    if (row.some((f) => f.trim() !== '')) rows.push(row);
+    return rows;
+  }
+  /* The admin's roster template: username, display_name, role, class_or_grade,
+     paired_with, status. Roles arrive as display strings. Pairing must be
+     mutual (eal-01 <-> sup-01); the class link itself is assigned later. */
+  function parseRosterCsv(text) {
+    const rows = csvRows(text);
+    const users = [];
+    const errors = [];
+    const warnings = [];
+    if (!rows.length) return { users: users, errors: ['empty file'], warnings: warnings };
+    const head = rows[0].map((h) => h.trim().toLowerCase());
+    const col = (name) => head.indexOf(name);
+    const iU = col('username'), iD = col('display_name'), iR = col('role'), iC = col('class_or_grade'), iP = col('paired_with');
+    if (iU < 0 || iR < 0) return { users: [], errors: ['need at least "username" and "role" columns'], warnings: [] };
+    for (let r = 1; r < rows.length; r++) {
+      const c = rows[r];
+      const username = String(c[iU] || '').trim().toLowerCase();
+      const roleRaw = String(c[iR] || '').trim();
+      if (!username) { errors.push('row ' + (r + 1) + ': missing username'); continue; }
+      if (!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(username)) { errors.push('row ' + (r + 1) + ': bad username "' + username.slice(0, 20) + '" (letters, digits, - and _ only)'); continue; }
+      const role = normalizeRole(roleRaw);
+      if (!role) { errors.push('row ' + (r + 1) + ': unknown role "' + roleRaw.slice(0, 30) + '"'); continue; }
+      if (users.some((u) => u.username === username)) { errors.push('row ' + (r + 1) + ': duplicate username ' + username); continue; }
+      users.push({
+        username: username,
+        display_name: iD >= 0 ? String(c[iD] || '').trim().slice(0, 40) : '',
+        role: role,
+        class_or_grade: iC >= 0 ? String(c[iC] || '').trim().slice(0, 40) : '',
+        paired_with: iP >= 0 ? String(c[iP] || '').trim().toLowerCase() : '',
+        status: (c.length > 5 ? String(c[5] || '').trim() : ''),
+      });
+    }
+    /* mutuality of pairing */
+    const byName = new Map(users.map((u) => [u.username, u]));
+    for (const u of users) {
+      if (!u.paired_with) { if (u.role === 'eal' || u.role === 'support') warnings.push(u.username + ' (' + roleLabel(u.role) + ') has no pair in this file — pair them later in Manage.'); continue; }
+      const p = byName.get(u.paired_with);
+      if (!p) warnings.push(u.username + ' is paired with "' + u.paired_with + '" which is not in this file.');
+      else if (p.paired_with !== u.username) warnings.push(u.username + ' <-> ' + p.username + ' pairing is one-sided.');
+    }
+    return { users: users, errors: errors, warnings: warnings };
+  }
+
+  /* ---------------- class file + share-link codecs ---------------- */
+  function classFile(meta, blob) {
+    return { spr: 1, type: 'spr-class-file', id: meta.id, name: meta.name, school: meta.school, eal: meta.eal || '', support: meta.support || '', blob: blob };
+  }
+  function parseClassFile(json) {
+    if (!json || json.spr !== 1 || json.type !== 'spr-class-file' || !json.id || !json.blob || !json.blob.iv || !json.blob.ct) throw new Error('not a valid SPR class file');
+    return { id: String(json.id), name: String(json.name || ''), school: String(json.school || ''), eal: String(json.eal || ''), support: String(json.support || ''), blob: json.blob };
+  }
+  function classLink(origin, pathname, classId, keyB64) {
+    return origin + pathname + '#class=' + encodeURIComponent(classId) + '&k=' + encodeURIComponent(keyB64);
+  }
+  function parseClassHash(hash) {
+    const m = String(hash || '').match(/#class=([^&]+)&k=([^&]+)/);
+    if (!m) return null;
+    try { return { id: decodeURIComponent(m[1]), k: decodeURIComponent(m[2]) }; } catch (e) { return null; }
+  }
+
+  return {
+    b64uFromBytes: b64uFromBytes, bytesFromB64u: bytesFromB64u,
+    genKey: genKey, wrapKey: wrapKey, unwrapKey: unwrapKey,
+    wrapNeedsUpgrade: wrapNeedsUpgrade, rewrapKey: rewrapKey,
+    loginWrap: loginWrap, verifyLogin: verifyLogin,
+    pwOk: pwOk, genPassword: genPassword, genPasswordBits: genPasswordBits,
+    sealClass: sealClass, openClass: openClass, contentSum: contentSum,
+    ROLES: ROLES, normalizeRole: normalizeRole, roleLabel: roleLabel,
+    can: can, classesFor: classesFor, isClassOf: isClassOf,
+    AUDIT_MAX: AUDIT_MAX, logAudit: logAudit,
+    requestChange: requestChange, approveChange: approveChange, rejectChange: rejectChange, obsCell: obsCell,
+    planMigration: planMigration, applyMigration: applyMigration, countCells: countCells,
+    parseRosterCsv: parseRosterCsv, csvRows: csvRows,
+    classFile: classFile, parseClassFile: parseClassFile, classLink: classLink, parseClassHash: parseClassHash,
+  };
+});
+
+</script>
+<script>
+/* =========================================================================
    P4C4 Markbook — UI application (requires: Calc, Util, ExcelBridge, XLSX,
    Chart, window.SEED)
    ========================================================================= */
@@ -2226,8 +2691,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
     /* self-heal any invalid stored scores (legacy saves, hand-edited backups);
        count surfaces in __droppedInvalid (non-enumerable) for a one-time toast */
-    const dropped = C.sanitizeSemester(sem);
-    if (dropped) Object.defineProperty(sem, '__droppedInvalid', { value: dropped, enumerable: false, configurable: true });
+    const moved = C.sanitizeSemester(sem);
+    if (moved.length) {
+      /* non-destructive: values are quarantined into sem.review for the
+         teacher to fix or discard — a safety copy is stashed first so nothing
+         is ever silently lost (browser only; pure loads in Node) */
+      try { if (typeof stashSafetyBackup === 'function') stashSafetyBackup('before quarantining invalid scores'); } catch (e) {}
+      sem.review = sem.review || [];
+      for (const mv of moved) {
+        if (!sem.review.some((r) => r.area === mv.area && r.sid === mv.sid && r.month === mv.month && r.key === mv.key && r.value === mv.value)) sem.review.push(mv);
+      }
+      Object.defineProperty(sem, '__movedInvalid', { value: moved.length, enumerable: false, configurable: true });
+    }
     return sem;
   }
   function emptyDB() {
@@ -2282,7 +2757,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
        + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
     clearTimeout(saveTimer);
-    if (cryptoOK() && SESSION.dk) saveTimer = setTimeout(() => persistNow(silent), 300);
+    if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
+    else if (cryptoOK() && SESSION.dk) saveTimer = setTimeout(() => persistNow(silent), 300);
     else saveTimer = setTimeout(() => {
       try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { toast('Could not save — storage full?', true); }
       flashSaved(silent);
@@ -2296,6 +2772,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
   }
   async function persistNow(silent) {
+    if (CLS && CLS_KEY) { await classPersistNow(silent); return; }
     try {
       const v2 = readV2() || { fmt: 2, wraps: {} };
       v2.fmt = 2;
@@ -2366,9 +2843,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* ---- encryption core (online mode): PBKDF2-SHA256 310k -> AES-GCM.
      Random master key, wrapped per user with their login password; the key
      only ever lives in memory + sessionStorage (cleared when the tab closes). ---- */
-  async function deriveKeyBits(password, saltBytes) {
+  const PBKDF2_IT = 600000, PBKDF2_IT_LEGACY = 310000;   /* P1.1: v2 wraps; legacy wraps keep their own count */
+  async function deriveKeyBits(password, saltBytes, iterations) {
     const base = await subtle().importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-    return new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 310000, hash: 'SHA-256' }, base, 256));
+    return new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: iterations || PBKDF2_IT, hash: 'SHA-256' }, base, 256));
   }
   async function aesKeyRaw(raw) { return subtle().importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']); }
   async function sealDB(dbObj, dk) {
@@ -2388,14 +2866,84 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const k = await aesKeyRaw(kb);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, k, dk));
-    return { salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+    return { v: 2, it: PBKDF2_IT, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
   }
   async function unwrapWrap(w, password) {
-    const kb = await deriveKeyBits(password, bytesFromB64u(w.salt));
+    const kb = await deriveKeyBits(password, bytesFromB64u(w.salt), w.it || PBKDF2_IT_LEGACY);
     const k = await aesKeyRaw(kb);
     return new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(w.iv) }, k, bytesFromB64u(w.ct)));
   }
   function cur() { return DB.semesters.find((s) => s.id === DB.currentSemesterId) || DB.semesters[0] || null; }
+
+  /* ================================ class mode ================================
+     Per-class encrypted workbooks (agreed-rule scoping — see ClassStore header
+     and docs/CLASS-MODE.md). Mode 'legacy' keeps the single-blob markbook;
+     mode 'class' stores one sealed blob per class + a per-user keyring of
+     class keys wrapped under each account's own password. */
+  const CS = window.ClassStore;
+  const MODE_KEY = 'spr-mode-v1';
+  const CLASS_INDEX_KEY = 'spr-class-index-v1';
+  const classBlobKey = (id) => 'spr-class-' + id;
+  function sprMode() { try { return localStorage.getItem(MODE_KEY) === 'class' ? 'class' : 'legacy'; } catch (e) { return 'legacy'; } }
+  function classIndex() { try { const ix = JSON.parse(localStorage.getItem(CLASS_INDEX_KEY) || '[]'); return Array.isArray(ix) ? ix : []; } catch (e) { return []; } }
+  function setClassIndex(ix) { localStorage.setItem(CLASS_INDEX_KEY, JSON.stringify(ix)); }
+  function classRole(r) { return r === 'management' ? 'manager' : r === 'teacher' ? 'eal' : r; }
+  function myUser() {
+    const u = currentUser();
+    if (!u || !u.username) return null;
+    return { username: u.username, name: u.name || u.username, role: classRole(u.role) };
+  }
+  let CLS = null;            /* { id } of the open class (class mode) */
+  let CLS_KEY = null;        /* raw AES key bytes of the open class */
+  function clsMeta() { return CLS ? classIndex().find((c) => c.id === CLS.id) || null : null; }
+  function canDo(action) {
+    if (sprMode() !== 'class' || !CLS) return true;   /* legacy mode keeps today's behaviour */
+    return CS.can(myUser(), action, clsMeta());
+  }
+  function classPendingCount() { return (DB && Array.isArray(DB.pending)) ? DB.pending.length : 0; }
+  /* the class list / open-close cycle ------------------------------------------ */
+  async function openClass(id) {
+    const meta = classIndex().find((c) => c.id === id);
+    if (!meta) { toast('That class no longer exists here', true); return; }
+    const raw = localStorage.getItem(classBlobKey(id));
+    if (!raw) { toast('Class data is missing on this device — restore a backup or re-open the share link', true); return; }
+    let key = (SESSION.keys || {})[id];
+    if (!key) { toast('You do not hold the key for ' + meta.name + ' — ask the admin to pair you with this class', true); return; }
+    try {
+      const wb = normalizeDB(await CS.openClass(JSON.parse(raw), key));
+      CLS = { id: id }; CLS_KEY = key;              /* only now is the class open */
+      DB = wb;
+      DB.sprClass = 1; DB.id = id;   /* DB IS the class workbook now */
+      ui.classOpen = true;
+      try { localStorage.setItem('spr-last-class', id); } catch (e) {}
+      buildShell(); location.hash = '#/dashboard'; route();
+    } catch (e) { CLS = null; CLS_KEY = null; toast('Could not open ' + meta.name + ' with your key', true); }
+  }
+  function closeClass() { console.error('[closeClass] from ' + new Error().stack.split(String.fromCharCode(10)).slice(2, 4).join(' <- '));
+    try { if (saveTimer) { clearTimeout(saveTimer); persistNow(true); } } catch (e) {}
+    CLS = null; CLS_KEY = null; ui.classOpen = false;
+    DB = emptyDB();
+    buildShell(); location.hash = '#/classes'; route();
+  }
+  async function classPersistNow(silent) {
+    if (!CLS || !CLS_KEY) return;
+    try {
+      const blob = await CS.sealClass(DB, CLS_KEY);
+      localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
+      const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
+      if (m) { m.updatedAt = Date.now(); m.pendingCount = classPendingCount(); setClassIndex(ix); }
+      flashSaved(silent);
+      scheduleSyncPush();
+    } catch (e) { toast('Could not save the class workbook — storage full?', true); }
+  }
+  function classKeysToSession() {
+    try {
+      const out = {};
+      for (const k of Object.keys(SESSION.keys || {})) out[k] = b64uFromBytes(SESSION.keys[k]);
+      sessionStorage.setItem('spr-session', JSON.stringify({ user: SESSION.user, dk: b64uFromBytes(SESSION.dk), keys: out }));
+    } catch (e) {}
+  }
+
 
   /* ================================ charts ================================ */
   const liveCharts = [];
@@ -2478,10 +3026,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
   /* ============================ shell & router ============================ */
   const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['ranking', 'Ranking'], ['manage', 'Manage & setup']];
+  /* class mode adds a Classes home + (for reviewers) a Review queue entry */
+  function navList() {
+    const list = NAV.slice();
+    if (sprMode() === 'class') {
+      list.unshift(['classes', '‹ All classes']);
+      if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
+    }
+    return list;
+  }
   /* roles: admin (Mo) sees & controls everything; management sees Ranking too;
      teacher = the everyday markbook tools, exactly as before */
-  function roleLabel(r) { return r === 'admin' ? 'Admin' : r === 'management' ? 'Management' : 'Teacher'; }
-  function isMgmt() { const r = (currentUser() || {}).role; return r === 'admin' || r === 'management'; }
+  function roleLabel(r) { r = classRole(r); return (CS && CS.roleLabel(r)) || (r === 'admin' ? 'Admin' : 'Teacher'); }
+  function isMgmt() { const r = classRole((currentUser() || {}).role); return r === 'admin' || r === 'manager'; }
   function buildShell() {
     const sem = cur();
     $('#app').innerHTML =
@@ -2489,7 +3046,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<nav class="rail">' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
-          '<div class="nav">' + NAV.filter((n) => n[0] !== 'ranking' || isMgmt()).map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
+          '<div class="nav">' + navList().filter((n) => n[0] !== 'ranking' || isMgmt()).map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
           '<div class="rail-foot"><label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
@@ -2522,11 +3079,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<div class="actions">' + (actions || '') + '</div></header>';
   }
   function route() {
+    /* while the sign-in gate owns the screen, routing must do NOTHING — an
+       async hashchange from an earlier redirect would otherwise closeDlg()
+       the login card right after it opened */
+    if (document.body.classList.contains('auth-gate')) return;
     killCharts(); closeDlg();
-    if (!DB.semesters.length) { renderWelcome(); return; }
+    /* class mode gates run BEFORE the empty-DB welcome check: a class device
+       with no class open has an empty in-memory DB but must see its class list */
+    if (sprMode() === 'class' && !document.body.classList.contains('auth-gate')) {
+      const cv = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
+      if (!CLS && cv !== 'classes') { location.hash = '#/classes'; return; }
+      if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
+    }    if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let view = parts[0] || 'dashboard';
+    if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
+    if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
     const navView = view;
     switch (view) {
@@ -2539,10 +3108,515 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
       case 'ranking': renderRanking(); break;
       case 'manage': renderManage(); break;
+      case 'review': renderReview(); break;
       default: renderDashboard();
     }
     railActive(navView);
     window.scrollTo(0, 0);
+  }
+
+
+  /* ============================== class screens ==============================
+     Class home, review queue, pending proposals, pairing, roster import,
+     migration wizard, class files / share links, export & restore. */
+
+  function classCard(c) {
+    const me = myUser() || {};
+    const mine = c.eal === me.username ? 'EAL teacher' : c.support === me.username ? 'Supporting teacher' : (me.role === 'manager' ? 'Read-only' : me.role === 'admin' ? 'Admin' : '');
+    const pend = (c.pendingCount || 0) && (me.role === 'admin' || c.eal === me.username) ? '<span class="pend-badge">' + c.pendingCount + ' to review</span>' : '';
+    const when = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '';
+    return '<div class="class-card">' +
+      '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
+      '<span class="cc-school">' + U.esc(c.school || '') + '</span>' +
+      '<div class="cc-pair small">' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</div>' +
+      '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
+      '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
+      '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
+      (myUser() && myUser().role === 'admin' ?
+        '<button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair</button>' +
+        '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button>' : '') +
+      '</div></div>';
+  }
+
+  function renderClasses() {
+    const me = myUser() || { username: '', role: 'teacher' };
+    const ix = classIndex();
+    const mine = CS.classesFor(me, ix);
+    const admin = me.role === 'admin';
+    const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
+    $('#app').innerHTML =
+      '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
+      pageHead('Your classes',
+        U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
+        (me.role === 'manager' ? ' — whole school, read-only' : me.role === 'support' ? ' — you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ' — you edit your class and approve observation changes from your support partner' : '')) +
+      (admin ? '<div class="flex mb" style="flex-wrap:wrap">' +
+        '<button class="btn primary" data-action="class-new-open">New class</button>' +
+        '<button class="btn" data-action="class-import-btn">Import class file</button>' +
+        '<button class="btn" data-action="class-roster-btn">Import roster (accounts CSV)</button>' +
+        '<button class="btn" data-action="export-all">Export everything</button>' +
+        '<button class="btn" data-action="restore-all-btn">Restore everything</button>' +
+        '</div>' : '') +
+      (legacySource ? '<div class="panel" style="margin:0 0 16px;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
+        '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
+        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
+      (me.role === 'manager' ? '<p class="small muted" style="margin:0 0 14px">Manager view: every class, read-only. Printing and on-screen review are open; editing stays with each class&rsquo;s teachers.</p>' : '') +
+      (mine.length ? '<div class="class-grid">' + mine.map(classCard).join('') + '</div>'
+        : '<div class="empty" style="padding:44px 24px"><div class="big">No classes yet</div>' +
+          '<p class="small">' + (admin ? 'Create a class, import a class file, or migrate the old single markbook.' : 'Your administrator will pair you with a class — it appears here the moment they do.') + '</p>' +
+          (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button><button class="btn" data-action="class-import-btn">Import class file</button></div>' : '') +
+          '</div>') +
+      '<p class="small muted" style="margin-top:22px">Each class is a separate encrypted workbook; only colleagues holding that class&rsquo;s key can open it. This is an <b>agreed-rule control between colleagues</b> — anyone holding a class key can read and change its data, so hand keys only to your own class team. <a href="#" data-action="privacy-open">Privacy &amp; data notice</a>.</p>' +
+      '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
+      '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+      '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
+      '</main></div>';
+  }
+
+  /* ---- support teacher proposes an observation change ---- */
+  function proposeDialog(el) {
+    const sem = cur();
+    if (!sem) return;
+    const sid = el.dataset.sid, month = el.dataset.month, key = el.dataset.key;
+    const skill = key.split('-LO')[0], lo = Number(key.split('-LO')[1]);
+    const curV = C.obsValue(sem, sid, month, skill, lo);
+    openDlg(
+      '<h3>Propose an observation change</h3>' +
+      '<p class="small">Observations belong to the EAL teacher. Your proposal is queued for them — the score does not change until they approve it.</p>' +
+      '<div class="flex" style="gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<span class="small">Current: <b>' + (curV === null ? '—' : curV) + '</b></span>' +
+      '<label class="small">Proposed: <input class="inp" id="prop-val" inputmode="decimal" style="width:90px" value=""></label></div>' +
+      '<div style="margin-top:8px"><textarea class="inp" id="prop-note" rows="2" style="width:100%" placeholder="Why this change? (shown to the EAL teacher)"></textarea></div>' +
+      '<div class="login-err" id="prop-err" aria-live="assertive"></div>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Send proposal</button></div>',
+      (d) => {
+        d.onclick = (e) => {
+          const b = e.target.closest('[data-x]');
+          if (!b) return;
+          if (b.dataset.x === '0') { closeDlg(); return; }
+          const v = U.num($('#prop-val').value);
+          if (!C.validObs(v)) { $('#prop-err').textContent = 'Enter a score between 0 and 10.'; return; }
+          const r = CS.requestChange(DB, { semId: sem.id, sid: sid, month: month, key: key, newValue: v, by: myUser().username, note: ($('#prop-note').value || '').trim() });
+          if (r.error) { $('#prop-err').textContent = r.error; return; }
+          closeDlg(); saveDB(true);
+          toast('Proposal sent to the EAL teacher'); buildShell(); route();
+        };
+      });
+  }
+
+  /* ---- EAL / admin review queue ---- */
+  function renderReview() {
+    if (!canDo('review')) { location.hash = '#/dashboard'; return; }
+    const pend = DB.pending || [];
+    const rows = pend.map((p) => {
+      const sem = DB.semesters.find((x) => x.id === p.semId) || {};
+      const stu = (sem.students || []).find((x) => x.id === p.sid) || {};
+      return '<tr><td>' + U.esc(stu.nameEn || stu.nameCn || p.sid) + '</td>' +
+        '<td>' + U.esc(sem.name || p.semId) + '</td><td>' + U.esc(p.month) + '</td><td>' + U.esc(p.key) + '</td>' +
+        '<td class="num"><b>' + (p.oldValue === null ? '—' : p.oldValue) + '</b> → <b class="prop-new">' + p.newValue + '</b></td>' +
+        '<td>' + U.esc(p.requestedBy) + '</td><td class="small muted">' + new Date(p.time).toLocaleString() + '</td>' +
+        '<td>' + (p.note ? '<span class="small">' + U.esc(p.note) + '</span>' : '<span class="muted small">—</span>') + '</td>' +
+        '<td><button class="btn sm primary" data-action="review-approve" data-id="' + U.esc(p.id) + '">Approve</button> ' +
+        '<button class="btn sm danger" data-action="review-reject" data-id="' + U.esc(p.id) + '">Return</button></td></tr>';
+    }).join('');
+    $('#content').innerHTML = pageHead('Review proposed changes', 'supporting teacher&rsquo;s observation edits apply only after you approve',
+      '<button class="btn" data-action="export-xlsx">Export SPR Excel</button>') +
+      (pend.length ?
+        '<div class="sheet"><table class="tbl"><thead><tr><th>Student</th><th>Semester</th><th>Month</th><th>Cell</th><th>Change</th><th>By</th><th>When</th><th>Note</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        '<p class="small muted">Approving applies the new score immediately and records both values in this class&rsquo;s audit log. Returning leaves the score exactly as it was — also logged.</p>'
+        : '<div class="empty" style="padding:40px"><div class="big">Nothing waiting</div><p class="small">Proposed observation changes from your support partner appear here.</p></div>');
+  }
+  function reviewDecide(id, approve) {
+    const p = (DB.pending || []).find((x) => x.id === id);
+    if (!p) return;
+    if (approve) {
+      CS.approveChange(DB, id, { by: myUser().username });
+      saveDB(true); toast('Change applied and logged'); buildShell(); route(); return;
+    }
+    openDlg(
+      '<h3>Return this change</h3><p class="small">The score stays at <b>' + (p.oldValue === null ? '—' : p.oldValue) + '</b>. An optional reason goes to the audit log.</p>' +
+      '<textarea class="inp" id="rej-note" rows="2" style="width:100%" placeholder="Reason (optional)"></textarea>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn danger" data-x="1">Return</button></div>',
+      (d) => { d.onclick = (e) => { const b = e.target.closest('[data-x]'); if (!b) return; if (b.dataset.x === '1') { CS.rejectChange(DB, id, { by: myUser().username, reason: ($('#rej-note').value || '').trim() }); saveDB(true); toast('Returned — score unchanged'); } closeDlg(); buildShell(); route(); }; });
+  }
+
+  /* ---- audit log view ---- */
+  function auditPanelHtml(wb) {
+    const rows = (wb.audit || []).slice(-60).reverse().map((a) =>
+      '<tr><td class="small muted">' + new Date(a.t).toLocaleString() + '</td><td>' + U.esc(a.by || '—') + '</td>' +
+      '<td>' + U.esc(a.action) + '</td><td class="small">' + U.esc(a.cell || '—') + '</td>' +
+      '<td>' + U.esc(a.old === null || a.old === undefined ? '—' : String(a.old)) + ' → ' + U.esc(a.new === null || a.new === undefined ? '—' : String(a.new)) + '</td>' +
+      '<td class="small">' + U.esc(a.note || '') + '</td></tr>').join('');
+    return '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Audit log — this class</h3>' +
+      '<p class="small muted" style="margin:-6px 0 12px">Who changed what, when, and every approval decision. Newest 60 of ' + (wb.audit || []).length + ' shown here; the full log travels inside every backup and Excel export.</p>' +
+      ((wb.audit || []).length ? '<div class="sheet" style="max-height:340px;overflow:auto"><table class="tbl"><thead><tr><th>When</th><th>By</th><th>Action</th><th>Cell</th><th>Value</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<p class="small muted">Nothing recorded yet.</p>') +
+      '<p class="small muted" style="margin-top:8px">Honest limits: this log lives inside the class workbook. Colleagues who hold the class key follow these rules by agreement — SPR cannot cryptographically stop a key holder from rewriting history.</p>';
+  }
+
+  /* ---- admin: create a new class (in class mode) ---- */
+  function classNewDialog() {
+    const me = myUser() || {};
+    if (me.role !== 'admin') return;
+    const ealOpts = getAuth().users.filter((u) => classRole(u.role) === 'eal').map((u) => '<option value="' + U.esc(u.username) + '">' + U.esc(u.username) + '</option>').join('');
+    const supOpts = getAuth().users.filter((u) => classRole(u.role) === 'support').map((u) => '<option value="' + U.esc(u.username) + '">' + U.esc(u.username) + '</option>').join('');
+    openDlg(
+      '<h3>New class</h3>' +
+      '<div class="flex" style="gap:10px;flex-wrap:wrap"><label class="small">School <input class="inp" id="cn-school" style="width:160px" value=""></label>' +
+      '<label class="small">Class name <input class="inp" id="cn-name" style="width:120px" placeholder="P4C4"></label></div>' +
+      '<div class="flex" style="gap:10px;margin-top:8px;flex-wrap:wrap"><label class="small">EAL teacher <select class="inp" id="cn-eal"><option value="">— later —</option>' + ealOpts + '</select></label>' +
+      '<label class="small">Support teacher <select class="inp" id="cn-sup"><option value="">— later —</option>' + supOpts + '</select></label></div>' +
+      '<p class="small muted" style="margin-top:8px">Pairing a teacher now issues their class key with a fresh password (shown once). You can also pair later.</p>' +
+      '<div class="login-err" id="cn-err"></div>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Create class</button></div>',
+      (d) => {
+        d.onclick = async (e) => {
+          const b = e.target.closest('[data-x]');
+          if (!b) return;
+          if (b.dataset.x === '0') { closeDlg(); return; }
+          const name = ($('#cn-name').value || '').trim();
+          if (!name) { $('#cn-err').textContent = 'Give the class a name.'; return; }
+          if (classIndex().some((c) => c.name === name)) { $('#cn-err').textContent = 'A class with this name already exists.'; return; }
+          const school = ($('#cn-school').value || '').trim() || 'School';
+          const ealU = $('#cn-eal').value, supU = $('#cn-sup').value;
+          closeDlg();
+          await createClassWorkbook(school, name, ealU, supU);
+        };
+      });
+  }
+  async function createClassWorkbook(school, name, eal, support) {
+    const cid = 'c-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) + '-' + Math.random().toString(36).slice(2, 6);
+    const key = CS.genKey();
+    const wb = { sprClass: 1, id: cid, name: name, school: school, eal: eal || '', support: support || '', settings: Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, (DB && DB.settings) || {}), currentSemesterId: null, semesters: [], pending: [], audit: [] };
+    CS.logAudit(wb, { by: myUser().username, action: 'class.create', note: 'created for ' + school });
+    localStorage.setItem(classBlobKey(cid), JSON.stringify(await CS.sealClass(wb, key)));
+    const ix = classIndex();
+    ix.push({ id: cid, name: name, school: school, eal: eal || '', support: support || '', createdAt: Date.now(), updatedAt: Date.now(), pendingCount: 0 });
+    setClassIndex(ix);
+    try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}   /* first class => class mode; the legacy blob stays untouched as an archive */
+    await issueClassKeys(cid, key, [myUser().username].concat(eal ? [eal] : []).concat(support ? [support] : []));
+    SESSION.keys[cid] = key; classKeysToSession();
+    toast('Class ' + name + ' created');
+    renderClasses();
+    return cid;
+  }
+  /* wrap a class key for the given accounts; accounts without a known password
+     get a fresh generated one (returned + shown once). The admin uses SESSION.pw. */
+  async function issueClassKeys(cid, key, usernames) {
+    const fresh = {};
+    for (const un of usernames) {
+      /* work on a FRESH auth snapshot each iteration: rotateUserPassword saves
+         its own copy, and saving a stale snapshot afterwards would clobber it */
+      let auth = getAuth();
+      let u = auth.users.find((x) => x.username === un);
+      if (!u) continue;
+      if (u.keyring && u.keyring[cid]) continue;   /* already holds this class */
+      let pw = un === SESSION.user ? SESSION.pw : null;
+      if (!pw) {
+        pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
+        const rErr = await rotateUserPassword(un, pw);   /* a REAL new password */
+        if (rErr) continue;
+        fresh[un] = pw;
+        auth = getAuth();                                /* pick up the rotated hash */
+        u = auth.users.find((x) => x.username === un);
+      }
+      u.keyring = u.keyring || {};
+      u.keyring[cid] = await CS.wrapKey(key, pw);
+      saveAuth(auth);
+    }
+    if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Class key issued — new passwords (shown once)');
+    return fresh;
+  }
+  function passwordsOnceDialog(fresh, title, onDone) {
+    const rows = Object.keys(fresh).map((un) => '<tr><td>' + U.esc(un) + '</td><td><code>' + U.esc(fresh[un]) + '</code></td></tr>').join('');
+    const csv = 'username,new_password\n' + Object.keys(fresh).map((un) => un + ',' + fresh[un]).join('\n');
+    openDlg(
+      '<h3>' + U.esc(title) + '</h3>' +
+      '<p class="small">These passwords unlock the class key for each account. Share them privately (DingTalk / WeChat direct message) — SPR cannot show them again.</p>' +
+      '<div class="sheet"><table class="tbl"><thead><tr><th>Username</th><th>New password</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="dlg-actions"><button class="btn" data-dl="1">Download as CSV</button><button class="btn primary" data-x="1">Done — I saved them</button></div>',
+      (d) => {
+        d.onclick = (e) => {
+          const dl = e.target.closest('[data-dl]');
+          if (dl) {
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = 'SPR-new-passwords.csv';
+            document.body.appendChild(a); a.click(); a.remove();
+            return;
+          }
+          if (e.target.closest('[data-x]')) { closeDlg(); if (onDone) onDone(); }
+        };
+      });
+  }
+
+  /* ---- admin: pairing editor (also issues keys for newly paired teachers) ---- */
+  function pairClassDialog(id) {
+    const ix = classIndex(); const c = ix.find((x) => x.id === id);
+    if (!c) return;
+    const users = getAuth().users;
+    const sel = (role, cur) => '<select class="inp" id="pair-' + role + '"><option value="">— none —</option>' +
+      users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
+    openDlg(
+      '<h3>Pair teachers — ' + U.esc(c.name) + '</h3>' +
+      '<p class="small">The EAL teacher edits the class and approves observation changes; the support teacher edits spelling, daily assignments and tests. Newly paired teachers receive the class key with a fresh password (shown once).</p>' +
+      '<div class="flex" style="gap:12px;flex-wrap:wrap"><label class="small">EAL ' + sel('eal', c.eal) + '</label><label class="small">Support ' + sel('support', c.support) + '</label></div>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Save pairing</button></div>',
+      (d) => {
+        d.onclick = async (e) => {
+          const b = e.target.closest('[data-x]');
+          if (!b) return;
+          if (b.dataset.x === '0') { closeDlg(); return; }
+          const eal = $('#pair-eal').value, sup = $('#pair-support').value;
+          const ix2 = classIndex(); const c2 = ix2.find((x) => x.id === id);
+          const newly = [];
+          if (eal && eal !== c2.eal) newly.push(eal);
+          if (sup && sup !== c2.support) newly.push(sup);
+          c2.eal = eal; c2.support = sup; setClassIndex(ix2);
+          const key = (SESSION.keys || {})[id];
+          if (key) {
+            try {
+              const wb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(id))), key);
+              wb.eal = eal; wb.support = sup;
+              localStorage.setItem(classBlobKey(id), JSON.stringify(await CS.sealClass(wb, key)));
+            } catch (e2) {}
+          }
+          closeDlg();
+          if (newly.length && key) await issueClassKeys(id, key, newly);
+          toast('Pairing saved' + (newly.length ? ' — key issued' : ''));
+          renderClasses();
+        };
+      });
+  }
+
+  /* ---- admin: key + share link for a class (reuses the QR / DingTalk sheet) ---- */
+  function classShareDialog(id) {
+    const c = classIndex().find((x) => x.id === id);
+    const key = (SESSION.keys || {})[id];
+    if (!c || !key) { toast('No key for this class on this device', true); return; }
+    const link = CS.classLink(location.origin, location.pathname, id, b64uFromBytes(key));
+    openDlg(
+      '<h3>Class key &amp; link — ' + U.esc(c.name) + '</h3>' +
+      '<p class="small">Send this to the class&rsquo;s own teachers only. <b>Anyone holding it can open and change this class</b> — that is the agreed rule, not a technical lock. The data itself travels via Device sync or a class file; this link delivers the key.</p>' +
+      '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
+      '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
+      '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="btn primary" data-action="share-chatmsg">Copy for DingTalk / WeChat</button>' +
+      (navigator.share ? '<button class="btn" data-action="share-native">Share…</button>' : '') +
+      '<button class="btn" data-action="share-copy">Copy link</button>' +
+      '<button class="btn" data-action="class-export-file" data-id="' + U.esc(id) + '">Download class file</button>' +
+      '<button class="btn" data-x="close">Close</button></div></div></div>',
+      (d) => {
+        try {
+          const q = qrcode(0, 'M'); q.addData(link); q.make();
+          const box = $('#qrbox'); if (box) box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 });
+        } catch (e) { const box = $('#qrbox'); if (box) box.textContent = 'QR unavailable — use the link'; }
+        d.onclick = (e) => { if (e.target.closest('[data-x="close"]')) closeDlg(); };
+      });
+  }
+
+  /* ---- class file export / import ---- */
+  async function exportClassFile(id) {
+    const c = classIndex().find((x) => x.id === id);
+    const raw = localStorage.getItem(classBlobKey(id));
+    if (!c || !raw) return;
+    const file = CS.classFile(c, JSON.parse(raw));
+    const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = sanitizeFn('SPR-class-' + c.name) + '.sprclass.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Class file exported — it is encrypted; the key travels via the share link');
+  }
+  function importClassFileGo(file) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      let f = null;
+      try { f = CS.parseClassFile(JSON.parse(fr.result)); } catch (e) { toast('Not a valid SPR class file: ' + e.message, true); return; }
+      const existing = classIndex().find((c) => c.id === f.id);
+      openDlg(
+        '<h3>Import class — ' + U.esc(f.name) + '</h3>' +
+        '<p class="small">' + (existing ? 'A class with this id already exists here; importing replaces its data (a safety copy is kept first).' : 'New class on this device.') + ' The file is encrypted — paste the class share link (or its key) to open it.</p>' +
+        '<input class="inp" id="cf-link" style="width:100%" placeholder="https://…#class=…&k=… or just the key">' +
+        '<div class="login-err" id="cf-err"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Import</button></div>',
+        (d) => {
+          d.onclick = async (e) => {
+            const b = e.target.closest('[data-x]');
+            if (!b) return;
+            if (b.dataset.x === '0') { closeDlg(); return; }
+            const v = ($('#cf-link').value || '').trim();
+            const lp = CS.parseClassHash(v) || {};
+            const keyB64 = lp.k || (/^[A-Za-z0-9\-_]{40,}$/.test(v) ? v : null);
+            if (!keyB64) { $('#cf-err').textContent = 'Paste the share link (or the key part after &k=).'; return; }
+            let wb = null;
+            try { wb = await CS.openClass(f.blob, bytesFromB64u(keyB64)); }
+            catch (e2) { $('#cf-err').textContent = 'That key does not open this class file.'; return; }
+            stashSafetyBackup('before importing class ' + f.name);
+            const key = bytesFromB64u(keyB64);
+            localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(wb, key)));
+            const ix = classIndex().filter((c) => c.id !== f.id);
+            ix.push({ id: f.id, name: f.name, school: f.school, eal: f.eal, support: f.support, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: (wb.pending || []).length });
+            setClassIndex(ix);
+            try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}
+            closeDlg();
+            await issueClassKeys(f.id, key, [SESSION.user]);
+            SESSION.keys[f.id] = key; classKeysToSession();
+            toast('Class ' + f.name + ' imported'); renderClasses();
+          };
+        });
+    };
+    fr.readAsText(file);
+  }
+
+  /* ---- roster CSV import (accounts) ---- */
+  function rosterImportGo(file) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const r = CS.parseRosterCsv(fr.result);
+      const preview = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name) + '</td><td>' + U.esc(CS.roleLabel(u.role)) + '</td><td>' + U.esc(u.paired_with) + '</td></tr>').join('');
+      openDlg(
+        '<h3>Import roster — ' + r.users.length + ' account(s)</h3>' +
+        (r.errors.length ? '<div class="login-err">' + r.errors.map(U.esc).join('<br>') + '</div>' : '') +
+        (r.warnings.length ? '<p class="small" style="color:#b45309">' + r.warnings.map(U.esc).join('<br>') + '</p>' : '') +
+        (r.users.length ? '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Paired with</th></tr></thead><tbody>' + preview + '</tbody></table></div>' +
+        '<p class="small muted">Each account gets a fresh generated password (shown once, downloadable). Class keys are issued later via Pair.</p>' : '') +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1" ' + (r.users.length ? '' : 'disabled') + '>Create accounts</button></div>',
+        (d) => {
+          d.onclick = async (e) => {
+            const b = e.target.closest('[data-x]');
+            if (!b || b.dataset.x !== '1') { if (b) closeDlg(); return; }
+            const fresh = {};
+            for (const u of r.users) {
+              const pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
+              const err = await provisionUser(u.username, pw, u.display_name || u.username, u.role);
+              if (!err) fresh[u.username] = pw;
+            }
+            closeDlg();
+            if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created — passwords (shown once)');
+            renderClasses();
+          };
+        });
+    };
+    fr.readAsText(file);
+  }
+
+  /* ---- export / restore EVERYTHING (admin) ---- */
+  async function exportEverything() {
+    if (!myUser() || myUser().role !== 'admin') return;
+    const ix = classIndex();
+    const classes = [];
+    for (const c of ix) {
+      const key = (SESSION.keys || {})[c.id];
+      const raw = localStorage.getItem(classBlobKey(c.id));
+      if (!key || !raw) { classes.push({ id: c.id, name: c.name, error: 'key not on this device' }); continue; }
+      classes.push({ meta: c, workbook: await CS.openClass(JSON.parse(raw), key) });
+    }
+    const out = { spr: 1, type: 'spr-export-all', at: Date.now(), by: SESSION.user, index: ix, classes: classes, credit: 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)' };
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = sanitizeFn('SPR-everything-' + new Date().toISOString().slice(0, 10)) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Exported — the file is UNENCRYPTED; store it only in approved storage', true);
+  }
+  function restoreEverythingGo(file) {
+    const fr = new FileReader();
+    fr.onload = async () => {
+      let data = null;
+      try { data = JSON.parse(fr.result); } catch (e) { toast('Not a valid export file', true); return; }
+      if (!data || data.spr !== 1 || data.type !== 'spr-export-all' || !Array.isArray(data.classes)) { toast('This is not an "Export everything" file', true); return; }
+      const okGo = await confirmDlg('Restore everything',
+        'This replaces all class workbooks on this device with the ' + data.classes.length + ' class(es) from the file. A safety copy of the current state is kept first. Class keys are re-issued: you (admin) get keys now; teachers are re-paired afterwards.', 'Restore');
+      if (!okGo) return;
+      stashSafetyBackup('before restoring everything');
+      for (const cls of data.classes) {
+        if (!cls.workbook) continue;
+        const key = CS.genKey();
+        localStorage.setItem(classBlobKey(cls.workbook.id), JSON.stringify(await CS.sealClass(cls.workbook, key)));
+        SESSION.keys[cls.workbook.id] = key;
+        if (SESSION.pw) { const auth = getAuth(); const u = auth.users.find((x) => x.username === SESSION.user); if (u) { u.keyring = u.keyring || {}; u.keyring[cls.workbook.id] = await CS.wrapKey(key, SESSION.pw); saveAuth(auth); } }
+      }
+      setClassIndex(data.index.map((c) => ({ id: c.id, name: c.name, school: c.school, eal: c.eal, support: c.support, createdAt: c.createdAt || Date.now(), updatedAt: Date.now(), pendingCount: (c.pendingCount || 0) })));
+      try { localStorage.setItem(MODE_KEY, 'class'); } catch (e) {}
+      classKeysToSession();
+      toast('Restored — re-pair teachers to issue their new keys');
+      location.hash = '#/classes'; location.reload();
+    };
+    fr.readAsText(file);
+  }
+
+  /* ---- migration wizard (single markbook -> per-class workbooks) ---- */
+  async function migrateOpen() {
+    if (!myUser() || myUser().role !== 'admin') return;
+    let src = DB;
+    if (sprMode() === 'class') {
+      const v2 = readV2();
+      if (!v2 || !v2.data) { toast('No single markbook found to migrate', true); return; }
+      try { src = normalizeDB(await unsealDB(v2.data, SESSION.dk)); }
+      catch (e) { toast('Could not open the legacy markbook with this session', true); return; }
+      if (!src.semesters || !src.semesters.length) { toast('The legacy markbook is empty', true); return; }
+    } else if (!DB.semesters.length) { toast('Nothing to migrate', true); return; }
+    const plan = CS.planMigration(src);
+    const users = getAuth().users;
+    const sel = (cid, role) => '<select class="inp" data-mig="' + U.esc(cid) + ':' + role + '"><option value="">— none —</option>' +
+      users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '">' + U.esc(u.username) + '</option>').join('') + '</select>';
+    const rows = plan.classes.map((c) =>
+      '<tr><td><b>' + U.esc(c.name) + '</b><div class="small muted">' + U.esc(c.school) + '</div></td>' +
+      '<td>' + c.semCount + '</td><td>' + c.studentCount + '</td><td>' + c.cellCount + '</td>' +
+      '<td>' + sel(c.id, 'eal') + ' ' + sel(c.id, 'support') + '</td></tr>').join('');
+    openDlg(
+      '<h3>Split into per-class workbooks — dry run</h3>' +
+      '<p class="small">' + plan.classes.length + ' class(es) will each get their own encrypted workbook and key. Nothing changes until you press Apply — and a backup is downloaded first.</p>' +
+      (plan.warnings.length ? '<p class="small" style="color:#b45309">' + plan.warnings.map(U.esc).join('<br>') + '</p>' : '') +
+      '<div class="sheet" style="max-height:240px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>Semesters</th><th>Students</th><th>Score cells</th><th>EAL / Support</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p class="small muted">Teachers paired here receive their class key with a fresh password (shown once). Unpaired teachers can be paired later.</p>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn danger" data-x="1">Download backup, then apply</button></div>',
+      (d) => {
+        d.onclick = async (e) => {
+          const b = e.target.closest('[data-x]');
+          if (!b) return;
+          if (b.dataset.x === '0') { closeDlg(); return; }
+          const pairings = {};
+          d.querySelectorAll('[data-mig]').forEach((selEl) => {
+            const parts = selEl.dataset.mig.split(':');
+            if (selEl.value) { pairings[parts[0]] = pairings[parts[0]] || {}; pairings[parts[0]][parts[1]] = selEl.value; }
+          });
+          closeDlg();
+          downloadBackup();
+          await migrateApply(src, plan, pairings);
+        };
+      });
+  }
+  async function migrateApply(src, plan, pairings) {
+    try {
+      const auth = getAuth();
+      const users = auth.users.map((u) => ({ username: u.username, role: classRole(u.role) }));
+      const pwMap = {};
+      if (SESSION.user && SESSION.pw) pwMap[SESSION.user] = SESSION.pw;
+      const res = await CS.applyMigration(src, { plan: plan, users: users, pairings: pairings, passwords: pwMap, adminUser: SESSION.user });
+      for (const cid of Object.keys(res.blobs)) localStorage.setItem(classBlobKey(cid), JSON.stringify(res.blobs[cid]));
+      setClassIndex(res.index);
+      for (const un of Object.keys(res.keyrings)) {
+        const u = auth.users.find((x) => x.username === un);
+        if (u) u.keyring = Object.assign({}, u.keyring, res.keyrings[un]);
+      }
+      for (const u of auth.users) { const nr = classRole(u.role); if (nr !== u.role && (nr === 'manager' || nr === 'eal')) u.role = nr; }
+      saveAuth(auth);
+      try { localStorage.setItem(MODE_KEY, 'class'); } catch (e) {}
+      SESSION.keys = Object.assign({}, SESSION.keys, await unwrapKeyring(res.keyrings[SESSION.user], SESSION.pw));
+      classKeysToSession();
+      toast('Migration done — every class now has its own key');
+      const finish = function () { location.hash = '#/classes'; location.reload(); };
+      if (Object.keys(res.newPasswords).length) passwordsOnceDialog(res.newPasswords, 'Migration issued new passwords (shown once)', finish);
+      else finish();
+    } catch (e) { toast('Migration failed: ' + e.message + ' — nothing was changed', true); }
+  }
+  async function unwrapKeyring(ring, pw) {
+    const out = {};
+    if (!pw) return out;
+    for (const cid of Object.keys(ring || {})) { try { out[cid] = await CS.unwrapKey(ring[cid], pw); } catch (e) {} }
+    return out;
   }
 
   /* ================================ welcome ================================ */
@@ -2649,10 +3723,34 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function moverLabel(d) { return d > 3 ? 'Improving' : d < -3 ? 'Review' : 'Stable'; }
 
+  /* ---- quarantined invalid scores (P1.1: never deleted, moved to review) ---- */
+  function reviewItems() {
+    const out = [];
+    for (const sem of DB.semesters || []) {
+      for (const r of sem.review || []) out.push({ semId: sem.id, semName: sem.name, item: r });
+    }
+    return out;
+  }
+  function reviewPanelHtml() {
+    const items = reviewItems();
+    if (!items.length) return '';
+    const AREA = { obs: 'Observation', spelling: 'Spelling', daily: 'Daily', test: 'Test' };
+    const rows = items.map((x, i) =>
+      '<tr><td>' + U.esc(x.semName) + '</td><td>' + U.esc(AREA[x.item.area] || x.item.area) + '</td>' +
+      '<td>' + U.esc(x.item.sid) + (x.item.month ? ' · ' + U.esc(x.item.month) : '') + '</td>' +
+      '<td>' + U.esc(x.item.key) + '</td><td><b>' + U.esc(String(x.item.value)) + '</b></td>' +
+      '<td class="small muted">' + U.esc(x.item.reason) + '</td>' +
+      '<td><button class="btn sm" data-action="review-goto" data-sem="' + U.esc(x.semId) + '">Go</button> ' +
+      '<button class="btn sm danger" data-action="review-discard" data-sem="' + U.esc(x.semId) + '" data-i="' + items.indexOf(x) + '">Discard</button></td></tr>').join('');
+    return '<div class="panel" style="margin-top:10px;border-color:#c9973b"><b>' + items.length + ' quarantined score' + (items.length > 1 ? 's' : '') + '</b>' +
+      '<p class="small" style="margin:6px 0 8px">These values were out of range (negative, above the total, or an observation over 10), so they are <b>not counted in any grade</b>. They were moved here — not deleted — when the data was loaded. Fix the cell on its entry screen, or discard the value once you have checked it.</p>' +
+      '<div class="sheet" style="max-height:240px;overflow:auto"><table class="tbl"><thead><tr><th>Semester</th><th>Area</th><th>Student · month</th><th>Cell</th><th>Value</th><th>Why</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
   function renderDashboard() {
     const sem = cur();
     if (!DB.semesters.length) { renderWelcome(); return; }
     const gAll = C.gradeAll(sem);
+    const rvN = reviewItems().length;
     const dist = C.gradeDistribution(sem);
     const risk = C.atRisk(sem);
     const tp = A.classTeachingPriorities(sem);
@@ -2766,6 +3864,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (inTerm ? '<span class="in-term">current month of the term</span>' : '') +
         '</div>' +
       '</section>' +
+      (rvN ? '<div class="panel no-print" style="margin:0 0 14px;border-color:#c9973b"><b>' + rvN + ' quarantined score' + (rvN > 1 ? 's' : '') + '</b> — not counted in any grade. <button class="btn sm" data-action="dash-review-goto">Review them</button></div>' : '') +
       tabHtml + filterBar + body;
 
     /* ---- charts & data tables ---- */
@@ -3109,7 +4208,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       let ci = 0;
       for (const sk of SKILLS) for (const lo of [1, 2]) {
         const v = C.obsValue(sem, s.id, month, sk, lo);
-        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null ? '' : String(v)) + '"></td>';
+        const obsLock = canDo('edit.obs') ? '' : (canDo('request.obs') ? ' readonly data-propose="1" title="Click to propose a change (EAL approves)"' : ' readonly title="Read-only"');
+        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal"' + obsLock + ' value="' + U.esc(v === null ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
@@ -3175,7 +4275,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (let w = 1; w <= 5; w++) for (const f of ['s', 't']) {
         const e = sem[metKey][s.id] && sem[metKey][s.id][month] && sem[metKey][s.id][month][w];
         const v = e ? e[f] : null;
-        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
+        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal"' + (canDo('edit.scores') ? '' : ' readonly title="Read-only"') + ' value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
       tds += tdAvg('mavg-' + s.id, C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
@@ -3227,7 +4327,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (const b of TEST_BLOCKS) for (const f of ['s', 't']) {
         const t = sem.tests[s.id] && sem.tests[s.id][b[0]];
         const v = t ? t[f] : null;
-        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
+        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal"' + (canDo('edit.scores') ? '' : ' readonly title="Read-only"') + ' value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
@@ -3302,6 +4402,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     el.classList.remove('invalid');
     const kind = el.dataset.kind;
 
+    /* class mode: the role matrix decides what typing is even possible */
+    if (kind === 'obs' && !canDo('edit.obs')) { try { el.value = el.getAttribute('value') || ''; } catch (er) {} return; }
+    if ((kind === 'week' || kind === 'test') && !canDo('edit.scores')) { try { el.value = el.getAttribute('value') || ''; } catch (er) {} return; }
     if (kind === 'obs') {
       const sid = el.dataset.sid, month = el.dataset.month, key = el.dataset.key;
       /* out-of-range scores are refused, not stored (D5/D6): the cell stays
@@ -3622,7 +4725,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
-      '<div class="sheet"><table class="tbl"><thead><tr><th>#</th><th>ID</th><th>Chinese name</th><th>English name</th><th>Gender</th><th></th></tr></thead><tbody>' +
+      (canDo('edit.roster') ? '' : '<p class="small muted" style="margin:-6px 0 12px">Read-only: students are managed by this class&rsquo;s EAL teacher.</p>') +
+      (canDo('edit.roster') ? "" +
       sem.students.map((s, i) => '<tr><td>' + (i + 1) + '</td>' +
         '<td><input class="inp" style="width:120px" data-stufield="id" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.id) + '"></td>' +
         '<td><input class="inp" style="width:100px" data-stufield="nameCn" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.nameCn) + '"></td>' +
@@ -3630,32 +4734,35 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<td><select class="inp" data-stufield="gender" data-sid="' + U.esc(s.id) + '">' +
           ['M', 'F', ''].map((g) => '<option value="' + g + '"' + (s.gender === g ? ' selected' : '') + '>' + (g || '–') + '</option>').join('') + '</select></td>' +
         '<td><button class="btn sm danger" data-action="stu-del" data-sid="' + U.esc(s.id) + '">Remove</button></td></tr>').join('') +
-      '</tbody></table></div>' +
-      '<div class="flex mt">' +
+      '</tbody></table></div>' : '') +
+      '<div class="flex mt">' + (canDo('edit.roster') ?
         '<input class="inp" id="ro-id" placeholder="ID (auto)" style="width:120px">' +
         '<input class="inp" id="ro-cn" placeholder="Chinese name" style="width:110px">' +
         '<input class="inp" id="ro-en" placeholder="English name" style="width:130px">' +
         '<select class="inp" id="ro-g"><option>M</option><option>F</option></select>' +
-        '<button class="btn primary" data-action="roster-add">Add student</button>' +
+        '<button class="btn primary" data-action="roster-add">Add student</button>' : '') +
       '</div>' +
-      '<details class="mt"><summary class="small" style="cursor:pointer;color:#2d5fa8">Paste many students</summary>' +
+      (canDo('edit.roster') ? '<details class="mt"><summary class="small" style="cursor:pointer;color:#2d5fa8">Paste many students</summary>' +
         '<textarea id="ro-paste" class="inp" rows="4" style="width:100%;max-width:640px;margin-top:8px" placeholder="One per line: ID, Chinese name, English name, Gender&#10;STU-001, 王小明, Demo, F"></textarea>' +
-        '<div class="mt"><button class="btn" data-action="roster-paste">Add list</button></div></details>' +
+        '<div class="mt"><button class="btn" data-action="roster-paste">Add list</button></div></details>' : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Settings</h3>' +
       '<div class="panel"><div class="flex">' +
-        '<label><input type="checkbox" data-setf="autoTotal"' + (st.autoTotal ? ' checked' : '') + '> auto-fill totals when entering a score</label>' +
-        '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '" style="width:64px"></label>' +
-        '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '" style="width:64px"></label>' +
+        '<label><input type="checkbox" data-setf="autoTotal"' + (st.autoTotal ? ' checked' : '') + (canDo('edit.roster') ? '' : ' disabled') + '> auto-fill totals when entering a score</label>' +
+        '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '"' + (canDo('edit.roster') ? '' : ' disabled') + ' style="width:64px"></label>' +
+        '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '"' + (canDo('edit.roster') ? '' : ' disabled') + ' style="width:64px"></label>' +
       '</div></div>' +
       '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Help &amp; support</b> — the illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</p>' +
       '<div class="flex">' +
       '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teachers-Operation-Manual.pdf" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
       '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4" target="_blank" rel="noopener">Watch the video guide</a></div>' +
       '<p class="small muted" style="margin-top:8px">Something looks wrong or a feature misbehaves? Note what you did and what happened, and tell the site owner (Teacher Mo) — fixes usually ship within a day. Your data lives in this browser: before any experiment, use “Download full backup” below.</p></div>' +
-      /* password change UI removed for the shared-campus setup (owner decision):
-         one shared password per account; changing it on a shared machine locks
-         colleagues out. change-pass-save handler kept dormant in source. */
+      '<div class="flex" style="margin-top:10px"><button class="btn" data-action="change-pass-open">Change my password</button></div>' +
+      (reviewPanelHtml() || '') +
 
+      ((currentUser() || {}).role === 'admin' && sprMode() === 'legacy' && DB.semesters.length ?
+        '<div class="panel" style="margin-top:10px;border-color:#c9973b"><b>Per-class workbooks available</b>' +
+        '<p class="small">Split this single markbook so every class gets its own key, its own teachers and its own audit log. Dry run and backup first — nothing changes until you apply.</p>' +
+        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       /* admin: dormant accounts from the default-password era are a side door until
          rotated or removed — this panel makes that visible and fixable */
       ((currentUser() || {}).role === 'admin' ?
@@ -3689,6 +4796,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       (cryptoOK() && (currentUser() || {}).role !== 'admin' && dsOn()
         ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b> — your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator manages this channel.</p></div>'
         : '') +
+      (sprMode() === 'class' && CLS ? auditPanelHtml(DB) : '') +
+      (sprMode() === 'class' ? '' :
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
         var c = getShare();
@@ -3725,9 +4834,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             '</div>';
         }
         return '<div class="panel">' +
-          '<p class="small" style="margin-bottom:10px"><b>Save &amp; Share is being set up</b> (one-time, by the administrator — see the note in Manage &amp; setup once configured). The classic npoint bin still works below if you already use one: paste its ID, then Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins — pull before you start, push when you finish.</p>' +
-          '<div class="flex">' +
-            '<input class="inp" id="shareBin" placeholder="npoint bin ID (e.g. a1b2c3d4)" style="width:230px" value="' + U.esc(c.bin || '') + '">' +
+          '<p class="small" style="margin-bottom:10px"><b>Save &amp; Share is being set up</b> (one-time, by the administrator — see the note in Manage &amp; setup once configured): pick the class, Push after editing; your co-teacher presses Pull (or re-opens their link). Last save wins — pull before you start, push when you finish.</p>' +
+          '' + U.esc(c.bin || '') + '">' +
             '<button class="btn" data-action="share-save">Save bin ID</button>' +
             '<button class="btn primary" data-action="share-push"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Push to cloud</button>' +
             '<button class="btn" data-action="share-pull"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Pull from cloud</button>' +
@@ -3737,7 +4845,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (status.length ? '<p class="small" style="margin-top:8px">' + status.join(' · ') + '</p>' : '') +
           (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Share &amp; sync needs the online version (https). Open the website in a browser to use it.</p>' : '') +
           '</div>';
-      })() +
+      })()) +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Data</h3>' +
       '<div class="flex">' +
         '<button class="btn" data-action="load-sample">Reset to sample data</button>' +
@@ -4174,7 +5282,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<li>Avoid entering student data on shared or public computers. If unavoidable, use “Erase everything” in Manage &amp; setup before leaving.</li>' +
       '<li>Sharing student performance outside school (parents, other staff) should follow your school’s policy and applicable law (e.g. PIPL in China, GDPR elsewhere).</li></ul>' +
       '<h4>Removing data</h4><ul>' +
-      '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, delete the bin at npoint.io, or (Device sync) use “Turn off &amp; delete cloud copy” in Manage.</li></ul>' +
+      '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, or (Device sync) use “Turn off &amp; delete cloud copy” in Manage.</li></ul>' +
       '<p class="small muted">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</p></div>' +
       '<div class="dlg-actions"><button class="btn primary" data-action="' + (gate ? 'privacy-gate-ack' : 'dlg-close') + '">' +
       (gate ? 'I understand' : 'Close') + '</button></div>';
@@ -4192,6 +5300,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const btn = document.querySelector('[data-action="privacy-gate-ack"]');
     if (btn) btn.addEventListener('click', function () {
       try { localStorage.setItem(PRIVACY_GATE_KEY, String(Date.now())); } catch (e) {}
+      /* one notice per first-run, not two: the gate IS the privacy dialog */
+      try { if (!DB.settings) DB.settings = {}; if (!DB.settings.privacyAck) { DB.settings.privacyAck = Date.now(); saveDB(true); } } catch (e2) {}
       closeDlg();
       if (onAck) onAck();
     });
@@ -4348,7 +5458,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function exportXlsx() {
     const sem = cur();
     if (!sem) return;
-    const wb = EB.exportWorkbook(sem);
+    const wb = EB.exportWorkbook(sem, CLS ? (DB.audit || []) : null);
     XLSX.writeFile(wb, sanitizeFn(sem.school + '-' + (sem.className || 'class') + '-SPR-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
     toast('Excel exported — check your downloads');
   }
@@ -4408,6 +5518,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (el.tagName === 'A' && el.getAttribute('href') === '#') e.preventDefault();
     const a = el.dataset.action;
     const sem = cur();
+    if (a === 'class-open') { openClass(el.dataset.id); return; }
+    if (a === 'class-new-open') { classNewDialog(); return; }
+    if (a === 'class-import-btn') { const f = $('#file-class'); if (f) f.click(); return; }
+    if (a === 'class-roster-btn') { const f = $('#file-roster'); if (f) f.click(); return; }
+    if (a === 'restore-all-btn') { const f = $('#file-restore-all'); if (f) f.click(); return; }
+    if (a === 'class-migrate-open') { migrateOpen(); return; }
+    if (a === 'class-pair') { pairClassDialog(el.dataset.id); return; }
+    if (a === 'class-share') { classShareDialog(el.dataset.id); return; }
+    if (a === 'class-export-file') { exportClassFile(el.dataset.id); return; }
+    if (a === 'export-all') { exportEverything(); return; }
+    if (a === 'review-approve') { reviewDecide(el.dataset.id, true); return; }
+    if (a === 'review-reject') { reviewDecide(el.dataset.id, false); return; }
     if (a === 'show-setup') { loginSetupMode = true; renderLogin(); return; }
     if (a === 'show-signin') { loginSetupMode = false; renderLogin(); return; }
     if (a === 'first-run') {
@@ -4417,7 +5539,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const errEl = $('#suErr');
       if (!un) { if (errEl) errEl.textContent = 'Choose a username.'; return; }
       if (un === MASTER_KEY) { if (errEl) errEl.textContent = 'That username is reserved.'; return; }
-      if (pw.length < 8) { if (errEl) errEl.textContent = 'Password must be at least 8 characters.'; return; }
+      const pwErr = CS.pwOk('admin', pw);
+      if (pwErr) { if (errEl) errEl.textContent = pwErr; return; }
       if (pw !== cf) { if (errEl) errEl.textContent = 'Passwords do not match.'; return; }
       (async () => {
         try {
@@ -4494,6 +5617,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const un = ($('#naUser') ? $('#naUser').value : '').trim();
         const name = ($('#naName') ? $('#naName').value : '').trim();
         const role = ($('#naRole') ? $('#naRole').value : 'teacher');
+        { const pre = CS.pwOk(role, ($('#naPass') ? $('#naPass').value : '') || ''); if (pre && $('#naPass').value) { if (err) err.textContent = pre; return; } }
         const pw = ($('#naPass') ? $('#naPass').value : '') || '';
         const cf = ($('#naConf') ? $('#naConf').value : '') || '';
         if (!un || /[^A-Za-z0-9_.-]/.test(un)) { if (err) err.textContent = 'Username: letters, numbers, dot, dash or underscore.'; return; }
@@ -4501,7 +5625,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (getAuth().users.some((u) => u.username.toLowerCase() === un.toLowerCase())) { if (err) err.textContent = 'That username is already on this device.'; return; }
         if (pw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
         if (pw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
-        const addErr = addUser(un, pw, name || un, role);
+        const addErr = await addUser(un, pw, name || un, role);
         if (addErr) { if (err) err.textContent = addErr; return; }
         /* share the encrypted markbook with the new account: wrap this browser's
            master key under the new password so their sign-in can unlock it */
@@ -4544,9 +5668,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const auth = getAuth();
         const u = auth.users.find((x) => x.username === un);
         if (!u) { closeDlg(); return; }
-        if (nw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
-        if (nw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
-        u.hash = hashPassword(nw);
+        { const perr = CS.pwOk(u.role, nw); if (perr) { if (err) err.textContent = perr; return; } }
+        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        u.login = await CS.loginWrap(nw);
+        delete u.hash;
+        if (u.keyring) { for (const cid of Object.keys(u.keyring)) { try { u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw); } catch (e) {} } }
         saveAuth(auth);
         const v2 = readV2();
         if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
@@ -4587,7 +5713,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const nw = ($('#mrPass') ? $('#mrPass').value : '') || '';
         const cf = ($('#mrConf') ? $('#mrConf').value : '') || '';
         if (!master) { if (err) err.textContent = 'Enter the master password.'; return; }
-        if (nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
+        { const perr = CS.pwOk('admin', nw); if (perr) { if (err) err.textContent = perr; return; } }
         if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
         const v2 = readV2();
         const w = v2 && v2.wraps && v2.wraps[MASTER_KEY];
@@ -4685,6 +5811,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           const res = await doLoginFull(u, p);
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
+          if (SPR_LOGIN_AUTO_CLASS) { const cid0 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid0); }
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
       })();
@@ -4695,40 +5822,93 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'logout') { doLogout(); return; }
     if (a === 'change-pass-save') {
       (async () => {
-        /* dormant by owner decision (no self-service password changes on a
-           shared device); if ever re-enabled, admin-only by the same rule */
-        if (!isAdmin()) { if ($('#cpErr')) $('#cpErr').textContent = 'Password changes are managed by the admin on this device.'; return; }
+        /* P1.1: self-service for EVERY role. The current password is verified
+           by UNLOCKING (login wrap / v2 wrap) — never against a stored hash —
+           and everything wrapped under the old password is re-wrapped under
+           the new one: v2 master wrap, the login wrap, and every class key in
+           the user's keyring. */
         const err = $('#cpErr');
         const cur = ($('#cpCur') || {}).value || '';
         const nw = ($('#cpNew') || {}).value || '';
         const cf = ($('#cpConf') || {}).value || '';
-        if (!cryptoOK() || !SESSION.dk) { if (err) err.textContent = 'Password change needs the online (https) version.'; return; }
+        if (!SESSION.user) { if (err) err.textContent = 'Sign in first.'; return; }
         const auth = getAuth();
         const me = auth.users.find((u) => u.username === SESSION.user);
-        if (!me || me.hash !== hashPassword(cur)) { if (err) err.textContent = 'Current password is wrong.'; return; }
-        if (!nw || nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
-        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        if (!me) { if (err) err.textContent = 'Account not found.'; return; }
         const v2 = readV2();
-        if (!v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found — sign out and in once first.'; return; }
+        const vres = await verifyUserPw(me, cur, v2);
+        if (!vres.ok) { if (err) err.textContent = 'Current password is wrong.'; return; }
+        const perr = CS.pwOk(me.role, nw);
+        if (perr) { if (err) err.textContent = perr; return; }
+        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        stashSafetyBackup('before password change');
         try {
-          v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);   // re-key under the new password
+          if (SESSION.dk && v2 && v2.wraps && v2.wraps[me.username]) v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);
+          if (v2) writeV2(v2);
+          if (me.keyring) { for (const cid of Object.keys(me.keyring)) me.keyring[cid] = await CS.rewrapKey(me.keyring[cid], cur, nw); }
+          me.login = await CS.loginWrap(nw);
+          delete me.hash;
+          saveAuth(auth);
+          if (SESSION.pw !== null || SESSION.pw !== undefined) SESSION.pw = nw;
+          for (const cid of Object.keys(SESSION.keys || {})) { try { SESSION.keys[cid] = await CS.unwrapKey(me.keyring[cid], nw); } catch (e) {} }
+          classKeysToSession();
         } catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
-        me.hash = hashPassword(nw);
-        saveAuth(auth);
-        writeV2(v2);
-        try { sessionStorage.setItem('spr-session', JSON.stringify({ user: me.username, dk: b64uFromBytes(SESSION.dk) })); } catch (e) {}
-        closeDlg(); toast('Password updated — use it next time you sign in.');
+        /* P1.2: also re-seal this account's cloud POINTER row, so sign-in on a
+           fresh browser with the NEW password still finds the data (the pointer
+           is sealed under the password). Best-effort + reported, never fatal. */
+        let ptrNote = '';
+        if (dsOn()) {
+          try {
+            const chan = await dsChan(me.username);
+            const row = await sbGet(chan);
+            if (row && row.payload && row.payload.sprPTR === 1) {
+              const pt = await ptrOpen(row.payload, cur);
+              const env2 = await ptrSeal(pt, nw);
+              await sbSave(chan, env2, row.share_name || 'SPR pointer', me.username, new Date().toISOString(), false);
+              ptrNote = ' Cloud pointer updated too.';
+            }
+          } catch (e2) { ptrNote = ' (Could not update the cloud pointer - on other devices use the I-use-SPR-on-another-device option with the OLD password once, or ask the admin to reset it.)'; }
+        }
+        closeDlg(); toast('Password updated — use it next time you sign in.' + ptrNote);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
     }
-    if (a === 'share-save') {
-      const v = ($('#shareBin') ? $('#shareBin').value : '').trim();
-      if (!v) { toast('Enter the npoint bin ID first', true); return; }
-      const c = getShare(); c.bin = v; setShare(c);
-      toast('Bin saved — you can Push to cloud now');
-      renderManage(); return;
+    if (a === 'dash-review-goto') { location.hash = '#/manage'; return; }
+    if (a === 'review-goto') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem) { DB.currentSemesterId = sem.id; saveDB(); }
+      location.hash = '#/entry/obs'; toast('Find the cell listed under Manage → quarantined scores'); return;
     }
+    if (a === 'review-discard') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem && Array.isArray(sem.review)) {
+        const all = reviewItems();
+        const idx = Number(el.dataset.i);
+        const target = all[idx];
+        if (target) {
+          sem.review = sem.review.filter((r) => !(r === target.item));
+          saveDB(true); toast('Discarded — the value stays out of every calculation');
+        }
+      }
+      if (location.hash === '#/manage') renderManage(); else renderClasses();
+      return;
+    }
+    if (a === 'change-pass-open') {
+      if (!SESSION.user) return;
+      const me = myUser() || {};
+      const min = (me.role === 'admin' || me.role === 'manager') ? 14 : 8;
+      openDlg(
+        '<h3>Change my password</h3>' +
+        '<p class="small">Works for every role. Your current password is verified by unlocking your keys — nothing is compared against a stored hash. Everything wrapped under the old password (your data key and class keys) is re-wrapped under the new one.</p>' +
+        '<div class="login-field"><label>Current password</label><input type="password" id="cpCur" autocomplete="current-password"></div>' +
+        '<div class="login-field"><label>New password (' + min + '+ characters)</label><input type="password" id="cpNew" autocomplete="new-password"></div>' +
+        '<div class="login-field"><label>Repeat new password</label><input type="password" id="cpConf" autocomplete="new-password"></div>' +
+        '<div class="login-err" id="cpErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-action="change-pass-save">Save new password</button></div>');
+      return;
+    }
+
     if (a === 'share-create') { shareCreate(); return; }
     if (a === 'share-push') { sharePush(); return; }
     if (a === 'share-pull') { sharePull(); return; }
@@ -4760,6 +5940,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
     if (a === 'share-native') { shareNative($('#shareLink') ? $('#shareLink').value : ''); return; }
     if (a === 'privacy-open') { openPrivacy(); return; }
+    if (a === 'login-other-device') { otherDeviceDialog(); return; }
     if (a === 'privacy-ack') { closeDlg(); return; } /* legacy: viewer closes plainly */
     if (a === 'dl-class-report') { dlClassReport(); return; }
     if (a === 'dl-all-cards') { dlAllCards(); return; }
@@ -4842,7 +6023,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'import-xlsx') { const f = $('#file-xlsx'); if (f) f.click(); return; }
     if (a === 'export-xlsx') { exportXlsx(); return; }
     if (a === 'backup') { backupJSON(); return; }
-    if (a === 'restore') { const f = $('#file-json'); if (f) f.click(); return; }
+    if (a === 'restore') {
+      if (CLS) { toast('In class mode use "Restore everything" (Classes screen) or import a class file — a single-markbook backup cannot replace a class workbook.', true); return; } const f = $('#file-json'); if (f) f.click(); return; }
     if (a === 'load-sample') {
       (async () => {
         if (DB.semesters.length) {
@@ -4858,7 +6040,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'wipe') {
       (async () => {
-        const okGo = await confirmDlg('Erase everything?', 'All classes, students and scores will be deleted <b>from this browser</b>, including the encryption keys. A copy already pushed to the cloud is <b>not</b> deleted — overwrite it by pushing fresh data, or delete the bin at npoint.io.', 'Erase all data');
+        const okGo = await confirmDlg('Erase everything?', 'All classes, students and scores will be deleted <b>from this browser</b>, including the encryption keys. A copy already pushed to the cloud is <b>not</b> deleted — overwrite it by pushing fresh data, or use “Turn off &amp; delete cloud copy”.', 'Erase all data');
         if (!okGo) return;
         DB = emptyDB();
         [LS_KEY, V2_KEY, 'spr-share-v1', 'spr-auth-v1', 'spr-session', 'spr-session-db'].forEach((k) => {
@@ -4897,6 +6079,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'print') { window.print(); return; }
   });
 
+  /* support teachers click a readonly observation cell to propose a change */
+  document.addEventListener('click', function (e) {
+    const pr = e.target.closest('[data-propose]');
+    if (pr) proposeDialog(pr);
+  });
   document.addEventListener('input', function (e) {
     const t = e.target;
     if (t.classList && t.classList.contains('cell')) { onGridInput(t); return; }
@@ -4943,6 +6130,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (t.id === 'scatMode') { ui.scat = t.value; renderDashboard(); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
     if (t.id === 'file-xlsx') { if (t.files && t.files.length) importXlsxFiles(Array.from(t.files)); t.value = ''; return; }
+    if (t.id === 'file-class') { if (t.files && t.files.length) importClassFileGo(t.files[0]); t.value = ''; return; }
+    if (t.id === 'file-roster') { if (t.files && t.files.length) rosterImportGo(t.files[0]); t.value = ''; return; }
+    if (t.id === 'file-restore-all') { if (t.files && t.files.length) restoreEverythingGo(t.files[0]); t.value = ''; return; }
     if (t.id === 'rkSchool') { (ui.rk = ui.rk || { k: 'avg', dir: -1 }).school = t.value; renderRanking(); return; }
     if (t.id === 'rkTeacher') { (ui.rk = ui.rk || { k: 'avg', dir: -1 }).teacher = t.value; renderRanking(); return; }
     if (t.id === 'file-json') { if (t.files && t.files[0]) restoreJSONFile(t.files[0]); t.value = ''; return; }
@@ -4974,13 +6164,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* =================================== init =================================== */
 
   /* ============================ CREDENTIALS ============================ */
-  /* ============================ share & sync (npoint.io) ============================
+  /* ============================ share & sync (encrypted SPR cloud) ====================
      Two teachers, one dataset. The class data is AES-GCM encrypted with a random
      key; only the ciphertext goes to the cloud bin. The key travels exclusively
      inside the share link (#join=<bin>&k=<key>), so the server never sees it.
      Manual Push/Pull (last-save-wins). */
   const SHARE_KEY = 'spr-share-v1';
-  const NP_API = 'https://api.npoint.io/';
   const SUPABASE = { url: 'https://hvjswsedoapsskedrkoj.supabase.co', key: 'sb_publishable_kY2tUdMKmqOIUPYi0OtfNg_K_YqpDSh' }; /* publishable key only — RLS applies; see assets/supabase-setup.md */
   function SB() {
     try { const o = JSON.parse(localStorage.getItem('spr-sb-v1')); if (o && o.url && o.key) return o; } catch (e) {}
@@ -5152,34 +6341,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       } catch (e) { toast('Save & Share failed: ' + e.message, true); }
       return;
     }
-    /* ---------- legacy npoint whole-workbook channel ---------- */
-    if (!c.bin) { toast('Create the share first (Manage → Share & sync)', true); return; }
-    try {
-      let env = null;
-      try {
-        const chk = await fetch(NP_API + encodeURIComponent(c.bin));
-        if (chk.ok) env = await chk.json();
-      } catch (e) { /* if the check cannot run, the push below surfaces errors */ }
-      if (env && env.pushedAt) {
-        const cloudAt = new Date(env.pushedAt).getTime();
-        const mineAt = Math.max(
-          c.lastPush ? new Date(c.lastPush).getTime() : 0,
-          c.lastPull ? new Date(c.lastPull).getTime() : 0
-        );
-        if (cloudAt - mineAt > 90000) {
-          const act = await staleCloudDlg(env.pushedBy || 'someone', new Date(env.pushedAt).toLocaleString());
-          if (act === 'pull') { sharePull(); return; }
-          if (act !== 'push') { toast('Push cancelled — pull first to get the newer copy'); return; }
-        }
-      }
-      toast('Pushing…');
-      const out = await cloudEnvelope(c);
-      const res = await fetch(NP_API + encodeURIComponent(c.bin), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out.env) });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      c.key = b64uFromBytes(out.keyBytes); c.lastPush = out.env.pushedAt; c.lastPushBy = out.env.pushedBy; setShare(c);
-      toast('Pushed — copy the share link to your co-teacher');
-      if (location.hash === '#/manage') renderManage();
-    } catch (e) { toast('Push failed: ' + e.message, true); }
+    toast('The classic npoint channel was retired - Save & Share now uses the encrypted SPR cloud (Create share).', true);
   }
   function staleCloudDlg(who, when) {
     return new Promise((resolve) => {
@@ -5240,46 +6402,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       } catch (e) { toast('Open failed: ' + e.message, true); }
       return;
     }
-    /* ---------- legacy npoint whole-workbook channel ---------- */
-    if (!c.bin) { toast('Nothing to open yet — Save & Share first', true); return; }
-    try {
-      toast('Checking cloud…');
-      const res = await fetch(NP_API + encodeURIComponent(c.bin));
-      if (!res.ok) throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (bin not found)' : ''));
-      const env = await res.json();
-      const obj = await applyCloudObj(env, c.key);
-      if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
-      validateDB(obj.db);
-      const when = (obj.pushedAt || env.pushedAt) ? new Date(obj.pushedAt || env.pushedAt).toLocaleString() : 'unknown time';
-      const okGo = await confirmDlg('Pull from cloud?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Pull & replace');
-      if (!okGo) return;
-      stashSafetyBackup('before replacing data');
-      c.lastPull = new Date().toISOString(); setShare(c);
-      persistReplaced(obj.db);
-    } catch (e) { toast('Pull failed: ' + e.message, true); }
+
+    toast('The classic npoint channel was retired - ask your co-teacher for a current Save & Share link.', true);
   }
   async function shareJoin(id, keyB64) {
     if (looksUuid(id)) return joinSb(id, keyB64);
-    try {
-      toast('Joining shared workbook…');
-      const res = await fetch(NP_API + encodeURIComponent(id));
-      if (!res.ok) throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (bin not found)' : ''));
-      const env = await res.json();
-      const obj = await applyCloudObj(env, keyB64);
-      if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
-      validateDB(obj.db);
-      const okGo = await confirmDlg('Join shared workbook?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups). Future Push/Pull uses this bin.', 'Join');
-      if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
-      stashSafetyBackup('before replacing data');
-      setShare({ bin: id, key: keyB64 || null, lastPull: new Date().toISOString() });
-      history.replaceState(null, '', location.pathname + location.search);
-      persistReplaced(obj.db);
-    } catch (e) {
-      toast('Join failed: ' + e.message, true);
-      history.replaceState(null, '', location.pathname + location.search);
-    }
+    /* pre-2026 npoint links are retired: nothing is fetched from npoint */
+    toast('This share link uses the retired classic channel. Ask the sender to Push again with current SPR (Save & Share), or open a backup file.', true);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   }
   async function joinSb(channel, keyB64) {
     const sb = SB();
@@ -5457,13 +6587,37 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     navigator.share({ title: 'SPR', text: 'SPR link (contains the decryption key — keep it private):', url: url }).catch(function () { /* user cancelled */ });
   }
   /* stable content digest: everything except volatile timestamps */
+  function classSyncPayload() {
+    if (sprMode() !== 'class') return null;
+    const ix = classIndex(); const blobs = {};
+    for (const c of ix) {
+      const raw = localStorage.getItem(classBlobKey(c.id));
+      if (raw) { try { blobs[c.id] = JSON.parse(raw); } catch (e) {} }
+    }
+    return { index: ix, blobs: blobs };
+  }
+  /* the user projection that travels in sync payloads: credentials for
+     unlocking (login wrap, keyring) but NEVER a password hash. The content
+     digest uses the SAME projection so the sum stays meaningful. */
+  function syncUsers() {
+    return getAuth().users.map(function (u) {
+      const c = { username: u.username, name: u.name, role: u.role, keyring: u.keyring || {} };
+      if (u.login) c.login = u.login;
+      return c;
+    });
+  }
   function dsContentString() {
     /* digest the DECRYPTED content, never the stored ciphertext: sealDB uses a
        fresh random IV on every save, so v2.data is a different string each
        time even when nothing changed — digesting it made every device see the
        cloud copy as "newer" (false-positive dialogs, pointless re-pushes) */
     const v2 = readV2() || { fmt: 2, wraps: {} };
-    return JSON.stringify({ users: getAuth().users, wraps: v2.wraps || {}, db: DB });
+    if (sprMode() === 'class') {
+      const sums = {};
+      for (const c of classIndex()) { try { sums[c.id] = (JSON.parse(localStorage.getItem(classBlobKey(c.id))) || {}).sum || ''; } catch (e) {} }
+      return JSON.stringify({ users: syncUsers(), wraps: v2.wraps || {}, classSums: sums, open: CLS ? { id: CLS.id, pending: classPendingCount(), audit: (DB.audit || []).length } : null });
+    }
+    return JSON.stringify({ users: syncUsers(), wraps: v2.wraps || {}, db: DB });
   }
   async function dsSum(str) {
     const d = await subtle().digest('SHA-256', new TextEncoder().encode(str));
@@ -5478,7 +6632,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: getAuth().users, v2: v2 });
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload() });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
@@ -5500,6 +6654,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(env.iv) }, ck, ctBytes);
     const obj = JSON.parse(new TextDecoder().decode(pt));
     if (!obj || obj.sprDS !== 1 || !Array.isArray(obj.users) || !obj.v2) throw new Error('the cloud copy is damaged');
+    /* v3 payloads add per-class blobs; v2 stays for the legacy archive */
     return obj;
   }
   async function dsOpen(row) {
@@ -5510,6 +6665,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     try {
       localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
       localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
+      if (obj.v3 && obj.v3.index) {
+        setClassIndex(obj.v3.index);
+        for (const cid of Object.keys(obj.v3.blobs || {})) localStorage.setItem(classBlobKey(cid), JSON.stringify(obj.v3.blobs[cid]));
+        try { localStorage.setItem(MODE_KEY, 'class'); } catch (e2) {}
+      }
       try { sessionStorage.removeItem('spr-session'); } catch (e2) {}
     } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
     location.reload();
@@ -5606,10 +6766,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       dsSaveCfg(cfg);
     }
   }
-  function dsHashDiffers(obj) {
+  function dsAuthDiffers(obj) {
+    /* hashes are gone: compare the STRUCTURE of my account (role, which class
+       keys I hold, whether a login wrap exists) — not any secret material */
+    const sig = function (u) { return [u.username, u.role, Object.keys(u.keyring || {}).sort().join(','), u.login ? 1 : 0].join('|'); };
     const mine = getAuth().users.find(function (u) { return u.username === SESSION.user; });
     const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
-    return !mine || !cloud || mine.hash !== cloud.hash;
+    return !mine || !cloud || sig(mine) !== sig(cloud);
   }
   async function dsPullCheck(interactive) {
     /* hold auto-pushes for the whole check INCLUDING the decision dialog —
@@ -5627,11 +6790,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   async function dsPullCheckInner(interactive) {
     if (!dsSyncActive()) { if (interactive) toast('Sign in to check the cloud copy', true); return; }
     const chan = await dsChan(SESSION.user);
-    /* ---- this browser has device sync OFF: still look for a cloud copy that
-       belongs to the signed-in account, and offer to adopt it ---- */
+    /* ---- this browser has device sync OFF: the cloud is contacted ONLY when
+       the user explicitly asks (Manage -> Check now). P1.2: no background
+       lookups - signing in must not phone home. ---- */
     if (!dsOn()) {
+      if (!interactive) return;
       const dec = dsDeclined();
-      if (!interactive && dec && dec.user === SESSION.user) return;   /* asked before, user kept local data */
+      if (dec && dec.user === SESSION.user) return;   /* asked before, user kept local data */
       let row;
       try { row = await sbGet(chan); }
       catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
@@ -5696,7 +6861,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
-      (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
+      (dsAuthDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device’s copy'); return; }
     stashSafetyBackup('before replacing data');
@@ -5712,7 +6877,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!row) throw new Error('this pairing has no cloud copy yet — sign in on your main device once so it can save one');
     const obj = await dsOpen(row);
     const u = (obj.users || []).find(function (x) { return x.username === username; });
-    if (!u || u.hash !== hashPassword(password)) return false;
+    const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
     try {
       localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
       localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
@@ -5748,7 +6913,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const keyB64 = pt.key;
       const obj = await dsOpenWith(dataRow, keyB64);
       const u = (obj.users || []).find(function (x) { return x.username === username; });
-      if (!u || u.hash !== hashPassword(password)) return false;
+      const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
       const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
       return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
     }
@@ -5759,7 +6924,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const keyB64 = b64uFromBytes(keyBytes);
     const obj = await dsOpenWith(row, keyB64);
     const u = (obj.users || []).find(function (x) { return x.username === username; });
-    if (!u || u.hash !== hashPassword(password)) return false;
+    const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
     return { chan: chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at };
   }
   /* install a verified cloud copy on this device and join its sync channel */
@@ -5910,6 +7075,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
   function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 
+  /* Password verification WITHOUT any stored hash: try (1) the account's
+     login wrap, (2) the v2 master-key wrap, (3) a legacy FNV hash — the last
+     only to migrate pre-P1.1 accounts, and only until they next sign in. */
+  async function verifyUserPw(user, password, v2) {
+    if (user.login && (await CS.verifyLogin(user.login, password))) return { ok: true, via: 'login' };
+    const w = v2 && v2.wraps && v2.wraps[user.username];
+    if (w) { try { await unwrapWrap(w, password); return { ok: true, via: 'v2' }; } catch (e) {} }
+    if (user.hash && user.hash === hashPassword(password)) return { ok: true, via: 'legacy-hash', staleDefault: user.hash === LEGACY_DEFAULT_HASH };
+    return { ok: false };
+  }
   function hashPassword(pw) {
     let h = 0x811c9dc5;
     for (let i = 0; i < pw.length; i++) {
@@ -5962,38 +7137,28 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         try { installedFromCloud = await dsFreshInstall(username, password); }
         catch (e) { pairErr = e; if (/^cannot reach/.test(e.message || '')) netErr = e; }
       }
-      if (!installedFromCloud) {
-        let r = null;
-        try { r = await dsAccountLookup(username, password); }
-        catch (e) { netErr = netErr || e; }
-        if (r) { dsInstallFrom(r, r.owner || username); installedFromCloud = true; }
-        else if (r === false) return { error: 'Invalid username or password.' };
-        /* r === null: no cloud copy for this account, continue to the local lookup */
-      }
+      /* no automatic cloud lookup here: while sync is OFF, signing in must not
+         contact the cloud at all. Users coming from another device press
+         "I use SPR on another device" on the sign-in card instead. */
       if (!installedFromCloud) {
         if (netErr) throw netErr;              /* offline: say so instead of "invalid password" */
         if (dsOn() && pairErr) throw pairErr;  /* e.g. paired, but no cloud copy exists yet */
       }
-    } else if (cryptoOK() && !getAuth().users.some(function (u) { return u.username === username && u.hash === hashPassword(password); })) {
-      /* this browser has its own sign-ins, but the typed account is not one of
-         them — it may live in the cloud copy from another system. Ask before
-         replacing this browser's data (a backup file is saved first). */
-      let hit = null;
-      try { hit = await dsAccountLookup(username, password); }
-      catch (e) { /* unreachable: fall through to the normal local error */ }
-      if (hit) {
-        const okGo = await confirmDlg('This account has a cloud copy',
-          'The account <b>' + U.esc(username) + '</b> was not created on this device, but its <b>encrypted cloud copy</b> exists — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
-          'Open cloud copy');
-        if (!okGo) { renderLogin(); const eEl = $('#loginErr'); if (eEl) eEl.textContent = 'Invalid username or password.'; return { error: '__shown__' }; }
-        stashSafetyBackup('before replacing data');
-        dsInstallFrom(hit, hit.owner || username);
-        installedFromCloud = true;
-      }
     }
     const auth = getAuth();
-    const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
+    const user = auth.users.find((u) => u.username === username);
     if (!user) return { error: 'Invalid username or password.' };
+    const vv2 = readV2();
+    const vres = await verifyUserPw(user, password, vv2);
+    if (!vres.ok) return { error: 'Invalid username or password.' };
+    if (vres.via === 'legacy-hash') {
+      /* one-time migration off the stored hash: safety copy, then a login
+         wrap replaces it (any stale FNV hash leaves this device for good) */
+      stashSafetyBackup('before password-verification migration');
+      user.login = await CS.loginWrap(password);
+      delete user.hash;
+      saveAuth(auth);
+    }
     if (!cryptoOK()) {
       auth.session = { username: user.username, name: user.name, role: user.role };
       saveAuth(auth);
@@ -6015,15 +7180,31 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (!w) return { error: 'No data key is stored for this account. Sign in as the admin once, then sign in again with this account.' };
       try { dk = await unwrapWrap(w, password); }
       catch (e) { return { error: 'Invalid username or password.' }; }
-      try { DB = normalizeDB(await unsealDB(v2.data, dk)); }
-      catch (e) { return { error: 'Could not open the encrypted workbook.' }; }
+      if (sprMode() === 'class') {
+        /* class mode: v2 is only the pre-migration archive — open the user's
+           class workbook instead of loading the legacy markbook */
+        DB = emptyDB();
+      } else {
+        try { DB = normalizeDB(await unsealDB(v2.data, dk)); }
+        catch (e) { return { error: 'Could not open the encrypted workbook.' }; }
+      }
     }
-    SESSION = { user: user.username, dk: dk, pw: password };
+    SESSION = { user: user.username, dk: dk, pw: password, keys: {} };
+    /* class mode: unwrap this account's class keys (wrapped under the same password) */
+    for (const cid of Object.keys(user.keyring || {})) {
+      try { SESSION.keys[cid] = await CS.unwrapKey(user.keyring[cid], password); } catch (e) { /* wrong-wrap: skip */ }
+    }
     auth.session = { username: user.username, name: user.name, role: user.role };
     saveAuth(auth);
-    try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
+    classKeysToSession();
+    if (sprMode() === 'class') {
+      const ix = classIndex();
+      const lastId = localStorage.getItem('spr-last-class');
+      const meta = ix.find((c) => c.id === lastId && SESSION.keys[c.id]) || ix.filter((c) => SESSION.keys[c.id])[0];
+      if (meta) SPR_LOGIN_AUTO_CLASS = meta.id;   /* opened after the gate drops */
+    }
     await persistNow(true);
-    if (!installedFromCloud && (dsOn() || user.role === 'admin')) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user on a paired device: keep it current; admin also gets the adopt offer when sync is off */
+    if (!installedFromCloud && dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);   /* paired devices only: keep the cloud copy current. With sync OFF, nothing contacts the cloud at sign-in - the explicit Manage action or the other-device button does that. */
     /* fresh sign-in with device sync on: push soon even without a data change,
        so a legacy channel migrates home and the owner's password wrap lands on
        the row (a fresh device cannot bootstrap until the wrap exists) */
@@ -6036,13 +7217,51 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     auth.session = null;
     saveAuth(auth);
     try { sessionStorage.removeItem('spr-session'); sessionStorage.removeItem('spr-session-db'); } catch (e) {}
-    SESSION = { user: null, dk: null, pw: null };
+    SESSION = { user: null, dk: null, pw: null, keys: {} }; CLS = null; CLS_KEY = null;
     location.reload();
   }
-  function addUser(username, password, name, role) {
+  async function addUser(username, password, name, role) {
     const auth = getAuth();
     if (auth.users.some((u) => u.username === username)) return 'username taken';
-    auth.users.push({ username, hash: hashPassword(password), name, role: role || 'teacher' });
+    const pwErr = CS.pwOk(role || 'teacher', password);
+    if (pwErr) return pwErr;
+    auth.users.push({ username: username, name: name, role: role || 'teacher', keyring: {}, login: await CS.loginWrap(password) });
+    saveAuth(auth);
+    return null;
+  }
+  /* create an account AND make it usable: master-key wrap under the same
+     password (login requires it), optional class-key wraps added by callers */
+  async function provisionUser(username, password, name, role) {
+    const err = await addUser(username, password, name, role);
+    if (err) return err;
+    if (cryptoOK() && SESSION.dk) {
+      try {
+        const v2 = readV2() || { fmt: 2, wraps: {} };
+        v2.wraps = v2.wraps || {};
+        v2.wraps[username] = await makeWrap(SESSION.dk, password);
+        writeV2(v2);
+      } catch (e) { return 'Account created, but key wrapping failed: ' + e.message; }
+    }
+    return null;
+  }
+  /* rotate an account password completely: hash + master-key wrap, so a
+     generated password from pairing/rostering is a REAL new password */
+  async function rotateUserPassword(username, password) {
+    const auth = getAuth();
+    const u = auth.users.find((x) => x.username === username);
+    if (!u) return 'no such user';
+    const pwErr = CS.pwOk(u.role, password);
+    if (pwErr) return pwErr;
+    u.login = await CS.loginWrap(password);
+    delete u.hash;   /* P1.1: hashes are gone for good */
+    if (cryptoOK() && SESSION.dk) {
+      try {
+        const v2 = readV2() || { fmt: 2, wraps: {} };
+        v2.wraps = v2.wraps || {};
+        v2.wraps[username] = await makeWrap(SESSION.dk, password);
+        writeV2(v2);
+      } catch (e) { return 'password set, but key wrapping failed: ' + e.message; }
+    }
     saveAuth(auth);
     return null;
   }
@@ -6054,7 +7273,49 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     return null;
   }
 
+  let SPR_LOGIN_AUTO_CLASS = null;   /* class to open right after sign-in completes */
   let loginSetupMode = false;   /* fresh browsers open on the sign-in card — signing in with an existing account pulls its data from the cloud; setup is an explicit choice */
+  /* ---- explicit "I use SPR on another device": the ONLY sign-in-time cloud
+     contact, and only because the user asked for it ---- */
+  function otherDeviceDialog() {
+    if (!cryptoOK()) { toast('The offline (file://) version cannot reach cloud copies — use the same browser profile or a backup file.', true); return; }
+    openDlg(
+      '<h3>Use SPR on another device</h3>' +
+      '<p class="small">Sign in with your usual SPR account: SPR looks up the <b>encrypted cloud copy</b> (if device sync was set up) and installs it here. Nothing is sent anywhere until you press Continue.</p>' +
+      '<label class="small">Username <input class="inp" id="odUser" style="width:100%" autocomplete="username"></label>' +
+      '<label class="small" style="margin-top:8px">Password <input class="inp" id="odPass" type="password" style="width:100%" autocomplete="current-password"></label>' +
+      '<div class="login-err" id="odErr" aria-live="assertive"></div>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Continue</button></div>',
+      function (d) {
+        d.onclick = async function (e) {
+          const b = e.target.closest('[data-x]');
+          if (!b) return;
+          if (b.dataset.x === '0') { closeDlg(); return; }
+          const un = ($('#odUser').value || '').trim(), pw = $('#odPass').value || '';
+          if (!un || !pw) { $('#odErr').textContent = 'Enter your username and password.'; return; }
+          b.disabled = true; const eEl0 = $('#odErr'); if (eEl0) eEl0.textContent = 'Looking up the encrypted cloud copy…';
+          try {
+            let hit = null;
+            try { hit = await dsAccountLookup(un, pw); }
+            catch (e2) { throw new Error('cannot reach the cloud (' + e2.message + ') — check your internet'); }
+            if (hit === false) { $('#odErr').textContent = 'Wrong password for that account.'; return; }
+            if (!hit) { $('#odErr').textContent = 'No cloud copy found for that account (device sync may not be set up). First-run setup or a backup file also work.'; return; }
+            const okGo = await confirmDlg('Open the cloud copy here?',
+              'An encrypted copy saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b>' + (hit.by ? ' by <b>' + U.esc(String(hit.by)) + '</b>' : '') + ' was found.' +
+              (readV2() ? '<br><br>This device\u2019s current data is kept as a safety copy you can restore (Manage &rarr; Backups).' : ''),
+              'Open it here');
+            if (!okGo) { closeDlg(); return; }
+            stashSafetyBackup('before replacing data');
+            dsInstallFrom(hit, hit.owner || un);
+            const res = await doLoginFull(un, pw);
+            if (res && res.error) { const eEl2 = $('#odErr'); if (eEl2) eEl2.textContent = res.error; else toast(res.error, true); return; }
+            closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+          } catch (err) { const eEl = $('#odErr'); if (eEl) eEl.textContent = err.message || String(err); else toast('Sign-in failed: ' + (err.message || String(err)), true); }
+          finally { b.disabled = false; }
+        };
+      });
+  }
+
   function renderLogin() {
     const freshBrowser = getAuth().users.length === 0 && !readV2();
     const setupCard = freshBrowser && loginSetupMode;
@@ -6064,7 +7325,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<h2>Set up this browser</h2>' +
           '<p>Starting fresh? Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
           '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
-          '<div class="login-field"><label for="suPass">Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
+          '<div class="login-field"><label for="suPass">Password (14+ characters — this sign-in is the admin)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
@@ -6075,13 +7336,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="login-logo">SPR</div>' +
           '<h2>Students Performance Report</h2>' +
           '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') +
-          (cryptoOK() && freshBrowser ? '<br><b>New device?</b> Just sign in with your usual SPR account — if device sync is on, your data arrives from the cloud automatically.' :
+          (cryptoOK() && freshBrowser ? '<br><b>New device?</b> If you already use SPR elsewhere, use <b>I use SPR on another device</b> below — your data arrives from the encrypted cloud copy.' :
            (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '')) + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
           (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
+          (cryptoOK() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="login-other-device">I use SPR on another device &rarr;</button></div>' : '') +
           (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
@@ -6092,7 +7354,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const auth = getAuth();
     if (auth.users.some((u) => u.username === username)) return { error: 'That username already exists on this device.' };
     if (!cryptoOK()) {
-      auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+      auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
       auth.session = { username: username, name: username, role: 'admin' };
       saveAuth(auth);
       return { user: auth.session };
@@ -6104,10 +7366,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     v2.data = await sealDB(DB, dk);
     writeV2(v2);
     try { localStorage.removeItem(LS_KEY); } catch (e) {}
-    auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+    auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
     auth.session = { username: username, name: username, role: 'admin' };
     saveAuth(auth);
-    SESSION = { user: username, dk: dk, pw: password };
+    SESSION = { user: username, dk: dk, pw: password, keys: {} };
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
     return { user: auth.session };
   }
@@ -6138,9 +7400,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       try {
         const sess = JSON.parse(sessionStorage.getItem('spr-session') || 'null');
         const v2 = readV2();
-        if (sess && sess.user && sess.dk && v2) {
-          SESSION = { user: sess.user, dk: bytesFromB64u(sess.dk) };
-          DB = normalizeDB(await unsealDB(v2.data, SESSION.dk));
+        if (sess && sess.user && sess.dk && (v2 || sprMode() === 'class')) {
+          SESSION = { user: sess.user, dk: bytesFromB64u(sess.dk), keys: {} };
+          for (const k of Object.keys(sess.keys || {})) { try { SESSION.keys[k] = bytesFromB64u(sess.keys[k]); } catch (e2) {} }
+          if (sprMode() === 'class') {
+            /* open the last-used class this account still holds a key for */
+            const lastId = localStorage.getItem('spr-last-class');
+            const ix = classIndex(); const meta = ix.find((c) => c.id === lastId) || ix.filter((c) => SESSION.keys[c.id])[0];
+            if (meta && SESSION.keys[meta.id]) {
+              try {
+                const raw = localStorage.getItem(classBlobKey(meta.id));
+                if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; }
+              } catch (e3) { CLS = null; CLS_KEY = null; }
+            }
+            if (!CLS) DB = emptyDB();
+          } else {
+            DB = normalizeDB(await unsealDB(v2.data, SESSION.dk));
+          }
           const auth = getAuth();
           if (!auth.session || auth.session.username !== sess.user) {
             const u = (auth.users || []).find((x) => x.username === sess.user);
@@ -6190,7 +7466,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
-  window.SPR_DEBUG_SET_DB = function (d) { DB = d; };
+  window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
+  window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
   window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

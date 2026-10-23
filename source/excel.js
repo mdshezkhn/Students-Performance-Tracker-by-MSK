@@ -242,7 +242,7 @@
     return wb;
   }
 
-  function exportWorkbook(sem) {
+  function exportWorkbook(sem, audit) {
     const wb = stampProps(XLSX.utils.book_new(), {
       Title: [sem.school, sem.className, 'SPR', sem.name].filter(Boolean).join(' - '),
       Company: sem.school || 'SPR — by Teacher Mo'
@@ -395,6 +395,15 @@
     const wsG = XLSX.utils.aoa_to_sheet(gRows);
     wsG['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 7 }];
     XLSX.utils.book_append_sheet(wb, wsG, 'Grading');
+    /* class mode: the per-class audit log rides along in every Excel export */
+    if (audit && audit.length) {
+      const aRows = [['When', 'By', 'Action', 'Cell', 'Old', 'New', 'Note']]
+        .concat(audit.map((a) => [new Date(a.t || 0).toLocaleString(), a.by || '', a.action || '', a.cell || '',
+          (a.old === null || a.old === undefined) ? '' : a.old, (a.new === null || a.new === undefined) ? '' : a.new, a.note || '']));
+      const wsA = XLSX.utils.aoa_to_sheet(aRows);
+      wsA['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 8 }, { wch: 8 }, { wch: 44 }];
+      XLSX.utils.book_append_sheet(wb, wsA, 'Audit Log');
+    }
 
     return wb;
   }

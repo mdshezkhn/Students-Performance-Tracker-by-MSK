@@ -9,6 +9,7 @@ const CS = require('../source/classstore.js');
 const Calc = require('../source/calc.js');
 
 let pass = 0, fail = 0;
+  function eqBytes(a, b) { return !!(a && b && a.length === b.length && a.every((x, i) => x === b[i])); }
 function ok(cond, label) { if (cond) { pass++; } else { fail++; console.log('FAIL ' + label); } }
 function eq(actual, expected, label) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -216,6 +217,55 @@ eq(CS.normalizeRole('principal'), null, 'unknown role rejected');
   const opened2 = await CS.openClass(parsed.blob, key);
   eq(opened2.semesters[0].students[0].id, 'P01', 'blob from class file still opens with the shared key');
   eq(CS.parseClassHash('#/dashboard'), null, 'normal routes are not class links');
+
+  /* ============== P1.1: hashless auth, PBKDF2 v2, policy, generator ============== */
+  {
+    const ALPHA = new Set('23456789abcdefghjkmnpqrstuvwxyu-');
+    let shapeOk = true, charsetOk = true, policyOk = true;
+    const seen = new Set();
+    for (let i = 0; i < 40; i++) {
+      const pw = CS.genPassword();
+      const parts = pw.split('-');
+      if (!(pw.length === 23 && parts.length === 4 && parts.every((g) => g.length === 5))) shapeOk = false;
+      if (!pw.split('').every((ch) => ALPHA.has(ch))) charsetOk = false;
+      if (!(CS.pwOk('admin', pw) === null && CS.pwOk('manager', pw) === null && CS.pwOk('eal', pw) === null)) policyOk = false;
+      seen.add(pw);
+    }
+    ok(shapeOk, 'genPassword shape is 4 groups of 5 (xxxxx-xxxxx-xxxxx-xxxxx)');
+    ok(charsetOk, 'genPassword uses the 32-symbol no-lookalike alphabet');
+    ok(policyOk, 'generated passwords satisfy every role policy');
+    ok(seen.size === 40, 'genPassword draws are unique');
+    ok(CS.genPasswordBits() >= 80, 'generator entropy is at least 80 bits (100 claimed)');
+
+    ok(CS.pwOk('admin', 'short') !== null && CS.pwOk('manager', 'a'.repeat(13)) !== null, 'admin/manager need 14+ characters');
+    ok(CS.pwOk('admin', 'fourteen-chars!') === null, '14 characters accepted for admin');
+    ok(CS.pwOk('eal', 'a'.repeat(11)) !== null && CS.pwOk('support', 'a'.repeat(12)) === null, 'teacher floor is 12 characters (11 rejected, 12 accepted)');
+    ok(CS.pwOk('admin', '') !== null, 'empty password rejected');
+
+    const key = CS.genKey();
+    const wrap = await CS.wrapKey(key, 'pw-one');
+    ok(wrap.v === 2 && wrap.it === 600000, 'new wraps are v2 / 600k iterations');
+    ok(eqBytes(await CS.unwrapKey(wrap, 'pw-one'), key), 'v2 wrap round-trip');
+    ok((await CS.unwrapKey(wrap, 'wrong').catch(() => null)) === null, 'wrong password fails the v2 wrap');
+
+    const legacy = await CS.wrapKey(key, 'pw-one', 310000);
+    delete legacy.v; delete legacy.it;  /* fieldless = a pre-P1.1 wrap on disk */
+    const leg2 = await CS.wrapKey(key, 'pw-one', 310000);
+    ok(eqBytes(await CS.unwrapKey(legacy, 'pw-one'), key), 'fieldless legacy wrap (310k) still unwraps');
+    ok(eqBytes(await CS.unwrapKey(leg2, 'pw-one'), key), 'v1-tagged wrap still unwraps');
+    ok(CS.wrapNeedsUpgrade(legacy) && CS.wrapNeedsUpgrade(leg2) && !CS.wrapNeedsUpgrade(wrap), 'upgrade detection knows v1 from v2');
+
+    const rw = await CS.rewrapKey(leg2, 'pw-one', 'a-new-password-2');
+    ok(rw.v === 2 && rw.it === 600000, 'rewrap upgrades to v2 while it re-keys');
+    ok(eqBytes(await CS.unwrapKey(rw, 'a-new-password-2'), key), 'rewrapped key opens under the NEW password');
+    ok((await CS.unwrapKey(rw, 'pw-one').catch(() => null)) === null, 'old password no longer opens it');
+
+    const lw = await CS.loginWrap('sign-in-pw-1');
+    ok(await CS.verifyLogin(lw, 'sign-in-pw-1') === true, 'login wrap verifies the right password');
+    ok(await CS.verifyLogin(lw, 'nope') === false, 'login wrap rejects a wrong password');
+    ok(await CS.verifyLogin(null, 'x') === false && await CS.verifyLogin({}, 'x') === false, 'login wrap handles missing/garbage wraps');
+    ok(!/"(hash|password|pw)"/.test(JSON.stringify(lw)), 'login wrap stores no password material');
+  }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

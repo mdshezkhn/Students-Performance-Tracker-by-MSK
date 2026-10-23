@@ -20,15 +20,17 @@ jobs:
           node-version: '20'
 
       # build must succeed from a clean clone (guard included: aborts if the
-      # committed root artifacts were hand-edited away from the last build)
-      - name: Build (build2.py from a clean clone)
+      # committed published files were hand-edited instead of rebuilt)
+      - name: Build from a clean clone
         run: python source/build2.py
 
-      # the committed build must equal what the build produces from source
+      # the committed app build must be byte-identical to what the build makes
       - name: Committed app build is up to date
         run: |
-          cmp --silent dist/app/index.html app/index.html \
-            || (echo "::error::app/index.html is stale - run 'python source/build2.py' and commit the deploy output"; exit 1)
+          cmp --silent dist/app/index.html app/index.html             || (echo "::error::app/index.html is stale - run 'python source/build2.py', copy deploy/app/* to app/ + deploy/index.html to ./index.html, and commit"; exit 1)
+          cmp --silent dist/app/sw.js app/sw.js             || (echo "::error::app/sw.js is stale - run 'python source/build2.py', copy deploy/app/* to app/, and commit"; exit 1)
+
+          cmp --silent dist/index.html index.html             || (echo "::error::index.html (landing) is stale - run 'python source/build2.py', copy deploy/index.html to ./index.html, and commit"; exit 1)
 
       - name: Install dev dependencies (jsdom)
         run: npm install --no-audit --no-fund
@@ -36,5 +38,5 @@ jobs:
       - name: Unit + regression tests
         run: npm test
 
-      - name: Device-sync browser suite (jsdom)
-        run: node tests/test-device-sync.js
+      - name: Browser suites (jsdom)
+        run: npm run test:jsdom

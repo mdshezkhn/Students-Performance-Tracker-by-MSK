@@ -339,14 +339,23 @@
      Grading rules are untouched — this only removes values that could never
      have come from the school's workbook. ---------------------------------- */
   const coerceNum = (x) => (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x)) ? Number(x) : x);
+  /* Quarantines invalid scores instead of destroying them: each moved value is
+     recorded as {area, sid, month, key, value, reason} and the live cell is
+     cleared so grades stay correct. Returns the array of moved items (empty =
+     nothing wrong). Callers decide where the review list lives (sem.review). */
   function sanitizeSemester(sem) {
-    let dropped = 0;
-    const fixPair = (e) => {          // e = {s,t} score/total holder (mutated)
+    const moved = [];
+    const note = (area, sid, month, key, value, reason) =>
+      moved.push({ area: area, sid: sid, month: month || null, key: key, value: value, reason: reason });
+    const fixPair = (e, area, sid, month, key) => {   // e = {s,t} holder (mutated)
       e.s = coerceNum(e.s); e.t = coerceNum(e.t);
       // invalid total (present but unusable) -> clear it, keep the score for later
-      if (!EMPTY(e.t) && !validTotal(e.t)) { e.t = null; dropped++; }
+      if (!EMPTY(e.t) && !validTotal(e.t)) { note(area, sid, month, key + ':t', e.t, 'total must be a positive number'); e.t = null; }
       // invalid score (present but negative/non-finite/above total) -> clear it, keep total
-      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) { e.s = null; dropped++; }
+      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) {
+        note(area, sid, month, key + ':s', e.s, (!EMPTY(e.t) && e.s > e.t) ? 'score above total' : 'score must be 0 or more');
+        e.s = null;
+      }
       return (EMPTY(e.s) && EMPTY(e.t));   // nothing left -> caller deletes
     };
     for (const sid of Object.keys(sem.observations || {})) {
@@ -355,7 +364,7 @@
         for (const k of Object.keys(cell)) {
           const v = coerceNum(cell[k]);
           if (EMPTY(v)) { delete cell[k]; continue; }          // absent -> prune, not "invalid"
-          if (!validObs(v)) { delete cell[k]; dropped++; continue; }
+          if (!validObs(v)) { note('obs', sid, m, k, v, 'observation scores are 0-10'); delete cell[k]; continue; }
           cell[k] = v;
         }
         if (!Object.keys(cell).length) delete sem.observations[sid][m];
@@ -366,7 +375,7 @@
       for (const sid of Object.keys(sem[metric] || {})) {
         for (const m of Object.keys(sem[metric][sid])) {
           const rec = sem[metric][sid][m];
-          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w])) delete rec[w];
+          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w], metric, sid, m, 'week ' + w)) delete rec[w];
           if (!Object.keys(rec).length) delete sem[metric][sid][m];
         }
         if (!Object.keys(sem[metric][sid] || {}).length) delete sem[metric][sid];
@@ -374,11 +383,11 @@
     }
     for (const sid of Object.keys(sem.tests || {})) {
       for (const kind of Object.keys(sem.tests[sid])) {
-        if (fixPair(sem.tests[sid][kind])) delete sem.tests[sid][kind];
+        if (fixPair(sem.tests[sid][kind], 'test', sid, null, kind)) delete sem.tests[sid][kind];
       }
       if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
     }
-    return dropped;
+    return moved;
   }
 
   return {

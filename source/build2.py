@@ -21,10 +21,11 @@ SRC, LIBS = ROOT, ROOT / 'libs'
 DIST, DEPLOY = REPO / 'dist', REPO / 'deploy'
 
 def read(p):
-    # newline='' keeps the files' own line endings: the build output is
-    # byte-identical on Windows and Linux (CI verifies the committed build)
+    # read with the file's own endings, then NORMALISE to LF: git autocrlf
+    # differences between machines must never leak into the build. The output
+    # is byte-identical on Windows and Linux (CI verifies the committed build)
     with open(p, 'r', encoding='utf-8', newline='') as f:
-        return f.read()
+        return f.read().replace('\r\n', '\n')
 
 # ---------- guard: never silently clobber hand-edited published files ----
 # The published site (repo root) must always equal the last committed build
@@ -57,6 +58,7 @@ for marker, path in [
     ('/*__CALC__*/', SRC / 'calc.js'),
     ('/*__EXCEL__*/', SRC / 'excel.js'),
     ('/*__ANALYSIS__*/', SRC / 'analysis.js'),
+    ('/*__CLASSSTORE__*/', SRC / 'classstore.js'),
     ('/*__APP__*/', SRC / 'app.js'),
 ]:
     assert marker in app_html, 'missing marker ' + marker
@@ -69,7 +71,7 @@ assert seed_obj.get('meta', '').startswith('SYNTHETIC'), 'refusing to embed a no
 seed_json = json.dumps(seed_obj, ensure_ascii=False)
 app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = ' + seed_json + ';', 1)
 assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed injection failed'
-for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__APP__'):
+for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__CLASSSTORE__', '__APP__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
 # ---------- service worker: version = content hash of the app HTML ----------
