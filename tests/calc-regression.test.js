@@ -82,7 +82,12 @@ ok(L(null) === null && L(NaN) === null && L(undefined) === null, 'letter(null/Na
     'weeklyPctList invalid weeks -> null pct');
 
   const dropped = Calc.sanitizeSemester(bad);
-  ok(dropped === 4, 'sanitize drops 4 invalid values (got ' + dropped + ')');
+  ok(dropped.length === 4, 'sanitize quarantines 4 invalid values (got ' + dropped.length + ')');
+  ok(dropped.every((m) => typeof m.reason === 'string' && m.value !== undefined), 'each quarantined value carries value + reason');
+  ok(dropped.some((m) => m.area === 'obs' && m.key === 'Listening-LO1' && m.value === 12), 'obs over-range recorded with cell key');
+  ok(dropped.some((m) => m.area === 'spelling' && m.key === 'week 1:s' && m.value === 25), 'weekly over-total recorded');
+  const again = Calc.sanitizeSemester(bad);
+  ok(again.length === 0, 'second sanitize run moves nothing (idempotent)');
   ok(bad.observations.x.March['Listening-LO1'] === undefined, 'sanitize removed obs 12');
   ok(bad.spelling.x.March[1].s === null && bad.spelling.x.March[1].t === 20, 'sanitize kept the total, cleared the 25');
   ok(bad.tests.x.midterm.s === null && bad.tests.x.midterm.t === 50, 'sanitize kept midterm total');

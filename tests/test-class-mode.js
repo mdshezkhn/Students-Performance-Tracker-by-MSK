@@ -157,9 +157,10 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     return pw;
   }
   const ealPw = await pairAs('eal', 'eal-01');
-  const supPw = await pairAs('support', 'sup-01');
-  ok(!!ealPw && /^spr-/.test(ealPw), 'one-time password issued for eal-01');
-  ok(!!supPw && /^spr-/.test(supPw), 'one-time password issued for sup-01');
+  let supPw = await pairAs('support', 'sup-01');
+  const PW_SHAPE = /^[a-z0-9]{5}(-[a-z0-9]{5}){3}$/;
+  ok(!!ealPw && PW_SHAPE.test(ealPw), 'one-time password issued for eal-01 (' + ealPw + ')');
+  ok(!!supPw && PW_SHAPE.test(supPw), 'one-time password issued for sup-01 (5-5-5-5 generator)');
 
   const dump2 = storageDump(B);
 
@@ -260,7 +261,7 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   /* provisioning needs an ADMIN session (the master key must be unlocked to
      wrap it for the new account) — sign in as admin first */
   ok(await loginAs(B, ADMIN, PW), 'admin re-signs to provision the manager');
-  ok(await B.w.SPR_DEBUG_AUTH.provision('mgr-01', 'mgr-pass-123', 'Manager One', 'manager') === null, 'manager provisioned');
+  ok(await B.w.SPR_DEBUG_AUTH.provision('mgr-01', 'mgr-pass-12345', 'Manager One', 'manager') === null, 'manager provisioned');
   /* give the manager the class key (admin-side pairing equivalent) */
   const auth = B.w.SPR_DEBUG_AUTH.get();
   const adminRing = auth.users.find((u) => u.username === ADMIN).keyring;
@@ -278,7 +279,7 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     const out = {};
     for (const cid of Object.keys(ringIn)) {
       const key = await w.ClassStore.unwrapKey(ringIn[cid], PW);
-      out[cid] = await w.ClassStore.wrapKey(key, 'mgr-pass-123');
+      out[cid] = await w.ClassStore.wrapKey(key, 'mgr-pass-12345');
     }
     return out;
   })();
@@ -288,7 +289,7 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   const dump5 = storageDump(B);
   B = boot(dump5);
   await sleep(400); await ackGate(B);
-  ok(await loginAs(B, 'mgr-01', 'mgr-pass-123'), 'manager signs in');
+  ok(await loginAs(B, 'mgr-01', 'mgr-pass-12345'), 'manager signs in');
   await ackPrivacy(B);
   await sleep(500);
   ok(await waitFor(() => B.w.SPR_DEBUG_GET_DB().semesters && B.w.SPR_DEBUG_GET_DB().semesters.length === semCount, 8000), 'manager reaches the class (home or auto-open)');
@@ -311,6 +312,39 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   await sleep(400);
   const roWeek2 = B.d.querySelector('input[data-kind="week"]');
   ok(roWeek2 && roWeek2.readOnly, 'manager score cells are readonly');
+
+
+  /* P1.1: invalid scores are quarantined for review, never deleted */
+  {
+    const dump6 = storageDump(B);
+    B = boot(dump6);
+    await sleep(600); await ackGate(B);
+    ok(await loginAs(B, ADMIN, PW), 'admin re-signs for the quarantine check');
+    await ackPrivacy(B);
+    ok(await waitFor(() => B.w.SPR_DEBUG_GET_DB() && B.w.SPR_DEBUG_GET_DB().sprClass && (B.w.SPR_DEBUG_GET_DB().semesters || []).length, 15000),
+      'admin’s class auto-opens before the quarantine injection');
+    const db = B.w.SPR_DEBUG_GET_DB();
+    const sem = db.semesters[0];
+    const sid0 = sem.students[0].id;
+    const m0 = sem.months[0];
+    sem.observations[sid0] = sem.observations[sid0] || {};
+    sem.observations[sid0][m0] = Object.assign({}, sem.observations[sid0][m0], { 'Listening-LO1': 15 });
+    B.w.SPR_DEBUG_SET_DB(db);            /* persists through the app's real save path */
+    await sleep(900);
+    const dump7 = storageDump(B);
+    const B2 = boot(dump7);
+    await sleep(600); await ackGate(B2);
+    ok(await loginAs(B2, ADMIN, PW), 'reload after injecting an invalid observation');
+    await sleep(800);
+    const db2 = B2.w.SPR_DEBUG_GET_DB();
+    const sem2 = db2.semesters[0];
+    const cellAfter = ((sem2.observations || {})[sid0] || {})[m0] || {};
+    const review = (sem2.review || []).filter((r) => r.sid === sid0 && r.key === 'Listening-LO1');
+    ok(cellAfter['Listening-LO1'] === undefined, 'invalid observation is out of the live cell');
+    ok(review.length === 1 && review[0].value === 15 && /0-10/.test(review[0].reason), 'value 15 quarantined to the review list with a reason');
+    const safety = JSON.parse(B2.w.localStorage.getItem('spr-safety-backups-v1') || '[]');
+    ok(Array.isArray(safety) && safety.length > 0, 'a safety copy was stashed before quarantining');
+  }
 
   console.log(fails ? '\n' + fails + ' FAILURES' : '\nALL CLASS-MODE CHECKS PASSED');
   process.exit(fails ? 1 : 0);

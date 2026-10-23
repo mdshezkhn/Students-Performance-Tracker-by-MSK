@@ -335,12 +335,51 @@ function loginAs(B, user, pass) {
   ok(adoptUp, 'adoption dialog offered instead of creating a second setup');
   syncSB(D3);
   const sumBefore = (SB[rows[0]] || {}).payload ? SB[rows[0]].payload.sum : null;
+  let beforeObj = null;
+  {
+    const webcrypto = require('crypto').webcrypto;
+    const cfgDp = JSON.parse(A2.w.localStorage.getItem('spr-devicesync-v1') || D3.w.localStorage.getItem('spr-devicesync-v1') || '{}');
+    if (cfgDp.key) {
+      const kb = Buffer.from(cfgDp.key.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+      try {
+        const k = await webcrypto.subtle.importKey('raw', kb, 'AES-GCM', false, ['decrypt']);
+        const r0 = SB[rows[0]] || {};
+        const iv = Buffer.from(r0.payload.iv.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        const ct = Buffer.from(r0.payload.ct.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        beforeObj = JSON.parse(new TextDecoder().decode(await webcrypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, k, ct)));
+      } catch (e) { console.log('  [before-decrypt] failed', e.message); }
+    }
+  }
   confirmYes(D3);   // open the cloud copy
   await sleep(800);
   syncSB(D3);
   /* content sum, not ciphertext: another live window's legitimate wrap-refresh
      push re-seals with a fresh IV (ct changes) while the CONTENT stays equal */
-  ok(SB[rows[0]] && SB[rows[0]].payload.sum === sumBefore, 'cloud row content NOT overwritten by device D');
+  /* the adoption may legitimately trigger a debounced re-push from D; what
+     must NEVER happen is D's OLD (pre-adoption) data replacing the cloud row.
+     Wait for pushes to settle, then deep-compare the row's decrypted content
+     (users / v2 wraps / db) against what the row held before adoption. */
+  {
+    let lastAt = null, stable = false;
+    for (let t = 0; t < 12000 && !stable; t += 1500) {
+      await sleep(1500); syncSB(D3);
+      const at = (SB[rows[0]] || {}).pushed_at || null;
+      stable = at !== null && at === lastAt;
+      lastAt = at;
+    }
+    const webcrypto2 = require('crypto').webcrypto;
+    const cfgDp2 = JSON.parse(D3.w.localStorage.getItem('spr-devicesync-v1') || '{}');
+    const kb2 = Buffer.from(cfgDp2.key.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const k2 = await webcrypto2.subtle.importKey('raw', kb2, 'AES-GCM', false, ['decrypt']);
+    const rNow = SB[rows[0]] || {};
+    const iv2 = Buffer.from(rNow.payload.iv.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const ct2 = Buffer.from(rNow.payload.ct.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const nowObj = JSON.parse(new TextDecoder().decode(await webcrypto2.subtle.decrypt({ name: 'AES-GCM', iv: iv2 }, k2, ct2)));
+    const strip = (o) => JSON.stringify(o, (kk, v) => (kk === 'ts' || kk === 'iv' || kk === 'ct' || kk === 'sum') ? undefined : v);
+    ok(strip(nowObj.users) === strip(beforeObj.users), 'cloud row users NOT replaced by device D');
+    ok(strip((nowObj.v2 || {}).wraps) === strip((beforeObj.v2 || {}).wraps), 'cloud row wraps NOT replaced by device D');
+    ok(strip(nowObj.db) === strip(beforeObj.db), 'cloud row data content NOT overwritten by device D');
+  }
   const cfgD = JSON.parse(D3.w.localStorage.getItem('spr-devicesync-v1') || 'null');
   ok(cfgD && cfgD.on === true && cfgD.channel === rows[0] && !!cfgD.key, 'device D adopted the account channel + key');
   const usersD = JSON.parse(D3.w.localStorage.getItem('spr-auth-v1') || 'null');
@@ -468,7 +507,7 @@ function loginAs(B, user, pass) {
       syncSB(Bt);
       return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== dataAtBefore;
     }, 25000);
-    ok(hashPushed, 'reset also pushed the new account hash to the data row');
+    ok(hashPushed, 'reset also pushed the re-keyed account (login wrap) to the data row');
   } else console.log('  SKIP (known sync race, RemoteStore phase): reset data-row push check');
   if (RUN_RACY_S8) {
     const G3 = boot();

@@ -62,20 +62,62 @@
 
   /* ---------------- class keys ---------------- */
   function genKey() { return C().getRandomValues(new Uint8Array(32)); }
-  async function wrapKey(keyBytes, password) {
+  /* Wrap format v2: {v:2, it:600000, salt, iv, ct}. Wraps made before P1.1
+     carry no v/it fields (read as v1, PBKDF2 310k) and keep working; unwrap
+     always honours the wrap's own iteration count. */
+  const PBKDF2_V1 = 310000, PBKDF2_V2 = 600000;
+  async function wrapKey(keyBytes, password, itOverride) {
     const c = C();
+    const it = itOverride || PBKDF2_V2;
     const salt = c.getRandomValues(new Uint8Array(16));
-    const kb = await deriveBits(password, salt, 310000);
+    const kb = await deriveBits(password, salt, it);
     const k = await aesKey(kb);
     const iv = c.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await c.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, keyBytes));
-    return { salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+    return { v: it >= PBKDF2_V2 ? 2 : 1, it: it, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
   }
   async function unwrapKey(w, password) {
-    const kb = await deriveBits(password, bytesFromB64u(w.salt), 310000);
+    const kb = await deriveBits(password, bytesFromB64u(w.salt), w.it || PBKDF2_V1);
     const k = await aesKey(kb);
     return new Uint8Array(await C().subtle.decrypt({ name: 'AES-GCM', iv: bytesFromB64u(w.iv) }, k, bytesFromB64u(w.ct)));
   }
+  function wrapNeedsUpgrade(w) { return (w.it || PBKDF2_V1) < PBKDF2_V2; }
+  /* re-wrap one wrap (e.g. a class key) under a NEW password at v2 strength */
+  async function rewrapKey(w, oldPw, newPw) { return wrapKey(await unwrapKey(w, oldPw), newPw); }
+
+  /* ---------------- login wraps (password verification WITHOUT a hash) ------
+     A login wrap seals a random 32-byte token under the account's password.
+     Verification = a successful AES-GCM unlock; a wrong password fails the
+     GCM auth tag. No password hash is ever stored or synced. */
+  async function loginWrap(password) { return wrapKey(genKey(), password); }
+  async function verifyLogin(w, password) {
+    if (!w || !w.salt || !w.iv || !w.ct) return false;
+    try { await unwrapKey(w, password); return true; } catch (e) { return false; }
+  }
+
+  /* ---------------- password policy + generator ---------------- */
+  const PW_MIN = { admin: 14, manager: 14, teacher: 8, eal: 8, support: 8 };
+  function pwOk(role, pw) {
+    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 8;
+    if (!pw || typeof pw !== 'string') return 'Enter a password.';
+    if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
+    return null;   /* ok */
+  }
+  /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:
+     30^20 = 2^98 bits of entropy straight from crypto.getRandomValues. */
+  const PW_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyu';   /* 30 unambiguous symbols */
+  function genPassword() {
+    const c = C();
+    const groups = [];
+    for (let g = 0; g < 4; g++) {
+      const bytes = c.getRandomValues(new Uint8Array(5));
+      let part = '';
+      for (let i = 0; i < 5; i++) part += PW_ALPHABET[bytes[i] % PW_ALPHABET.length];
+      groups.push(part);
+    }
+    return groups.join('-');
+  }
+  function genPasswordBits() { return Math.floor(20 * Math.log2(PW_ALPHABET.length)); }   /* 20 chars * log2(30) = 98 */
 
   /* ---------------- class blob (encrypted workbook) ---------------- */
   async function sealClass(obj, keyBytes) {
@@ -374,6 +416,9 @@
   return {
     b64uFromBytes: b64uFromBytes, bytesFromB64u: bytesFromB64u,
     genKey: genKey, wrapKey: wrapKey, unwrapKey: unwrapKey,
+    wrapNeedsUpgrade: wrapNeedsUpgrade, rewrapKey: rewrapKey,
+    loginWrap: loginWrap, verifyLogin: verifyLogin,
+    pwOk: pwOk, genPassword: genPassword, genPasswordBits: genPasswordBits,
     sealClass: sealClass, openClass: openClass, contentSum: contentSum,
     ROLES: ROLES, normalizeRole: normalizeRole, roleLabel: roleLabel,
     can: can, classesFor: classesFor, isClassOf: isClassOf,

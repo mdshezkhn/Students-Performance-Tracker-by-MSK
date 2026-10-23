@@ -1078,14 +1078,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
      Grading rules are untouched — this only removes values that could never
      have come from the school's workbook. ---------------------------------- */
   const coerceNum = (x) => (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x)) ? Number(x) : x);
+  /* Quarantines invalid scores instead of destroying them: each moved value is
+     recorded as {area, sid, month, key, value, reason} and the live cell is
+     cleared so grades stay correct. Returns the array of moved items (empty =
+     nothing wrong). Callers decide where the review list lives (sem.review). */
   function sanitizeSemester(sem) {
-    let dropped = 0;
-    const fixPair = (e) => {          // e = {s,t} score/total holder (mutated)
+    const moved = [];
+    const note = (area, sid, month, key, value, reason) =>
+      moved.push({ area: area, sid: sid, month: month || null, key: key, value: value, reason: reason });
+    const fixPair = (e, area, sid, month, key) => {   // e = {s,t} holder (mutated)
       e.s = coerceNum(e.s); e.t = coerceNum(e.t);
       // invalid total (present but unusable) -> clear it, keep the score for later
-      if (!EMPTY(e.t) && !validTotal(e.t)) { e.t = null; dropped++; }
+      if (!EMPTY(e.t) && !validTotal(e.t)) { note(area, sid, month, key + ':t', e.t, 'total must be a positive number'); e.t = null; }
       // invalid score (present but negative/non-finite/above total) -> clear it, keep total
-      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) { e.s = null; dropped++; }
+      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) {
+        note(area, sid, month, key + ':s', e.s, (!EMPTY(e.t) && e.s > e.t) ? 'score above total' : 'score must be 0 or more');
+        e.s = null;
+      }
       return (EMPTY(e.s) && EMPTY(e.t));   // nothing left -> caller deletes
     };
     for (const sid of Object.keys(sem.observations || {})) {
@@ -1094,7 +1103,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         for (const k of Object.keys(cell)) {
           const v = coerceNum(cell[k]);
           if (EMPTY(v)) { delete cell[k]; continue; }          // absent -> prune, not "invalid"
-          if (!validObs(v)) { delete cell[k]; dropped++; continue; }
+          if (!validObs(v)) { note('obs', sid, m, k, v, 'observation scores are 0-10'); delete cell[k]; continue; }
           cell[k] = v;
         }
         if (!Object.keys(cell).length) delete sem.observations[sid][m];
@@ -1105,7 +1114,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       for (const sid of Object.keys(sem[metric] || {})) {
         for (const m of Object.keys(sem[metric][sid])) {
           const rec = sem[metric][sid][m];
-          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w])) delete rec[w];
+          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w], metric, sid, m, 'week ' + w)) delete rec[w];
           if (!Object.keys(rec).length) delete sem[metric][sid][m];
         }
         if (!Object.keys(sem[metric][sid] || {}).length) delete sem[metric][sid];
@@ -1113,11 +1122,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     for (const sid of Object.keys(sem.tests || {})) {
       for (const kind of Object.keys(sem.tests[sid])) {
-        if (fixPair(sem.tests[sid][kind])) delete sem.tests[sid][kind];
+        if (fixPair(sem.tests[sid][kind], 'test', sid, null, kind)) delete sem.tests[sid][kind];
       }
       if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
     }
-    return dropped;
+    return moved;
   }
 
   return {
@@ -2251,20 +2260,62 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
   /* ---------------- class keys ---------------- */
   function genKey() { return C().getRandomValues(new Uint8Array(32)); }
-  async function wrapKey(keyBytes, password) {
+  /* Wrap format v2: {v:2, it:600000, salt, iv, ct}. Wraps made before P1.1
+     carry no v/it fields (read as v1, PBKDF2 310k) and keep working; unwrap
+     always honours the wrap's own iteration count. */
+  const PBKDF2_V1 = 310000, PBKDF2_V2 = 600000;
+  async function wrapKey(keyBytes, password, itOverride) {
     const c = C();
+    const it = itOverride || PBKDF2_V2;
     const salt = c.getRandomValues(new Uint8Array(16));
-    const kb = await deriveBits(password, salt, 310000);
+    const kb = await deriveBits(password, salt, it);
     const k = await aesKey(kb);
     const iv = c.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await c.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, keyBytes));
-    return { salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+    return { v: it >= PBKDF2_V2 ? 2 : 1, it: it, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
   }
   async function unwrapKey(w, password) {
-    const kb = await deriveBits(password, bytesFromB64u(w.salt), 310000);
+    const kb = await deriveBits(password, bytesFromB64u(w.salt), w.it || PBKDF2_V1);
     const k = await aesKey(kb);
     return new Uint8Array(await C().subtle.decrypt({ name: 'AES-GCM', iv: bytesFromB64u(w.iv) }, k, bytesFromB64u(w.ct)));
   }
+  function wrapNeedsUpgrade(w) { return (w.it || PBKDF2_V1) < PBKDF2_V2; }
+  /* re-wrap one wrap (e.g. a class key) under a NEW password at v2 strength */
+  async function rewrapKey(w, oldPw, newPw) { return wrapKey(await unwrapKey(w, oldPw), newPw); }
+
+  /* ---------------- login wraps (password verification WITHOUT a hash) ------
+     A login wrap seals a random 32-byte token under the account's password.
+     Verification = a successful AES-GCM unlock; a wrong password fails the
+     GCM auth tag. No password hash is ever stored or synced. */
+  async function loginWrap(password) { return wrapKey(genKey(), password); }
+  async function verifyLogin(w, password) {
+    if (!w || !w.salt || !w.iv || !w.ct) return false;
+    try { await unwrapKey(w, password); return true; } catch (e) { return false; }
+  }
+
+  /* ---------------- password policy + generator ---------------- */
+  const PW_MIN = { admin: 14, manager: 14, teacher: 8, eal: 8, support: 8 };
+  function pwOk(role, pw) {
+    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 8;
+    if (!pw || typeof pw !== 'string') return 'Enter a password.';
+    if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
+    return null;   /* ok */
+  }
+  /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:
+     30^20 = 2^98 bits of entropy straight from crypto.getRandomValues. */
+  const PW_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyu';   /* 30 unambiguous symbols */
+  function genPassword() {
+    const c = C();
+    const groups = [];
+    for (let g = 0; g < 4; g++) {
+      const bytes = c.getRandomValues(new Uint8Array(5));
+      let part = '';
+      for (let i = 0; i < 5; i++) part += PW_ALPHABET[bytes[i] % PW_ALPHABET.length];
+      groups.push(part);
+    }
+    return groups.join('-');
+  }
+  function genPasswordBits() { return Math.floor(20 * Math.log2(PW_ALPHABET.length)); }   /* 20 chars * log2(30) = 98 */
 
   /* ---------------- class blob (encrypted workbook) ---------------- */
   async function sealClass(obj, keyBytes) {
@@ -2563,6 +2614,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   return {
     b64uFromBytes: b64uFromBytes, bytesFromB64u: bytesFromB64u,
     genKey: genKey, wrapKey: wrapKey, unwrapKey: unwrapKey,
+    wrapNeedsUpgrade: wrapNeedsUpgrade, rewrapKey: rewrapKey,
+    loginWrap: loginWrap, verifyLogin: verifyLogin,
+    pwOk: pwOk, genPassword: genPassword, genPasswordBits: genPasswordBits,
     sealClass: sealClass, openClass: openClass, contentSum: contentSum,
     ROLES: ROLES, normalizeRole: normalizeRole, roleLabel: roleLabel,
     can: can, classesFor: classesFor, isClassOf: isClassOf,
@@ -2637,8 +2691,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
     /* self-heal any invalid stored scores (legacy saves, hand-edited backups);
        count surfaces in __droppedInvalid (non-enumerable) for a one-time toast */
-    const dropped = C.sanitizeSemester(sem);
-    if (dropped) Object.defineProperty(sem, '__droppedInvalid', { value: dropped, enumerable: false, configurable: true });
+    const moved = C.sanitizeSemester(sem);
+    if (moved.length) {
+      /* non-destructive: values are quarantined into sem.review for the
+         teacher to fix or discard — a safety copy is stashed first so nothing
+         is ever silently lost (browser only; pure loads in Node) */
+      try { if (typeof stashSafetyBackup === 'function') stashSafetyBackup('before quarantining invalid scores'); } catch (e) {}
+      sem.review = sem.review || [];
+      for (const mv of moved) {
+        if (!sem.review.some((r) => r.area === mv.area && r.sid === mv.sid && r.month === mv.month && r.key === mv.key && r.value === mv.value)) sem.review.push(mv);
+      }
+      Object.defineProperty(sem, '__movedInvalid', { value: moved.length, enumerable: false, configurable: true });
+    }
     return sem;
   }
   function emptyDB() {
@@ -2779,9 +2843,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* ---- encryption core (online mode): PBKDF2-SHA256 310k -> AES-GCM.
      Random master key, wrapped per user with their login password; the key
      only ever lives in memory + sessionStorage (cleared when the tab closes). ---- */
-  async function deriveKeyBits(password, saltBytes) {
+  const PBKDF2_IT = 600000, PBKDF2_IT_LEGACY = 310000;   /* P1.1: v2 wraps; legacy wraps keep their own count */
+  async function deriveKeyBits(password, saltBytes, iterations) {
     const base = await subtle().importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-    return new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 310000, hash: 'SHA-256' }, base, 256));
+    return new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: iterations || PBKDF2_IT, hash: 'SHA-256' }, base, 256));
   }
   async function aesKeyRaw(raw) { return subtle().importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']); }
   async function sealDB(dbObj, dk) {
@@ -2801,10 +2866,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const k = await aesKeyRaw(kb);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, k, dk));
-    return { salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+    return { v: 2, it: PBKDF2_IT, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
   }
   async function unwrapWrap(w, password) {
-    const kb = await deriveKeyBits(password, bytesFromB64u(w.salt));
+    const kb = await deriveKeyBits(password, bytesFromB64u(w.salt), w.it || PBKDF2_IT_LEGACY);
     const k = await aesKeyRaw(kb);
     return new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(w.iv) }, k, bytesFromB64u(w.ct)));
   }
@@ -3247,7 +3312,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (u.keyring && u.keyring[cid]) continue;   /* already holds this class */
       let pw = un === SESSION.user ? SESSION.pw : null;
       if (!pw) {
-        pw = 'spr-' + Array.from(crypto.getRandomValues(new Uint8Array(6))).map((b) => b.toString(36).padStart(2, '0')).join('');
+        pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
         const rErr = await rotateUserPassword(un, pw);   /* a REAL new password */
         if (rErr) continue;
         fresh[un] = pw;
@@ -3423,7 +3488,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             if (!b || b.dataset.x !== '1') { if (b) closeDlg(); return; }
             const fresh = {};
             for (const u of r.users) {
-              const pw = 'spr-' + Array.from(crypto.getRandomValues(new Uint8Array(6))).map((x) => x.toString(36).padStart(2, '0')).join('');
+              const pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
               const err = await provisionUser(u.username, pw, u.display_name || u.username, u.role);
               if (!err) fresh[u.username] = pw;
             }
@@ -3658,10 +3723,34 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function moverLabel(d) { return d > 3 ? 'Improving' : d < -3 ? 'Review' : 'Stable'; }
 
+  /* ---- quarantined invalid scores (P1.1: never deleted, moved to review) ---- */
+  function reviewItems() {
+    const out = [];
+    for (const sem of DB.semesters || []) {
+      for (const r of sem.review || []) out.push({ semId: sem.id, semName: sem.name, item: r });
+    }
+    return out;
+  }
+  function reviewPanelHtml() {
+    const items = reviewItems();
+    if (!items.length) return '';
+    const AREA = { obs: 'Observation', spelling: 'Spelling', daily: 'Daily', test: 'Test' };
+    const rows = items.map((x, i) =>
+      '<tr><td>' + U.esc(x.semName) + '</td><td>' + U.esc(AREA[x.item.area] || x.item.area) + '</td>' +
+      '<td>' + U.esc(x.item.sid) + (x.item.month ? ' · ' + U.esc(x.item.month) : '') + '</td>' +
+      '<td>' + U.esc(x.item.key) + '</td><td><b>' + U.esc(String(x.item.value)) + '</b></td>' +
+      '<td class="small muted">' + U.esc(x.item.reason) + '</td>' +
+      '<td><button class="btn sm" data-action="review-goto" data-sem="' + U.esc(x.semId) + '">Go</button> ' +
+      '<button class="btn sm danger" data-action="review-discard" data-sem="' + U.esc(x.semId) + '" data-i="' + items.indexOf(x) + '">Discard</button></td></tr>').join('');
+    return '<div class="panel" style="margin-top:10px;border-color:#c9973b"><b>' + items.length + ' quarantined score' + (items.length > 1 ? 's' : '') + '</b>' +
+      '<p class="small" style="margin:6px 0 8px">These values were out of range (negative, above the total, or an observation over 10), so they are <b>not counted in any grade</b>. They were moved here — not deleted — when the data was loaded. Fix the cell on its entry screen, or discard the value once you have checked it.</p>' +
+      '<div class="sheet" style="max-height:240px;overflow:auto"><table class="tbl"><thead><tr><th>Semester</th><th>Area</th><th>Student · month</th><th>Cell</th><th>Value</th><th>Why</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
   function renderDashboard() {
     const sem = cur();
     if (!DB.semesters.length) { renderWelcome(); return; }
     const gAll = C.gradeAll(sem);
+    const rvN = reviewItems().length;
     const dist = C.gradeDistribution(sem);
     const risk = C.atRisk(sem);
     const tp = A.classTeachingPriorities(sem);
@@ -3775,6 +3864,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (inTerm ? '<span class="in-term">current month of the term</span>' : '') +
         '</div>' +
       '</section>' +
+      (rvN ? '<div class="panel no-print" style="margin:0 0 14px;border-color:#c9973b"><b>' + rvN + ' quarantined score' + (rvN > 1 ? 's' : '') + '</b> — not counted in any grade. <button class="btn sm" data-action="dash-review-goto">Review them</button></div>' : '') +
       tabHtml + filterBar + body;
 
     /* ---- charts & data tables ---- */
@@ -4666,9 +4756,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teachers-Operation-Manual.pdf" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
       '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4" target="_blank" rel="noopener">Watch the video guide</a></div>' +
       '<p class="small muted" style="margin-top:8px">Something looks wrong or a feature misbehaves? Note what you did and what happened, and tell the site owner (Teacher Mo) — fixes usually ship within a day. Your data lives in this browser: before any experiment, use “Download full backup” below.</p></div>' +
-      /* password change UI removed for the shared-campus setup (owner decision):
-         one shared password per account; changing it on a shared machine locks
-         colleagues out. change-pass-save handler kept dormant in source. */
+      '<div class="flex" style="margin-top:10px"><button class="btn" data-action="change-pass-open">Change my password</button></div>' +
+      (reviewPanelHtml() || '') +
 
       ((currentUser() || {}).role === 'admin' && sprMode() === 'legacy' && DB.semesters.length ?
         '<div class="panel" style="margin-top:10px;border-color:#c9973b"><b>Per-class workbooks available</b>' +
@@ -5449,7 +5538,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const errEl = $('#suErr');
       if (!un) { if (errEl) errEl.textContent = 'Choose a username.'; return; }
       if (un === MASTER_KEY) { if (errEl) errEl.textContent = 'That username is reserved.'; return; }
-      if (pw.length < 8) { if (errEl) errEl.textContent = 'Password must be at least 8 characters.'; return; }
+      const pwErr = CS.pwOk('admin', pw);
+      if (pwErr) { if (errEl) errEl.textContent = pwErr; return; }
       if (pw !== cf) { if (errEl) errEl.textContent = 'Passwords do not match.'; return; }
       (async () => {
         try {
@@ -5526,6 +5616,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const un = ($('#naUser') ? $('#naUser').value : '').trim();
         const name = ($('#naName') ? $('#naName').value : '').trim();
         const role = ($('#naRole') ? $('#naRole').value : 'teacher');
+        { const pre = CS.pwOk(role, ($('#naPass') ? $('#naPass').value : '') || ''); if (pre && $('#naPass').value) { if (err) err.textContent = pre; return; } }
         const pw = ($('#naPass') ? $('#naPass').value : '') || '';
         const cf = ($('#naConf') ? $('#naConf').value : '') || '';
         if (!un || /[^A-Za-z0-9_.-]/.test(un)) { if (err) err.textContent = 'Username: letters, numbers, dot, dash or underscore.'; return; }
@@ -5533,7 +5624,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (getAuth().users.some((u) => u.username.toLowerCase() === un.toLowerCase())) { if (err) err.textContent = 'That username is already on this device.'; return; }
         if (pw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
         if (pw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
-        const addErr = addUser(un, pw, name || un, role);
+        const addErr = await addUser(un, pw, name || un, role);
         if (addErr) { if (err) err.textContent = addErr; return; }
         /* share the encrypted markbook with the new account: wrap this browser's
            master key under the new password so their sign-in can unlock it */
@@ -5576,9 +5667,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const auth = getAuth();
         const u = auth.users.find((x) => x.username === un);
         if (!u) { closeDlg(); return; }
-        if (nw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
-        if (nw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
-        u.hash = hashPassword(nw);
+        { const perr = CS.pwOk(u.role, nw); if (perr) { if (err) err.textContent = perr; return; } }
+        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        u.login = await CS.loginWrap(nw);
+        delete u.hash;
+        if (u.keyring) { for (const cid of Object.keys(u.keyring)) { try { u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw); } catch (e) {} } }
         saveAuth(auth);
         const v2 = readV2();
         if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
@@ -5619,7 +5712,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const nw = ($('#mrPass') ? $('#mrPass').value : '') || '';
         const cf = ($('#mrConf') ? $('#mrConf').value : '') || '';
         if (!master) { if (err) err.textContent = 'Enter the master password.'; return; }
-        if (nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
+        { const perr = CS.pwOk('admin', nw); if (perr) { if (err) err.textContent = perr; return; } }
         if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
         const v2 = readV2();
         const w = v2 && v2.wraps && v2.wraps[MASTER_KEY];
@@ -5728,31 +5821,74 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'logout') { doLogout(); return; }
     if (a === 'change-pass-save') {
       (async () => {
-        /* dormant by owner decision (no self-service password changes on a
-           shared device); if ever re-enabled, admin-only by the same rule */
-        if (!isAdmin()) { if ($('#cpErr')) $('#cpErr').textContent = 'Password changes are managed by the admin on this device.'; return; }
+        /* P1.1: self-service for EVERY role. The current password is verified
+           by UNLOCKING (login wrap / v2 wrap) — never against a stored hash —
+           and everything wrapped under the old password is re-wrapped under
+           the new one: v2 master wrap, the login wrap, and every class key in
+           the user's keyring. */
         const err = $('#cpErr');
         const cur = ($('#cpCur') || {}).value || '';
         const nw = ($('#cpNew') || {}).value || '';
         const cf = ($('#cpConf') || {}).value || '';
-        if (!cryptoOK() || !SESSION.dk) { if (err) err.textContent = 'Password change needs the online (https) version.'; return; }
+        if (!SESSION.user) { if (err) err.textContent = 'Sign in first.'; return; }
         const auth = getAuth();
         const me = auth.users.find((u) => u.username === SESSION.user);
-        if (!me || me.hash !== hashPassword(cur)) { if (err) err.textContent = 'Current password is wrong.'; return; }
-        if (!nw || nw.length < 8) { if (err) err.textContent = 'New password must be at least 8 characters.'; return; }
-        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        if (!me) { if (err) err.textContent = 'Account not found.'; return; }
         const v2 = readV2();
-        if (!v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found — sign out and in once first.'; return; }
+        const vres = await verifyUserPw(me, cur, v2);
+        if (!vres.ok) { if (err) err.textContent = 'Current password is wrong.'; return; }
+        const perr = CS.pwOk(me.role, nw);
+        if (perr) { if (err) err.textContent = perr; return; }
+        if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        stashSafetyBackup('before password change');
         try {
-          v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);   // re-key under the new password
+          if (SESSION.dk && v2 && v2.wraps && v2.wraps[me.username]) v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);
+          if (v2) writeV2(v2);
+          if (me.keyring) { for (const cid of Object.keys(me.keyring)) me.keyring[cid] = await CS.rewrapKey(me.keyring[cid], cur, nw); }
+          me.login = await CS.loginWrap(nw);
+          delete me.hash;
+          saveAuth(auth);
+          if (SESSION.pw !== null || SESSION.pw !== undefined) SESSION.pw = nw;
+          for (const cid of Object.keys(SESSION.keys || {})) { try { SESSION.keys[cid] = await CS.unwrapKey(me.keyring[cid], nw); } catch (e) {} }
+          classKeysToSession();
         } catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
-        me.hash = hashPassword(nw);
-        saveAuth(auth);
-        writeV2(v2);
-        try { sessionStorage.setItem('spr-session', JSON.stringify({ user: me.username, dk: b64uFromBytes(SESSION.dk) })); } catch (e) {}
         closeDlg(); toast('Password updated — use it next time you sign in.');
         if (location.hash === '#/manage') renderManage();
       })();
+      return;
+    }
+    if (a === 'dash-review-goto') { location.hash = '#/manage'; return; }
+    if (a === 'review-goto') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem) { DB.currentSemesterId = sem.id; saveDB(); }
+      location.hash = '#/entry/obs'; toast('Find the cell listed under Manage → quarantined scores'); return;
+    }
+    if (a === 'review-discard') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem && Array.isArray(sem.review)) {
+        const all = reviewItems();
+        const idx = Number(el.dataset.i);
+        const target = all[idx];
+        if (target) {
+          sem.review = sem.review.filter((r) => !(r === target.item));
+          saveDB(true); toast('Discarded — the value stays out of every calculation');
+        }
+      }
+      if (location.hash === '#/manage') renderManage(); else renderClasses();
+      return;
+    }
+    if (a === 'change-pass-open') {
+      if (!SESSION.user) return;
+      const me = myUser() || {};
+      const min = (me.role === 'admin' || me.role === 'manager') ? 14 : 8;
+      openDlg(
+        '<h3>Change my password</h3>' +
+        '<p class="small">Works for every role. Your current password is verified by unlocking your keys — nothing is compared against a stored hash. Everything wrapped under the old password (your data key and class keys) is re-wrapped under the new one.</p>' +
+        '<div class="login-field"><label>Current password</label><input type="password" id="cpCur" autocomplete="current-password"></div>' +
+        '<div class="login-field"><label>New password (' + min + '+ characters)</label><input type="password" id="cpNew" autocomplete="new-password"></div>' +
+        '<div class="login-field"><label>Repeat new password</label><input type="password" id="cpConf" autocomplete="new-password"></div>' +
+        '<div class="login-err" id="cpErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-action="change-pass-save">Save new password</button></div>');
       return;
     }
     if (a === 'share-save') {
@@ -6508,6 +6644,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     return { index: ix, blobs: blobs };
   }
+  /* the user projection that travels in sync payloads: credentials for
+     unlocking (login wrap, keyring) but NEVER a password hash. The content
+     digest uses the SAME projection so the sum stays meaningful. */
+  function syncUsers() {
+    return getAuth().users.map(function (u) {
+      const c = { username: u.username, name: u.name, role: u.role, keyring: u.keyring || {} };
+      if (u.login) c.login = u.login;
+      return c;
+    });
+  }
   function dsContentString() {
     /* digest the DECRYPTED content, never the stored ciphertext: sealDB uses a
        fresh random IV on every save, so v2.data is a different string each
@@ -6517,9 +6663,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (sprMode() === 'class') {
       const sums = {};
       for (const c of classIndex()) { try { sums[c.id] = (JSON.parse(localStorage.getItem(classBlobKey(c.id))) || {}).sum || ''; } catch (e) {} }
-      return JSON.stringify({ users: getAuth().users, wraps: v2.wraps || {}, classSums: sums, open: CLS ? { id: CLS.id, pending: classPendingCount(), audit: (DB.audit || []).length } : null });
+      return JSON.stringify({ users: syncUsers(), wraps: v2.wraps || {}, classSums: sums, open: CLS ? { id: CLS.id, pending: classPendingCount(), audit: (DB.audit || []).length } : null });
     }
-    return JSON.stringify({ users: getAuth().users, wraps: v2.wraps || {}, db: DB });
+    return JSON.stringify({ users: syncUsers(), wraps: v2.wraps || {}, db: DB });
   }
   async function dsSum(str) {
     const d = await subtle().digest('SHA-256', new TextEncoder().encode(str));
@@ -6534,7 +6680,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: getAuth().users, v2: v2, v3: classSyncPayload() });
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload() });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
@@ -6668,10 +6814,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       dsSaveCfg(cfg);
     }
   }
-  function dsHashDiffers(obj) {
+  function dsAuthDiffers(obj) {
+    /* hashes are gone: compare the STRUCTURE of my account (role, which class
+       keys I hold, whether a login wrap exists) — not any secret material */
+    const sig = function (u) { return [u.username, u.role, Object.keys(u.keyring || {}).sort().join(','), u.login ? 1 : 0].join('|'); };
     const mine = getAuth().users.find(function (u) { return u.username === SESSION.user; });
     const cloud = (obj.users || []).find(function (u) { return u.username === SESSION.user; });
-    return !mine || !cloud || mine.hash !== cloud.hash;
+    return !mine || !cloud || sig(mine) !== sig(cloud);
   }
   async function dsPullCheck(interactive) {
     /* hold auto-pushes for the whole check INCLUDING the decision dialog —
@@ -6758,7 +6907,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
-      (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
+      (dsAuthDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
     if (!ok) { toast('Kept this device’s copy'); return; }
     stashSafetyBackup('before replacing data');
@@ -6774,7 +6923,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!row) throw new Error('this pairing has no cloud copy yet — sign in on your main device once so it can save one');
     const obj = await dsOpen(row);
     const u = (obj.users || []).find(function (x) { return x.username === username; });
-    if (!u || u.hash !== hashPassword(password)) return false;
+    if (!u || !(await verifyUserPw(u, password, obj.v2))) return false;
     try {
       localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
       localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
@@ -6810,7 +6959,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const keyB64 = pt.key;
       const obj = await dsOpenWith(dataRow, keyB64);
       const u = (obj.users || []).find(function (x) { return x.username === username; });
-      if (!u || u.hash !== hashPassword(password)) return false;
+      if (!u || !(await verifyUserPw(u, password, obj.v2))) return false;
       const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
       return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
     }
@@ -6821,7 +6970,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const keyB64 = b64uFromBytes(keyBytes);
     const obj = await dsOpenWith(row, keyB64);
     const u = (obj.users || []).find(function (x) { return x.username === username; });
-    if (!u || u.hash !== hashPassword(password)) return false;
+    if (!u || !(await verifyUserPw(u, password, obj.v2))) return false;
     return { chan: chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at };
   }
   /* install a verified cloud copy on this device and join its sync channel */
@@ -6972,6 +7121,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
   function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 
+  /* Password verification WITHOUT any stored hash: try (1) the account's
+     login wrap, (2) the v2 master-key wrap, (3) a legacy FNV hash — the last
+     only to migrate pre-P1.1 accounts, and only until they next sign in. */
+  async function verifyUserPw(user, password, v2) {
+    if (user.login && (await CS.verifyLogin(user.login, password))) return { ok: true, via: 'login' };
+    const w = v2 && v2.wraps && v2.wraps[user.username];
+    if (w) { try { await unwrapWrap(w, password); return { ok: true, via: 'v2' }; } catch (e) {} }
+    if (user.hash && user.hash === hashPassword(password)) return { ok: true, via: 'legacy-hash', staleDefault: user.hash === LEGACY_DEFAULT_HASH };
+    return { ok: false };
+  }
   function hashPassword(pw) {
     let h = 0x811c9dc5;
     for (let i = 0; i < pw.length; i++) {
@@ -7036,7 +7195,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (netErr) throw netErr;              /* offline: say so instead of "invalid password" */
         if (dsOn() && pairErr) throw pairErr;  /* e.g. paired, but no cloud copy exists yet */
       }
-    } else if (cryptoOK() && !getAuth().users.some(function (u) { return u.username === username && u.hash === hashPassword(password); })) {
+    } else if (cryptoOK() && !getAuth().users.some(function (u) { return u.username === username; })) {
       /* this browser has its own sign-ins, but the typed account is not one of
          them — it may live in the cloud copy from another system. Ask before
          replacing this browser's data (a backup file is saved first). */
@@ -7054,8 +7213,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       }
     }
     const auth = getAuth();
-    const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
+    const user = auth.users.find((u) => u.username === username);
     if (!user) return { error: 'Invalid username or password.' };
+    const vv2 = readV2();
+    const vres = await verifyUserPw(user, password, vv2);
+    if (!vres.ok) return { error: 'Invalid username or password.' };
+    if (vres.via === 'legacy-hash') {
+      /* one-time migration off the stored hash: safety copy, then a login
+         wrap replaces it (any stale FNV hash leaves this device for good) */
+      stashSafetyBackup('before password-verification migration');
+      user.login = await CS.loginWrap(password);
+      delete user.hash;
+      saveAuth(auth);
+    }
     if (!cryptoOK()) {
       auth.session = { username: user.username, name: user.name, role: user.role };
       saveAuth(auth);
@@ -7117,17 +7287,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     SESSION = { user: null, dk: null, pw: null, keys: {} }; CLS = null; CLS_KEY = null;
     location.reload();
   }
-  function addUser(username, password, name, role) {
+  async function addUser(username, password, name, role) {
     const auth = getAuth();
     if (auth.users.some((u) => u.username === username)) return 'username taken';
-    auth.users.push({ username, hash: hashPassword(password), name, role: role || 'teacher', keyring: {} });
+    const pwErr = CS.pwOk(role || 'teacher', password);
+    if (pwErr) return pwErr;
+    auth.users.push({ username: username, name: name, role: role || 'teacher', keyring: {}, login: await CS.loginWrap(password) });
     saveAuth(auth);
     return null;
   }
   /* create an account AND make it usable: master-key wrap under the same
      password (login requires it), optional class-key wraps added by callers */
   async function provisionUser(username, password, name, role) {
-    const err = addUser(username, password, name, role);
+    const err = await addUser(username, password, name, role);
     if (err) return err;
     if (cryptoOK() && SESSION.dk) {
       try {
@@ -7145,7 +7317,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const auth = getAuth();
     const u = auth.users.find((x) => x.username === username);
     if (!u) return 'no such user';
-    u.hash = hashPassword(password);
+    const pwErr = CS.pwOk(u.role, password);
+    if (pwErr) return pwErr;
+    u.login = await CS.loginWrap(password);
+    delete u.hash;   /* P1.1: hashes are gone for good */
     if (cryptoOK() && SESSION.dk) {
       try {
         const v2 = readV2() || { fmt: 2, wraps: {} };
@@ -7176,7 +7351,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<h2>Set up this browser</h2>' +
           '<p>Starting fresh? Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
           '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
-          '<div class="login-field"><label for="suPass">Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
+          '<div class="login-field"><label for="suPass">Password (14+ characters — this sign-in is the admin)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
@@ -7204,7 +7379,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const auth = getAuth();
     if (auth.users.some((u) => u.username === username)) return { error: 'That username already exists on this device.' };
     if (!cryptoOK()) {
-      auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+      auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
       auth.session = { username: username, name: username, role: 'admin' };
       saveAuth(auth);
       return { user: auth.session };
@@ -7216,10 +7391,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     v2.data = await sealDB(DB, dk);
     writeV2(v2);
     try { localStorage.removeItem(LS_KEY); } catch (e) {}
-    auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
+    auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
     auth.session = { username: username, name: username, role: 'admin' };
     saveAuth(auth);
-    SESSION = { user: username, dk: dk, pw: password };
+    SESSION = { user: username, dk: dk, pw: password, keys: {} };
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
     return { user: auth.session };
   }
@@ -7317,7 +7492,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
-  window.SPR_DEBUG_SET_DB = function (d) { DB = d; };
+  window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
   window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

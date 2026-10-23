@@ -116,3 +116,50 @@ CSV-downloadable). Class keys are issued afterwards via **Pair**.
   migration + grade regression, roster CSV, codecs (122 checks).
 - `tests/test-class-mode.js` — full-browser jsdom walk of the workflow
   described here (46 checks).
+
+## P1.1 hardening — passwords without hashes
+
+- **No password hash is stored or synced, ever.** Each account record carries a
+  *login wrap*: a random token sealed under the password (AES-GCM). Signing in
+  means *unlocking* — a wrong password fails the GCM auth tag. Pre-P1.1
+  accounts that still carry an FNV hash migrate themselves on their next
+  sign-in (safety copy first, then the hash is deleted from that device and
+  never pushed again). The only hash constant left in the code detects the
+  retired public default password during that one-time migration.
+- **Key wrapping is versioned.** New wraps: PBKDF2-SHA256 **600,000**
+  iterations (v2). Old wraps (310k) keep working — the iteration count travels
+  inside each wrap — and are upgraded whenever re-wrapped (e.g. on password
+  change).
+- **Password policy.** Admin and manager passwords need **14+ characters**;
+  teacher roles keep 8. Every role can change their own password
+  (Manage → Change my password): the current password is verified by
+  unlocking, and the data-key wrap plus every class key in the keyring are
+  re-wrapped under the new password. No admin involvement.
+- **Generated one-time passwords** (pairing, roster import) are 20 characters
+  from a 30-symbol no-lookalike alphabet in four groups of five
+  (`xxxxx-xxxxx-xxxxx-xxxxx`) — 98 bits straight from
+  `crypto.getRandomValues`. They satisfy every role policy by construction.
+
+### Residual risk: sync payloads carry other users' keyrings (documented)
+
+The sealed sync envelope contains every account's **wrapped** keyring and login
+wrap, because adoption on a new device must be able to install ANY legitimate
+user of the school (an EAL teacher adopting must receive their own keyring;
+their paired support teacher's keyring must be there when that teacher signs
+in on the same device). All of this travels **encrypted** and each keyring
+stays locked under its owner's password — a device that adopted the payload
+holds everyone's *ciphertext* but can decrypt only what its signed-in user's
+password unlocks. The residual exposure: on a device that adopted the cloud
+copy, any user's password unlocks that user's data — the same as before, but
+worth stating. Keyrings are never published, exported, or logged anywhere
+else. Removing them from payloads would break cross-teacher adoption, so the
+risk is accepted and documented rather than fixed.
+
+### Invalid scores are quarantined, never deleted
+
+When stored data contains an out-of-range score (negative, above the total,
+observation over 10), loading moves it to a per-semester **review list**
+(`sem.review`) instead of deleting it: grades ignore it, a dashboard banner
+points at it, Manage lists each quarantined value with its reason, and a
+safety copy is stashed before anything moves. Discarding an entry removes it
+from the review list only.
