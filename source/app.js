@@ -37,7 +37,7 @@
   const V2_KEY = 'p4c4-markbook-v2';
   const CORRUPT_PREFIX = 'p4c4-markbook-corrupt-';
   let DB = null, saveTimer = null;
-  let SESSION = { user: null, dk: null };   // raw 256-bit master key, memory only (online mode)
+  let SESSION = { user: null, dk: null, pw: null };   // raw 256-bit master key, memory only (online mode); pw = signed-in password, memory only — used to re-wrap the device-sync key so fresh devices can bootstrap by sign-in alone
   function cryptoOK() { return !!(window.crypto && window.crypto.subtle); }
   const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null, anMode: 'class', anStu: null };
 
@@ -51,11 +51,16 @@
     sem.period = sem.period || (m ? m[2].toLowerCase() : null);
     sem.months = (sem.months || []).filter((x, i, a) => a.indexOf(x) === i).sort((a, b) => acadRank(a) - acadRank(b));
     sem.students = sem.students || [];
+    sem.students.forEach((s) => { if (s) s.gender = U.normGender(s.gender); });
     sem.observations = sem.observations || {};
     sem.spelling = sem.spelling || {};
     sem.daily = sem.daily || {};
     sem.tests = sem.tests || {};
     sem.reportNotes = sem.reportNotes || {}; /* teacher-edited report wording (Brief 2) */
+    /* self-heal any invalid stored scores (legacy saves, hand-edited backups);
+       count surfaces in __droppedInvalid (non-enumerable) for a one-time toast */
+    const dropped = C.sanitizeSemester(sem);
+    if (dropped) Object.defineProperty(sem, '__droppedInvalid', { value: dropped, enumerable: false, configurable: true });
     return sem;
   }
   function emptyDB() {
@@ -162,6 +167,26 @@
       a.download = 'SPR-backup-before-replace.json';
       document.body.appendChild(a); a.click(); a.remove();
     } catch (e) {}
+  }
+  /* in-app safety copy kept BEFORE data gets replaced (join link, cloud copy,
+     backup restore). No file lands in Downloads — non-technical teachers saw
+     the sudden .json and lost trust in the app. Last 3 copies, and if the
+     storage quota refuses, fall back to the old file download so a copy is
+     never silently missing. */
+  const SAFETY_KEY = 'spr-safety-backups-v1';
+  function stashSafetyBackup(label) {
+    try {
+      const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
+      list.unshift({ t: Date.now(), label: label || 'before replace', db: DB });
+      while (list.length > 3) list.pop();
+      localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
+      toast('Safety copy kept — Manage → Backups can bring it back');
+      return true;
+    } catch (e) { downloadBackup(); return false; }
+  }
+  function safetyBackups() {
+    try { const l = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]'); return Array.isArray(l) ? l : []; }
+    catch (e) { return []; }
   }
   function persistReplaced(db) {
     validateDB(db);
@@ -890,7 +915,7 @@
       '</div></div>';
   }
   function tdAvg(id, v, cls) {
-    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + id + '"><strong>' + fmt(v, 1) + '</strong></td>';
+    return '<td class="avg' + (cls ? ' ' + cls : '') + (v !== null && v < 50 ? ' low' : '') + '" id="' + U.esc(id) + '"><strong>' + fmt(v, 1) + '</strong></td>';
   }
   function setAvgCell(id, v) {
     const td = document.getElementById(id);
@@ -917,7 +942,7 @@
       let ci = 0;
       for (const sk of SKILLS) for (const lo of [1, 2]) {
         const v = C.obsValue(sem, s.id, month, sk, lo);
-        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="obs" data-sid="' + U.esc(s.id) + '" data-month="' + U.esc(month) + '" data-key="' + sk + '-LO' + lo + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
@@ -983,10 +1008,10 @@
       for (let w = 1; w <= 5; w++) for (const f of ['s', 't']) {
         const e = sem[metKey][s.id] && sem[metKey][s.id][month] && sem[metKey][s.id][month][w];
         const v = e ? e[f] : null;
-        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="week" data-sid="' + U.esc(s.id) + '" data-met="' + metKey + '" data-w="' + w + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
-      tds += tdAvg('mavg-' + U.esc(s.id), C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
+      tds += tdAvg('mavg-' + s.id, C.weeklyMonthPct(sem, s.id, metKey, month), 'sep');
       tds += tdAvg('savg-' + s.id, C.weeklySemesterPct(sem, s.id, metKey));
       return '<tr>' + tds + '</tr>';
     }).join('');
@@ -1035,13 +1060,13 @@
       for (const b of TEST_BLOCKS) for (const f of ['s', 't']) {
         const t = sem.tests[s.id] && sem.tests[s.id][b[0]];
         const v = t ? t[f] : null;
-        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + (v === null || v === undefined ? '' : v) + '"></td>';
+        tds += '<td><input class="cell" data-kind="test" data-sid="' + U.esc(s.id) + '" data-tp="' + b[0] + '" data-f="' + f + '" data-ri="' + ri + '" data-ci="' + ci + '" inputmode="decimal" value="' + U.esc(v === null || v === undefined ? '' : String(v)) + '"></td>';
         ci++;
       }
       const g = C.gradeStudent(sem, s.id);
       for (const b of TEST_BLOCKS) tds += tdAvg('tp-' + b[0] + '-' + s.id, C.testPct(sem, s.id, b[0]));
       tds += '<td class="avg sep" id="tfin-' + U.esc(s.id) + '">' + (gateOk(g) ? '<strong>' + fmt(g.final, 1) + (gateFinal(g) ? '' : ' <span class="small muted">P' + nOf9(g) + '/9</span>') + '</strong>' : '<span class="muted small">' + nOf9(g) + '/9</span>') + '</td>';
-      tds += '<td class="avg" id="tgl-' + s.id + '">' + gradeCell(g) + '</td>';
+      tds += '<td class="avg" id="tgl-' + U.esc(s.id) + '">' + gradeCell(g) + '</td>';
       return '<tr>' + tds + '</tr>';
     }).join('');
 
@@ -1112,35 +1137,52 @@
 
     if (kind === 'obs') {
       const sid = el.dataset.sid, month = el.dataset.month, key = el.dataset.key;
+      /* out-of-range scores are refused, not stored (D5/D6): the cell stays
+         flagged red with the teacher's text in it until they fix it */
+      if (v !== null && !C.validObs(v)) { el.classList.add('invalid'); v = null; }
+      else el.classList.remove('invalid');
       setObsCell(sem, sid, month, key, v);
-      if (v !== null && (v < 0 || v > 10)) el.classList.add('invalid');
       updateObsRow(sem, sid);
       updateObsFooters(sem);
     } else if (kind === 'week') {
       const sid = el.dataset.sid, met = el.dataset.met, w = el.dataset.w, f = el.dataset.f;
       const metric = met === 'spelling' ? 'sp' : 'da';
       const month = ui.entryMonth[metric];
-      setWeekCell(sem, sid, met, month, w, f, v);
-      if (f === 's' && v !== null && DB.settings.autoTotal) {
-        const rec = getWeek(sem, sid, met, month, w);
-        if (!rec || rec.t === null) {
-          const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
-          setWeekCell(sem, sid, met, month, w, 't', def);
-          const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
-          if (ti) ti.value = def;
+      const rec0 = getWeek(sem, sid, met, month, w);
+      const def = met === 'spelling' ? Number(DB.settings.spTotal) : Number(DB.settings.daTotal);
+      /* refuse the edit that breaks validity (D5/D6): negative/non-finite score,
+         unusable total, score above the total it will be measured against
+         (incl. the auto-filled default) — the stored value stays as it was */
+      const effT = (rec0 && rec0.t !== null && rec0.t !== undefined) ? rec0.t
+        : (DB.settings.autoTotal && C.validTotal(def) ? def : null);
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (effT !== null && v > effT))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && v < rec0.s))));
+      if (refused) {
+        el.classList.add('invalid');
+      } else {
+        weekInputs(sid, met, w).forEach((x) => x.classList.remove('invalid'));
+        setWeekCell(sem, sid, met, month, w, f, v);
+        if (f === 's' && v !== null && DB.settings.autoTotal && C.validTotal(def)) {
+          const rec = getWeek(sem, sid, met, month, w);
+          if (!rec || rec.t === null) {
+            setWeekCell(sem, sid, met, month, w, 't', def);
+            const ti = weekInputs(sid, met, w).find((x) => x.dataset.f === 't');
+            if (ti) ti.value = def;
+          }
         }
       }
-      const rec = getWeek(sem, sid, met, month, w);
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      weekInputs(sid, met, w).forEach((x) => x.classList.toggle('invalid', !!bad));
       updateWeekRow(sem, sid, met);
       updateWeekFooters(sem, met);
     } else if (kind === 'test') {
       const sid = el.dataset.sid, tp = el.dataset.tp, f = el.dataset.f;
-      setTestCell(sem, sid, tp, f, v);
-      const rec = sem.tests[sid] && sem.tests[sid][tp];
-      const bad = rec && rec.s !== null && rec.t !== null && rec.s > rec.t;
-      $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp).forEach((x) => x.classList.toggle('invalid', !!bad));
+      const rec0 = sem.tests[sid] && sem.tests[sid][tp];
+      const refused = v !== null && (
+        (f === 's' && (!C.validScore(v) || (rec0 && rec0.t !== null && rec0.t !== undefined && v > rec0.t))) ||
+        (f === 't' && (!C.validTotal(v) || (rec0 && rec0.s !== null && rec0.s !== undefined && v < rec0.s))));
+      const tps = $$('input[data-kind="test"]').filter((x) => x.dataset.sid === sid && x.dataset.tp === tp);
+      if (refused) el.classList.add('invalid');
+      else { tps.forEach((x) => x.classList.remove('invalid')); setTestCell(sem, sid, tp, f, v); }
       updateTestRow(sem, sid);
       updateTestFooters(sem);
     }
@@ -1249,7 +1291,8 @@
       else if (f.length === 2) { cn = f[0]; en = f[1]; }
       else { en = f[0]; }
       if (!id) id = 'STU-' + String(out.length + 1).padStart(3, '0');
-      if (g === '男') g = 'M'; else if (g === '女') g = 'F';
+      id = id.replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || 'STU';   // same id rule as Excel import
+      g = U.normGender(g);
       if (en || cn) out.push({ id: id, nameCn: cn, nameEn: en, gender: g });
     });
     return out;
@@ -1402,6 +1445,13 @@
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b> — store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
+      (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
+        '<b>Safety copies</b> <span class="small muted">— kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
+        safetyBackups().map((b, i) => '<div class="flex" style="margin-top:6px;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + ((b.db || {}).semesters || []).length + ' class(es)</span>' +
+          '<button class="btn sm" data-action="sb-restore" data-i="' + i + '">Restore</button>' +
+          '<button class="btn sm danger" data-action="sb-del" data-i="' + i + '">Delete</button></div>').join('') +
+        '</div>' : '') +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
@@ -1444,13 +1494,16 @@
       ((currentUser() || {}).role === 'admin' ?
         '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b> — the accounts that can open this browser\u2019s data. <b>Admin</b> sees and controls everything; <b>Management</b> also sees the Ranking view; <b>Teachers</b> get the everyday markbook tools. Add a sign-in to give someone their own password here.</p>' +
         (getAuth().users.length ?
-        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col"></th></tr></thead><tbody>' +
+        '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col">Any system</th><th scope="col"></th></tr></thead><tbody>' +
         getAuth().users.map((u) => {
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
+          const dsc = dsCfg();
+          const ptrOk = u.role === 'admin' ? dsOn() : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
+            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + (u.role === 'admin' ? '' : ' — reset password to enable') + '</span>') + '</td>' +
             '<td>' + (selfNow ? '' :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
@@ -1465,9 +1518,9 @@
           ? '<button class="btn sm" data-action="master-set-open">Replace master password</button> <button class="btn sm danger" data-action="master-del">Remove master password</button>'
           : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
-      (cryptoOK() && (currentUser() || {}).role === 'admin' ? dsManageCard() : '') +
+      ((currentUser() || {}).role === 'admin' && cryptoOK() ? dsManageCard() : '') +
       (cryptoOK() && (currentUser() || {}).role !== 'admin' && dsOn()
-        ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b> — your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator (mo) manages this channel.</p></div>'
+        ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b> — your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator manages this channel.</p></div>'
         : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Share &amp; sync — two teachers, one dataset</h3>' +
       (function () {
@@ -1529,11 +1582,12 @@
   }
   function rosterAdd() {
     const sem = cur();
-    const id = $('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0'));
+    const id = ($('#ro-id').value.trim() || ('STU-' + String(sem.students.length + 1).padStart(3, '0')))
+      .replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40);
     const cn = $('#ro-cn').value.trim(), en = $('#ro-en').value.trim();
     if (!cn && !en) { toast('Enter at least one name', true); return; }
     if (sem.students.some((s) => s.id === id)) { toast('ID already used: ' + id, true); return; }
-    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: $('#ro-g').value });
+    sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: U.normGender($('#ro-g').value) });
     saveDB(); renderManage(); toast((en || cn) + ' added');
   }
   function rosterBulk() {
@@ -2027,7 +2081,7 @@
     let students = [];
     if (mode === 'copy') {
       const src = DB.semesters.find((s) => s.id === $('#wiz-copyfrom').value);
-      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: s.gender }));
+      if (src) students = src.students.map((s) => ({ id: s.id, nameCn: s.nameCn, nameEn: s.nameEn, gender: U.normGender(s.gender) }));
     } else if (mode === 'paste') {
       students = parseRosterPaste($('#wiz-paste').value);
     }
@@ -2081,13 +2135,15 @@
       reader.onload = () => {
         try {
           const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
-          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name) }));
+          const warnings = [];
+          const sem = normalizeSemester(EB.importWorkbook(wb, { id: U.uid('sem'), name: EB.suggestNameFromFilename(file.name), warnings: warnings }));
           sem.students.forEach((st) => { st.id = String(st.id == null ? '' : st.id).replace(/[^A-Za-z0-9_\-]/g, '-').slice(0, 40) || U.uid('stu'); });
           const dup = sem.students.filter((st, i) => sem.students.findIndex((x) => x.id === st.id) !== i);
           if (dup.length) throw new Error('duplicate student IDs after sanitising: ' + dup[0].id);
           validateDB({ semesters: [sem], settings: {} });
           const tm = String(file.name).match(/\(([^)]+)\)/);
           if (tm && !sem.teachers.length) sem.teachers = tm[1].split(/\s*[&,、]\s*/).map((t) => t.trim()).filter((t) => t && t.length <= 40);
+          if (warnings.length) toast('Imported with ' + warnings.length + ' invalid score' + (warnings.length > 1 ? 's' : '') + ' ignored — check the class details', true);
           resolve(sem);
         } catch (err) { reject(err); }
       };
@@ -2156,18 +2212,20 @@
         validateDB(d);
         /* replacing everything deserves a clear question first */
         const okRestore = await confirmDlg('Replace everything with this backup?',
-          'This backup holds <b>' + d.semesters.length + ' semester(s)</b> and will <b>replace all classes currently in this browser</b> (' + DB.semesters.length + ' now).<br><br>Your current data is saved to a file (SPR-backup-before-replace.json) as a safety copy — keep it somewhere you can find it.',
+          'This backup holds <b>' + d.semesters.length + ' semester(s)</b> and will <b>replace all classes currently in this browser</b> (' + DB.semesters.length + ' now).<br><br>Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
           'Replace');
         if (!okRestore) { toast('Restore cancelled — nothing was changed'); return; }
-        downloadBackup();
-        d.semesters.forEach(normalizeSemester);
+        stashSafetyBackup('before restoring a backup file');
+        let healed = 0;
+        d.semesters.forEach((sm) => { normalizeSemester(sm); healed += (sm.__droppedInvalid || 0); });
         const pairCfg = d.__sprPair; if (pairCfg) delete d.__sprPair;
         d.settings = Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, d.settings || {});
         d.credit = d.credit || 'Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)';
         d.author = d.author || 'Mohammed Shehzad Khan (Teacher Mo)';
         DB = d;
         if (!DB.semesters.find((s) => s.id === DB.currentSemesterId)) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
-        saveDB(true); buildShell(); location.hash = '#/dashboard'; route(); toast('Backup restored');
+        saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
+        toast('Backup restored' + (healed ? ' — ' + healed + ' invalid score' + (healed > 1 ? 's' : '') + ' removed' : ''));
         if (pairCfg && pairCfg.channel && pairCfg.key) dsPair(pairCfg.channel, pairCfg.key);
       } catch (err) { toast('Restore failed: ' + err.message, true); }
     };
@@ -2183,6 +2241,8 @@
     if (el.tagName === 'A' && el.getAttribute('href') === '#') e.preventDefault();
     const a = el.dataset.action;
     const sem = cur();
+    if (a === 'show-setup') { loginSetupMode = true; renderLogin(); return; }
+    if (a === 'show-signin') { loginSetupMode = false; renderLogin(); return; }
     if (a === 'first-run') {
       const un = ($('#suUser') ? $('#suUser').value : '').trim();
       const pw = ($('#suPass') ? $('#suPass').value : '') || '';
@@ -2217,15 +2277,39 @@
         saveAuth(auth);
         const v2 = readV2();
         if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
+        await dsKillPointer(un);
+        if (dsCanPush()) scheduleSyncPush();   /* the removed account must leave the data row too */
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
     }
+    if (a === 'sb-restore') {
+      (async () => {
+        const list = safetyBackups();
+        const b = list[Number(el.dataset.i)];
+        if (!b || !b.db) { toast('That safety copy is gone', true); return; }
+        const okGo = await confirmDlg('Restore this safety copy?',
+          'Your data from <b>' + new Date(b.t).toLocaleString() + '</b> (' + ((b.db || {}).semesters || []).length + ' classes) will replace what is here now. Today&rsquo;s data is kept as a new safety copy.', 'Restore');
+        if (!okGo) return;
+        stashSafetyBackup('before restoring a safety copy');
+        persistReplaced(JSON.parse(JSON.stringify(b.db)));
+      })();
+      return;
+    }
+    if (a === 'sb-del') {
+      const list = safetyBackups();
+      const i = Number(el.dataset.i);
+      if (!list[i]) return;
+      list.splice(i, 1);
+      try { localStorage.setItem(SAFETY_KEY, JSON.stringify(list)); } catch (e) {}
+      if (location.hash === '#/manage') renderManage();
+      return;
+    }
     if (a === 'acct-add-open') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Add a sign-in</h3>' +
-        '<p class="small">Creates an account with its own password that opens this same markbook on this device. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
+        '<p class="small">Creates an account with its own password that opens this same markbook. With device sync on, it also works on any other system — the teacher signs in and the same data arrives. <b>Teacher</b> — the everyday markbook tools. <b>Management</b> — also sees the Ranking view across every workbook.</p>' +
         '<label>Username <input class="inp" id="naUser" placeholder="e.g. ZFYBLS" autocomplete="off"></label>' +
         '<label>Display name <input class="inp" id="naName" placeholder="shown on the sidebar (optional)"></label>' +
         '<label>Role <select class="inp" id="naRole"><option value="teacher">Teacher</option><option value="management">Management</option></select></label>' +
@@ -2262,7 +2346,11 @@
           } catch (e2) { if (err) err.textContent = 'Account created, but key wrapping failed: ' + e2.message; return; }
         }
         closeDlg();
-        toast('Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
+        const ptr = await dsWritePointer(un, pw);
+        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new account hash in the data row */
+        toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') — works on any system they sign in from'
+             : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
+             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -2300,8 +2388,13 @@
             writeV2(v2);
           } catch (e2) { if (err) err.textContent = 'Saved, but re-keying failed: ' + e2.message; return; }
         }
+        if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
+        const ptr = await dsWritePointer(un, nw);
+        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
         closeDlg();
-        toast('Password updated for ' + un);
+        toast(ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
+             : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
+             : 'Password updated for ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -2423,7 +2516,7 @@
       (async () => {
         try {
           const res = await doLoginFull(u, p);
-          if (res.error) { $('#loginErr').textContent = res.error; return; }
+          if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
@@ -2484,6 +2577,9 @@
     if (a === 'ds-enable') { dsEnable(); return; }
     if (a === 'ds-now') { dsPullCheck(true); return; }
     if (a === 'ds-link') { dsLinkModal(); return; }
+    if (a === 'ds-ding') { const i = $('#dsLinkInp'); if (i) dingtalkOpen(i.value); return; }
+    if (a === 'share-chatmsg') { const i = $('#shareLink'); if (i) copyChatMessage(i.value, 'SPR class markbook — tap to open and join our class:'); return; }
+    if (a === 'share-ding') { const i = $('#shareLink'); if (i) dingtalkOpen(i.value); return; }
     if (a === 'ds-off') { dsOff(false); return; }
     if (a === 'ds-off-del') { dsOff(true); return; }
     if (a === 'ds-copy') {
@@ -2815,12 +2911,15 @@
     openDlg(
       '<h3>Share this class</h3>' +
       '<p class="small">Send the link to your co-teacher, or let them scan the code with a phone camera. Anyone who has it can open this class — share it only with them.</p>' +
+      (shareAppHint() ? '<p class="small" style="margin-top:-6px">' + shareAppHint() + '</p>' : '') +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        (navigator.share ? '<button class="btn primary" data-action="share-native">Share…</button>' : '') +
+        '<button class="btn primary" data-action="share-chatmsg">Copy for DingTalk / WeChat</button>' +
+        (navigator.share ? '<button class="btn" data-action="share-native">Share…</button>' : '') +
         '<button class="btn" data-action="share-copy">Copy link</button>' +
+        '<button class="btn" data-action="share-ding">Open in DingTalk</button>' +
         '<button class="btn" data-x="close">Close</button></div>' +
         '<p class="small muted" style="margin-top:8px">' + (navigator.share
           ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…).'
@@ -2920,7 +3019,7 @@
       openDlg(
         '<h3>Cloud was updated after your last sync</h3>' +
         '<p class="small">The cloud copy was pushed by <b>' + U.esc(who) + '</b> at ' + U.esc(when) + '. Pushing now would <b>overwrite their newer copy with your older one</b> — sync is last-save-wins.</p>' +
-        '<p class="small"><b>Pull first</b> to get their changes (a backup of your current data downloads too). Push anyway only if you are sure their copy is outdated.</p>' +
+        '<p class="small"><b>Pull first</b> to get their changes (your current copy is kept as a safety copy — Manage &rarr; Backups). Push anyway only if you are sure their copy is outdated.</p>' +
         '<div class="dlg-actions">' +
           '<button class="btn" data-x="2">Cancel</button>' +
           '<button class="btn danger" data-x="1">Push anyway</button>' +
@@ -2955,9 +3054,9 @@
           const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
           const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
           const okGo = await confirmDlg('Open shared copy?',
-            'This will update <b>' + U.esc(nm) + '</b> in this browser with the copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your other classes are untouched. A backup downloads first.', 'Open it');
+            'This will update <b>' + U.esc(nm) + '</b> in this browser with the copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your other classes are untouched. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Open it');
           if (!okGo) return;
-          downloadBackup();
+          stashSafetyBackup('before replacing data');
           c.lastPull = new Date().toISOString(); setShare(c);
           mergeSharedSem(obj.sem);
           toast('Shared copy loaded');
@@ -2965,9 +3064,9 @@
           validateDB(obj.db);
           const when = row.pushed_at ? new Date(row.pushed_at).toLocaleString() : 'unknown time';
           const okGo = await confirmDlg('Open shared copy?',
-            'This shared channel carries a <b>whole workbook</b>. Opening it will <b>REPLACE all data in this browser</b> with the cloud copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. A backup of your current data downloads first.', 'Open & replace');
+            'This shared channel carries a <b>whole workbook</b>. Opening it will <b>REPLACE all data in this browser</b> with the cloud copy saved by <b>' + U.esc(row.pushed_by || 'someone') + '</b> at ' + when + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Open & replace');
           if (!okGo) return;
-          downloadBackup();
+          stashSafetyBackup('before replacing data');
           c.lastPull = new Date().toISOString(); setShare(c);
           persistReplaced(obj.db);
         } else throw new Error('cloud copy has no class data');
@@ -2986,9 +3085,9 @@
       validateDB(obj.db);
       const when = (obj.pushedAt || env.pushedAt) ? new Date(obj.pushedAt || env.pushedAt).toLocaleString() : 'unknown time';
       const okGo = await confirmDlg('Pull from cloud?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. A backup of your current data downloads first.', 'Pull & replace');
+        'This will <b>REPLACE all data in this browser</b> with the cloud copy pushed by <b>' + U.esc(env.pushedBy || 'someone') + '</b> at ' + when + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Pull & replace');
       if (!okGo) return;
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       c.lastPull = new Date().toISOString(); setShare(c);
       persistReplaced(obj.db);
     } catch (e) { toast('Pull failed: ' + e.message, true); }
@@ -3004,9 +3103,9 @@
       if (!obj.db || !Array.isArray(obj.db.semesters)) throw new Error('cloud copy has no class data');
       validateDB(obj.db);
       const okGo = await confirmDlg('Join shared workbook?',
-        'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. A backup of your current data downloads first. Future Push/Pull uses this bin.', 'Join');
+        'This will <b>REPLACE all data in this browser</b> with the cloud copy' + (env.pushedBy ? ' pushed by <b>' + U.esc(env.pushedBy) + '</b>' : '') + '. Your current data is kept as a safety copy you can restore (Manage &rarr; Backups). Future Push/Pull uses this bin.', 'Join');
       if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       setShare({ bin: id, key: keyB64 || null, lastPull: new Date().toISOString() });
       history.replaceState(null, '', location.pathname + location.search);
       persistReplaced(obj.db);
@@ -3028,9 +3127,9 @@
       normalizeSemester(obj.sem);
       const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
       const okGo = await confirmDlg('Join shared class?',
-        'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. A backup downloads first.', 'Join');
+        'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Join');
       if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
-      downloadBackup();
+      stashSafetyBackup('before replacing data');
       setShare({ provider: 'sb', channel: channel, key: keyB64 || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
       history.replaceState(null, '', location.pathname + location.search);
       mergeSharedSem(obj.sem);
@@ -3052,20 +3151,102 @@
      Whole-database cloud mirror for the admin. The complete encrypted state
      (accounts + wrapped data keys + sealed workbook) is AES-GCM sealed under a
      random 256-bit sync key; only unreadable ciphertext reaches the cloud row.
-     The key travels ONLY inside the pairing link (#pair=<channel>&k=<key>) and
-     inside JSON backups. Automatic: debounced push after every save, pull-check
-     on admin sign-in. Last save wins; every payload carries a content digest
-     and an HMAC so tampered or identical copies are detected. */
+     The channel id is derived from the admin's username (dsChan), and the sync
+     key itself is stored inside the row wrapped under the admin's login
+     password (PBKDF2-310k, the same wrapping used for the local vault). So a
+     fresh device needs NOTHING but the admin username + password: sign in and
+     the whole markbook arrives. The pairing link (#pair=<channel>&k=<key>) and
+     JSON backups remain as alternative ways to carry the key. Automatic:
+     debounced push after every save, pull-check on admin sign-in. Last save
+     wins; every payload carries a content digest and an HMAC so tampered or
+     identical copies are detected. */
   const DS_KEY = 'spr-devicesync-v1';
+  const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* account-derived channel id: stable across password changes, guessable
+     only with the username — everything inside is sealed, so an id match
+     reveals nothing without the password (which is needed to unwrap the key) */
+  async function dsChan(username) {
+    /* deterministic UUID: spr_channels.id is a Postgres uuid column, so the
+       id must be uuid-shaped (a tag like 'ds1-…' is rejected with 22P02).
+       NOTE: the variant group must be built from the NUMBER — wrapping it in
+       String() first makes .toString(16) a no-op (String.toString ignores the
+       radix) and emits a 5-char DECIMAL group Postgres rejects. */
+    const d = await subtle().digest('SHA-256', new TextEncoder().encode('spr-ds1:chan:' + String(username).trim().toLowerCase()));
+    const hex = Array.from(new Uint8Array(d), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    const variant = ((parseInt(hex.slice(16, 20), 16) & 0x3fff) | 0x8000).toString(16).padStart(4, '0');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + variant + '-' + hex.slice(20, 32);
+  }
   function dsCfg() { try { const c = JSON.parse(localStorage.getItem(DS_KEY)); return (c && c.channel && c.key) ? c : null; } catch (e) { return null; } }
+  /* ---- teacher bootstrap pointers ----
+     The data row lives at dsChan(ADMIN). A teacher's fresh-browser sign-in
+     knows only the teacher's username, so it looks at dsChan(teacher) — which
+     holds a tiny pointer: {chan, key} of the school row, sealed under the
+     teacher's own password (PBKDF2-310k). Written when the admin creates or
+     resets the sign-in (the only moments the plaintext password is available);
+     removed with the account. Attacking a pointer = brute-forcing the
+     password; swapping rows buys nothing — the sealed payload won't unwrap
+     under the real teacher's password and the data row's account hashes are
+     verified after decryption. */
+  async function ptrSeal(obj, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const bits = await deriveKeyBits(password, salt);
+    const key = await subtle().importKey('raw', bits, 'AES-GCM', false, ['encrypt']);
+    const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj))));
+    return { sprPTR: 1, salt: b64uFromBytes(salt), iv: b64uFromBytes(iv), ct: b64uFromBytes(ct) };
+  }
+  async function ptrOpen(payload, password) {
+    const bits = await deriveKeyBits(password, bytesFromB64u(payload.salt));
+    const key = await subtle().importKey('raw', bits, 'AES-GCM', false, ['decrypt']);
+    const pt = await subtle().decrypt({ name: 'AES-GCM', iv: bytesFromB64u(payload.iv) }, key, bytesFromB64u(payload.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  /* returns 'ok' | 'name-taken' | 'off' (sync not on / not this account's device) */
+  async function dsWritePointer(username, password) {
+    const cfg = dsCfg();
+    if (!dsOn() || !cfg || cfg.adoptedAcct !== true || !SESSION.dk) return 'off';
+    try {
+      const id = await dsChan(username);
+      const env = await ptrSeal({ chan: cfg.channel, key: cfg.key }, password);
+      const known = !!(cfg.pointers && cfg.pointers[username]);
+      if (!known) {
+        /* first write must INSERT: a 409 means this username is already taken
+           in the SPR cloud by another school — never overwrite their pointer */
+        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), true);
+        if (res !== 'ok') return 'name-taken';
+      } else {
+        /* re-seal (password reset): PATCH our own row, then verify it landed —
+           PostgREST reports success even when the id matches zero rows */
+        await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), false);
+        const back = await sbGet(id);
+        if (!back || !back.payload || back.payload.ct !== env.ct) {
+          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in — ' + username, new Date().toISOString(), true);
+          if (res !== 'ok') return 'name-taken';
+        }
+      }
+      cfg.pointers = cfg.pointers || {};
+      cfg.pointers[username] = new Date().toISOString();
+      dsSaveCfg(cfg);
+      return 'ok';
+    } catch (e) { return 'off'; }
+  }
+  async function dsKillPointer(username) {
+    const cfg = dsCfg();
+    if (cfg && cfg.pointers) { delete cfg.pointers[username]; dsSaveCfg(cfg); }
+    try { await dsKillRow(await dsChan(username)); } catch (e) {}
+  }
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
   function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
   function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
   /* sync transport runs for EVERY signed-in user on a paired device (the
-     markbook is shared); channel CONTROL (enable/off/delete/pairing link)
-     stays admin-only */
+     markbook is shared by the whole school); channel CONTROL (enable / turn
+     off / delete / pairing link) stays admin-only */
   function dsSyncActive() { return !!(cryptoOK() && SESSION && SESSION.dk && SESSION.user); }
+  /* a legacy pre-account pairing (random channel, no adoptedAcct flag) keeps
+     admin-only pushes until an admin's fresh sign-in migrates the channel to
+     the account home — a teacher must never fork a second cloud island */
+  function dsCanPush() { return dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
   function dsDeviceName() {
     const c = dsCfg(); if (c && c.device) return c.device;
     const ua = navigator.userAgent || '';
@@ -3074,6 +3255,33 @@
     return b + ' · ' + os;
   }
   function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) + '&k=' + encodeURIComponent(c.key) : null; }
+  /* ---- China-app aware sharing (DingTalk / WeChat) ----
+     No third-party JS-SDK: WeChat requires a verified公众号 + ICP domain and
+     DingTalk an enterprise app registration. What works everywhere without
+     registrations: paste-ready chat messages (the way teachers actually
+     share), QR codes (both apps scan natively), the OS share sheet on
+     phones, and a DingTalk deep link to open the page inside DingTalk. */
+  function inWeChat() { return /MicroMessenger/i.test(navigator.userAgent || ''); }
+  function inDingTalk() { return /DingTalk/i.test(navigator.userAgent || ''); }
+  function copyChatMessage(url, message) {
+    const text = message + '\n' + url;
+    const done = () => toast('Copied — paste it into your DingTalk or WeChat chat');
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); }); return; }
+    fallbackCopy(text); done();
+  }
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+  function dingtalkOpen(url) { location.href = 'dingtalk://dingtalkclient/page/link?url=' + encodeURIComponent(url) + '&pc_slide=true'; }
+  function shareAppHint() {
+    if (inWeChat()) return 'You are inside WeChat: tap <b>&hellip;</b> (top right) &rarr; <b>Send to friend</b> to forward this page, or long-press the code to scan it from another phone.';
+    if (inDingTalk()) return 'You are inside DingTalk: tap <b>&hellip;</b> (top right) &rarr; <b>Forward</b> to send this page to a colleague.';
+    return '';
+  }
   /* native share sheet (WeChat / WhatsApp / QQ / email…) where the platform
      provides one — phones; computers keep Copy + QR */
   function shareNative(url) {
@@ -3083,8 +3291,12 @@
   }
   /* stable content digest: everything except volatile timestamps */
   function dsContentString() {
+    /* digest the DECRYPTED content, never the stored ciphertext: sealDB uses a
+       fresh random IV on every save, so v2.data is a different string each
+       time even when nothing changed — digesting it made every device see the
+       cloud copy as "newer" (false-positive dialogs, pointless re-pushes) */
     const v2 = readV2() || { fmt: 2, wraps: {} };
-    return JSON.stringify({ users: getAuth().users, v2: { fmt: v2.fmt, wraps: v2.wraps || {}, data: v2.data || null } });
+    return JSON.stringify({ users: getAuth().users, wraps: v2.wraps || {}, db: DB });
   }
   async function dsSum(str) {
     const d = await subtle().digest('SHA-256', new TextEncoder().encode(str));
@@ -3094,7 +3306,7 @@
     const k = await subtle().importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     return b64uFromBytes(new Uint8Array(await subtle().sign('HMAC', k, ctBytes)));
   }
-  async function dsSeal() {
+  async function dsSeal(wrap) {
     const cfg = dsCfg();
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
@@ -3103,13 +3315,17 @@
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    return { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    /* the wrap lets a fresh device unwrap this sync key with nothing but the
+       admin username + password; refreshed on every push made during a fresh
+       sign-in, carried forward unchanged otherwise */
+    if (wrap) env.wrap = wrap;
+    return env;
   }
-  async function dsOpen(row) {
+  async function dsOpenWith(row, keyB64) {
     const env = row && row.payload;
     if (!env || env.sprDS !== 1) throw new Error('that cloud row is not a device-sync copy');
-    const cfg = dsCfg(); if (!cfg) throw new Error('device sync is not set up on this browser');
-    const keyBytes = bytesFromB64u(cfg.key);
+    const keyBytes = bytesFromB64u(keyB64);
     const ctBytes = bytesFromB64u(env.ct);
     const mac = await dsHmac(keyBytes, ctBytes);
     if (mac !== env.mac) throw new Error('the cloud copy failed its integrity check (wrong pairing key, or the row was tampered with)');
@@ -3118,6 +3334,10 @@
     const obj = JSON.parse(new TextDecoder().decode(pt));
     if (!obj || obj.sprDS !== 1 || !Array.isArray(obj.users) || !obj.v2) throw new Error('the cloud copy is damaged');
     return obj;
+  }
+  async function dsOpen(row) {
+    const cfg = dsCfg(); if (!cfg) throw new Error('device sync is not set up on this browser');
+    return dsOpenWith(row, cfg.key);
   }
   function dsInstall(obj) {
     try {
@@ -3128,28 +3348,71 @@
     location.reload();
   }
   function scheduleSyncPush() {
-    if (!dsOn() || !dsSyncActive()) return;
+    if (!dsCanPush()) return;
     clearTimeout(dsTimer);
     dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
   }
   function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
-  async function dsPushNow(interactive) {
-    if (!dsOn() || !dsSyncActive()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
-    const cfg = dsCfg();
+  /* tombstone-first row removal (a DELETE the row policy ignores still says
+     204 in PostgREST, so overwrite the payload with a dead marker first) */
+  async function dsKillRow(id) {
+    if (!id) return false;
     try {
-      const env = await dsSeal();
-      const row = await sbGet(cfg.channel).catch(function () { return null; });
-      if (row && row.payload && row.payload.sum === env.sum) {
+      const r = await sbSave(id, { sprDS: 0, dead: 1 }, 'devicesync', 'turned off', new Date().toISOString(), false);
+      if (r !== 'ok') return false;
+      try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: sbHeaders() }); } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  async function dsPushNow(interactive) {
+    if (!dsCanPush()) return false;
+    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    let cfg = dsCfg();
+    try {
+      /* the cloud home is derived from the OWNER (admin) account, so every
+         device — and every teacher signed in on a paired device — pushes to
+         the same single row without any link sharing; a legacy random-channel
+         pairing migrates here on the first admin sign-in */
+      const owner = (cfg && cfg.adoptedAcct && cfg.owner) ? cfg.owner : SESSION.user;
+      const chan = await dsChan(owner);
+      const row = await sbGet(chan).catch(function () { return null; });
+      let wrap = null;
+      if (cfg && cfg.key && SESSION.pw && SESSION.user === owner) {
+        try { wrap = await makeWrap(bytesFromB64u(cfg.key), SESSION.pw); } catch (e) { wrap = null; }
+      }
+      if (!wrap && row && row.payload && row.payload.wrap) wrap = row.payload.wrap;   /* carry forward until the owner signs in fresh */
+      const env = await dsSeal(wrap);
+      /* same-content rows still get one repair write when this fresh sign-in can
+         add the password wrap the row lacks — without it, a brand-new device
+         cannot bootstrap by sign-in alone */
+      const wrapRepair = !!(wrap && row && row.payload && row.payload.sprDS === 1 && !row.payload.wrap);
+      /* never clobber a copy sealed under a DIFFERENT sync key (device sync
+         enabled independently on two systems): that row belongs to another
+         setup — open it (adopt) instead of overwriting it with this device's
+         data */
+      if (row && row.payload && row.payload.sprDS === 1 && !row.payload.dead && cfg && cfg.key) {
+        let rowOurs = true;
+        try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
+        catch (e) { rowOurs = true; }
+        if (!rowOurs) {
+          cfg.lastResult = 'fail'; dsSaveCfg(cfg);
+          if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage → Device sync first.', true);
+          return false;
+        }
+      }
+      if (row && row.payload && row.payload.sum === env.sum && !wrapRepair) {
+        await dsAdoptChan(cfg, chan);
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
       const at = new Date().toISOString();
-      const who = (cfg.device || 'device') + ' — ' + (SESSION.user || 'user');
-      let r = await sbSave(cfg.channel, env, 'devicesync', who, at, !row);
-      if (r === 'conflict') r = await sbSave(cfg.channel, env, 'devicesync', who, at, false);
+      const who = (cfg && cfg.device ? cfg.device : 'device') + ' — ' + SESSION.user;
+      let r = await sbSave(chan, env, 'devicesync', who, at, !row);
+      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false);
       if (r !== 'ok') throw new Error('cloud save rejected');
+      await dsAdoptChan(cfg, chan);
+      cfg = dsCfg() || cfg;
       cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
@@ -3160,8 +3423,20 @@
       /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
          new edit to get the data out */
       clearTimeout(dsTimer);
-      dsTimer = setTimeout(function () { if (dsOn() && dsSyncActive()) dsPushNow(false); }, 30000);
+      dsTimer = setTimeout(function () { if (dsCanPush()) dsPushNow(false); }, 30000);
       return false;
+    }
+  }
+  /* move this device's config to the account channel; if it previously used a
+     random legacy channel, retire that row so no device stays behind on it */
+  async function dsAdoptChan(cfg, chan) {
+    if (!cfg) return;
+    const legacy = (cfg.channel && cfg.channel !== chan) ? cfg.channel : null;
+    if (legacy) await dsKillRow(legacy);
+    if (cfg.channel !== chan || cfg.adoptedAcct !== true || (dsAdminActive() && cfg.owner !== SESSION.user)) {
+      cfg.channel = chan; cfg.adoptedAcct = true;
+      if (dsAdminActive()) cfg.owner = SESSION.user;   /* only an admin session sets the owner — a teacher pushing to the shared row must not re-key it */
+      dsSaveCfg(cfg);
     }
   }
   function dsHashDiffers(obj) {
@@ -3177,31 +3452,87 @@
     try { await dsPullCheckInner(interactive); }
     finally {
       dsHoldPush = false;
-      if (dsOn() && dsSyncActive()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+      if (dsOn() && dsCanPush()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
     }
   }
+  function dsDeclined() { try { return JSON.parse(localStorage.getItem(DS_DECLINED_KEY)) || null; } catch (e) { return null; } }
+  function dsSetDeclined(user) { try { localStorage.setItem(DS_DECLINED_KEY, JSON.stringify({ user: user, at: new Date().toISOString() })); } catch (e) {} }
   async function dsPullCheckInner(interactive) {
-    if (!dsOn()) { if (interactive) toast('Device sync is off', true); return; }
     if (!dsSyncActive()) { if (interactive) toast('Sign in to check the cloud copy', true); return; }
+    const chan = await dsChan(SESSION.user);
+    /* ---- this browser has device sync OFF: still look for a cloud copy that
+       belongs to the signed-in account, and offer to adopt it ---- */
+    if (!dsOn()) {
+      const dec = dsDeclined();
+      if (!interactive && dec && dec.user === SESSION.user) return;   /* asked before, user kept local data */
+      let row;
+      try { row = await sbGet(chan); }
+      catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
+      if (!row || !row.payload || row.payload.dead) { if (interactive) toast('No cloud copy found for this account'); return; }
+      if (row.payload.sprDS !== 1 || !row.payload.wrap) {
+        if (interactive) toast('The cloud copy was made by an older SPR version. Sign in as admin once on the device that has device sync on, make any small change, then try again.', true);
+        return;
+      }
+      if (!SESSION.pw) { if (interactive) toast('Sign out and sign in again first — the check needs your password to unlock the cloud copy.', true); return; }
+      let hit = null;
+      try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); }
+      catch (e) { if (interactive) toast(e.message, true); return; }
+      if (!hit) { if (interactive) toast('The cloud copy was saved under a different admin password — open it with the pairing link instead.', true); return; }
+      const ok = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
+        'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it on this device and turn on device sync here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
+        'Open cloud copy');
+      if (!ok) { dsSetDeclined(SESSION.user); toast('Kept this device’s data — find the cloud copy later in Manage → Device sync'); return; }
+      stashSafetyBackup('before replacing data');
+      dsInstallFrom(hit, SESSION.user);
+      dsInstall(hit.obj);
+      return;
+    }
+    /* ---- device sync is ON: the usual freshness check ---- */
     const cfg = dsCfg();
     let row;
     try { row = await sbGet(cfg.channel); }
     catch (e) { if (interactive) toast('Cloud unreachable — check your internet connection', true); return; }
+    if ((!row || (row.payload && row.payload.dead)) && cfg.channel !== chan) {
+      /* legacy channel retired by the account migration — follow it home */
+      try { row = await sbGet(chan); } catch (e) { row = null; }
+      if (row && row.payload && !row.payload.dead) { cfg.channel = chan; cfg.owner = cfg.owner || SESSION.user; dsSaveCfg(cfg); }
+    }
     cfg.lastCheck = new Date().toISOString(); dsSaveCfg(cfg);
-    if (!row) { if (interactive) toast('No cloud copy yet — it is created on your next change'); if (location.hash === '#/manage') renderManage(); return; }
+    if (!row || (row.payload && row.payload.dead)) {
+      if (interactive) toast('No cloud copy yet — it is created on your next change');
+      if (location.hash === '#/manage') renderManage();
+      return;
+    }
     let obj;
     try { obj = await dsOpen(row); }
-    catch (e) { if (interactive) toast(e.message, true); return; }
+    catch (e) {
+      /* this device's pairing key cannot read the row any more (sync was set
+         up or reset elsewhere): with the account password we can still adopt
+         the row's own key instead of dead-ending */
+      if (/integrity check/.test(e.message || '') && SESSION.pw) {
+        let hit = null;
+        try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
+        if (hit) {
+          const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
+            'SPR found an <b>encrypted cloud copy</b> of this markbook for your account — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
+            'Open cloud copy');
+          if (okA) { stashSafetyBackup('before opening the cloud copy'); dsInstallFrom(hit, SESSION.user); dsInstall(hit.obj); }
+          else if (interactive) toast('Kept this device’s data — its pairing key no longer matches the cloud copy', true);
+          return;
+        }
+      }
+      if (interactive) toast(e.message, true); return;
+    }
     const localSum = await dsSum(dsContentString());
     if (obj.sum === localSum) { cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg); if (interactive) toast('This device already has the newest copy'); if (location.hash === '#/manage') renderManage(); return; }
     const cloudTs = obj.ts || 0;
     if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
     const ok = await confirmDlg('A newer copy is in the cloud',
-      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is saved to a file first (SPR-backup-before-replace.json).' +
+      'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsHashDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
       'Open cloud copy');
-    if (!ok) { toast('Kept this device&rsquo;s copy'); return; }
-    downloadBackup();
+    if (!ok) { toast('Kept this device’s copy'); return; }
+    stashSafetyBackup('before replacing data');
     dsInstall(obj);
   }
   async function dsFreshInstall(username, password) {
@@ -3223,6 +3554,61 @@
     DS_BOOT_TS = (obj.v2 && obj.v2.ts) || Date.now();
     return true;
   }
+  /* the account IS the pairing. Looks up the channel derived from the given
+     username; the row's wrap (PBKDF2 over the given password) unlocks the sync
+     key. Returns:
+       {chan, keyB64, obj, by, at} → verified cloud copy for this account
+       false → account known to the cloud but the password is wrong
+       null  → no cloud copy for this account */
+  async function dsAccountLookup(username, password) {
+    const chan = await dsChan(username);
+    let row;
+    try { row = await sbGet(chan); }
+    catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
+    if (!row || !row.payload || row.payload.dead) return null;
+    const env = row.payload;
+    /* teacher account: this row is a pointer to the school's data row,
+       sealed under the teacher's own password */
+    if (env.sprPTR === 1) {
+      let pt;
+      try { pt = await ptrOpen(env, password); }
+      catch (e) { return false; }
+      if (!pt || !pt.chan || !pt.key) return null;
+      let dataRow;
+      try { dataRow = await sbGet(pt.chan); }
+      catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
+      if (!dataRow || !dataRow.payload || dataRow.payload.dead) return null;
+      const keyB64 = pt.key;
+      const obj = await dsOpenWith(dataRow, keyB64);
+      const u = (obj.users || []).find(function (x) { return x.username === username; });
+      if (!u || u.hash !== hashPassword(password)) return false;
+      const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
+      return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
+    }
+    if (env.sprDS !== 1 || !env.wrap) return null;   /* legacy pairing-only row — needs the link */
+    let keyBytes;
+    try { keyBytes = await unwrapWrap(env.wrap, password); }
+    catch (e) { return false; }   /* AES-GCM auth failed → wrong password */
+    const keyB64 = b64uFromBytes(keyBytes);
+    const obj = await dsOpenWith(row, keyB64);
+    const u = (obj.users || []).find(function (x) { return x.username === username; });
+    if (!u || u.hash !== hashPassword(password)) return false;
+    return { chan: chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at };
+  }
+  /* install a verified cloud copy on this device and join its sync channel */
+  function dsInstallFrom(hit, owner) {
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: hit.obj.users, session: null }));
+      localStorage.setItem(V2_KEY, JSON.stringify(hit.obj.v2));
+      try { localStorage.removeItem(LS_KEY); } catch (e2) {}
+    } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
+    const cfg = dsCfg() || {};
+    cfg.on = true; cfg.channel = hit.chan; cfg.key = hit.keyB64; cfg.owner = owner; cfg.adoptedAcct = true;
+    cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = cfg.pairedAt || new Date().toISOString();
+    dsSaveCfg(cfg);
+    try { localStorage.removeItem(DS_DECLINED_KEY); } catch (e2) {}
+    DS_BOOT_TS = (hit.obj.v2 && hit.obj.v2.ts) || Date.now();
+  }
   function dsPair(channel, key) {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
     const cfg = dsCfg() || {};
@@ -3238,32 +3624,54 @@
     if (!dsAdminActive()) { toast('Sign in as the admin to turn on device sync', true); return; }
     (async () => {
       const ok = await confirmDlg('Turn on device sync?',
-        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change, and open it when the admin signs in on another system.<br><br>The copy is sealed with a random 256-bit key that lives <b>only in your pairing link</b> — the cloud never sees names, scores or passwords. Set up each of your systems once with that link, then just sign in normally.<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
+        'SPR will keep an <b>encrypted copy of everything</b> — all classes, all sign-ins — in your private cloud channel after each change.<br><br>On any other system, <b>just sign in with this admin account</b> — the whole markbook arrives automatically, no links needed. The copy is sealed so the cloud never sees names, scores or passwords: the key is wrapped under your SPR password (and a pairing link stays available as a backup way in).<br><br>Last save wins across systems; keep downloading occasional local backups too.', 'Turn on');
       if (!ok) return;
+      /* this account may already own a cloud copy (set up on another system):
+         turning sync on must ADOPT that copy — never overwrite it with this
+         browser's own (possibly empty) data */
+      {
+        const already = dsCfg();
+        if (!already || !already.on) {
+          let hit = null;
+          if (SESSION.pw) { try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e) { hit = null; } }
+          if (hit) {
+            const okGo = await confirmDlg('This account already has a cloud copy',
+              'The account <b>' + U.esc(SESSION.user) + '</b> already keeps an <b>encrypted cloud copy</b> — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is kept as a safety copy you can restore (Manage &rarr; Backups).', 'Open cloud copy');
+            if (!okGo) { toast('Device sync left unchanged'); return; }
+            stashSafetyBackup('before replacing data');
+            dsInstallFrom(hit, SESSION.user);
+            dsInstall(hit.obj);
+            return;
+          }
+        }
+      }
       const cfg = dsCfg() || {};
       cfg.on = true;
-      cfg.channel = cfg.channel || uuid();
+      cfg.owner = SESSION.user;
+      cfg.channel = cfg.channel || uuid();   /* replaced by the account channel on first push */
       cfg.key = cfg.key || b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
       cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
       dsSaveCfg(cfg);
       const done = await dsPushNow(false);
-      toast(done ? 'Device sync is on — cloud copy saved. Use “Show pairing link & QR” to set up your other systems.'
+      toast(done ? 'Device sync is on — cloud copy saved. On other systems, just sign in with this account.'
                  : 'Device sync is on, but the first cloud save failed — it will retry on your next change.', !done);
       if (location.hash === '#/manage') renderManage();
     })();
   }
   function dsLinkModal() {
+    if (!isAdmin()) { toast('Device sync is managed by the administrator', true); return; }
     const link = dsLink();
     if (!link) { toast('Turn on device sync first', true); return; }
     openDlg(
       '<h3>Pair another system</h3>' +
-      '<p class="small">Open this link <b>once</b> on each of your other systems (or scan the code with a phone), then sign in with your SPR account — everything arrives from the cloud and stays in sync automatically.<br><br>The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
+      '<p class="small">Easiest way: on the other system <b>just sign in with your SPR admin account</b> — everything arrives from the cloud automatically.<br><br>This link is the <b>backup way</b>: open it once on a system (or scan the code with a phone) to pair it without typing the admin account. The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="dsQrBox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="dsLinkInp" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         (navigator.share ? '<button class="btn primary" data-action="ds-share">Share…</button>' : '') +
         '<button class="btn" data-action="ds-copy">Copy link</button>' +
+        '<button class="btn" data-action="ds-ding">Open in DingTalk</button>' +
         '<button class="btn" data-x="ds-close">Close</button></div>' +
         '<p class="small muted" style="margin-top:8px">' + (navigator.share
           ? 'Share opens your phone&rsquo;s share sheet (WeChat, WhatsApp, QQ, email…). <b>Send it only to yourself</b> — e.g. WeChat File Transfer or your own email.'
@@ -3279,6 +3687,7 @@
     );
   }
   function dsOff(withDelete) {
+    if (!isAdmin()) { toast('Device sync is managed by the administrator', true); return; }
     const cfg = dsCfg(); if (!cfg || !cfg.on) return;
     (async () => {
       const ok = await confirmDlg(withDelete ? 'Turn off and delete the cloud copy?' : 'Turn off device sync?',
@@ -3297,6 +3706,8 @@
           dead = (r2 === 'ok');
           if (dead) { try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(cfg.channel), { method: 'DELETE', headers: sbHeaders() }); } catch (e2) {} }
         } catch (e) { dead = false; }
+        /* teacher sign-in pointers die with the school channel */
+        for (const un of Object.keys(cfg.pointers || {})) { try { await dsKillPointer(un); } catch (e2) {} }
         toast(dead ? 'Cloud copy deleted' : 'The cloud copy could not be cleared — it stays encrypted and unreadable without your pairing link.', !dead);
       }
       dsSaveCfg(null);
@@ -3307,7 +3718,7 @@
   function dsManageCard() {
     const cfg = dsCfg();
     if (!cfg || !cfg.on) {
-      return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync</b> — keep an encrypted copy of the whole markbook in your private cloud channel, so every system you sign in on shows the same data. Sealed with a random key that never leaves your pairing link; the cloud stores only unreadable bytes.</p>' +
+      return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync</b> — keep an encrypted copy of the whole markbook in your private cloud channel, so every system you sign in on shows the same data. The copy is sealed under your SPR account: sign in anywhere with your admin username and password and everything arrives — the cloud stores only unreadable bytes.</p>' +
         '<div class="flex"><button class="btn" data-action="ds-enable">Turn on device sync</button>' +
         '<span class="small muted" style="align-self:center">Optional — SPR works fully without it.</span></div></div>';
     }
@@ -3324,7 +3735,7 @@
       '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
       '<button class="btn sm" data-action="ds-off">Turn off</button>' +
       '<button class="btn sm danger" data-action="ds-off-del">Turn off &amp; delete cloud copy</button></div>' +
-      '<p class="small muted" style="margin-top:8px">Pair each of your systems once with the link — or just restore a JSON backup there; backups carry the pairing too.</p></div>';
+      '<p class="small muted" style="margin-top:8px">Other systems: just sign in with your admin account. The pairing link (below) and JSON backups are backup ways to carry the key.</p></div>';
   }
 
   const AUTH_KEY = 'spr-auth-v1';
@@ -3371,11 +3782,47 @@
   /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
     if (username === MASTER_KEY) return { error: 'Invalid username or password.' };
-    /* paired fresh browser: quietly pull accounts + data, then sign in normally */
+    /* fresh browser: quietly pull accounts + data from the cloud, then sign
+       in normally. Unpaired browsers need nothing but the admin account —
+       the channel is derived from the username and the key is password-wrapped.
+       Paired browsers try their pairing first (covers pre-migration rows),
+       then the account. */
     let installedFromCloud = false;
-    if (cryptoOK() && !readV2() && getAuth().users.length === 0 && dsOn()) {
-      installedFromCloud = await dsFreshInstall(username, password);   /* throws on cloud errors */
-      if (!installedFromCloud) return { error: 'Invalid username or password.' };
+    const freshBrowser = !readV2() && getAuth().users.length === 0;
+    if (cryptoOK() && freshBrowser) {
+      let pairErr = null, netErr = null;
+      if (dsOn()) {
+        try { installedFromCloud = await dsFreshInstall(username, password); }
+        catch (e) { pairErr = e; if (/^cannot reach/.test(e.message || '')) netErr = e; }
+      }
+      if (!installedFromCloud) {
+        let r = null;
+        try { r = await dsAccountLookup(username, password); }
+        catch (e) { netErr = netErr || e; }
+        if (r) { dsInstallFrom(r, r.owner || username); installedFromCloud = true; }
+        else if (r === false) return { error: 'Invalid username or password.' };
+        /* r === null: no cloud copy for this account, continue to the local lookup */
+      }
+      if (!installedFromCloud) {
+        if (netErr) throw netErr;              /* offline: say so instead of "invalid password" */
+        if (dsOn() && pairErr) throw pairErr;  /* e.g. paired, but no cloud copy exists yet */
+      }
+    } else if (cryptoOK() && !getAuth().users.some(function (u) { return u.username === username && u.hash === hashPassword(password); })) {
+      /* this browser has its own sign-ins, but the typed account is not one of
+         them — it may live in the cloud copy from another system. Ask before
+         replacing this browser's data (a backup file is saved first). */
+      let hit = null;
+      try { hit = await dsAccountLookup(username, password); }
+      catch (e) { /* unreachable: fall through to the normal local error */ }
+      if (hit) {
+        const okGo = await confirmDlg('This account has a cloud copy',
+          'The account <b>' + U.esc(username) + '</b> was not created on this device, but its <b>encrypted cloud copy</b> exists — saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>Open it here and turn on device sync? This device&rsquo;s current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
+          'Open cloud copy');
+        if (!okGo) { renderLogin(); const eEl = $('#loginErr'); if (eEl) eEl.textContent = 'Invalid username or password.'; return { error: '__shown__' }; }
+        stashSafetyBackup('before replacing data');
+        dsInstallFrom(hit, hit.owner || username);
+        installedFromCloud = true;
+      }
     }
     const auth = getAuth();
     const user = auth.users.find((u) => u.username === username && u.hash === hashPassword(password));
@@ -3398,18 +3845,22 @@
       try { localStorage.removeItem(LS_KEY); } catch (e) {}
     } else {
       const w = v2.wraps && v2.wraps[username];
-      if (!w) return { error: 'No data key is stored for this account. Sign in as admin mo once, then sign in again with this account.' };
+      if (!w) return { error: 'No data key is stored for this account. Sign in as the admin once, then sign in again with this account.' };
       try { dk = await unwrapWrap(w, password); }
       catch (e) { return { error: 'Invalid username or password.' }; }
       try { DB = normalizeDB(await unsealDB(v2.data, dk)); }
       catch (e) { return { error: 'Could not open the encrypted workbook.' }; }
     }
-    SESSION = { user: user.username, dk: dk };
+    SESSION = { user: user.username, dk: dk, pw: password };
     auth.session = { username: user.username, name: user.name, role: user.role };
     saveAuth(auth);
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: user.username, dk: b64uFromBytes(dk) })); } catch (e) {}
     await persistNow(true);
-    if (dsOn()) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user: keep this device current */
+    if (!installedFromCloud && (dsOn() || user.role === 'admin')) setTimeout(function () { dsPullCheck(false); }, 1500);   /* any signed-in user on a paired device: keep it current; admin also gets the adopt offer when sync is off */
+    /* fresh sign-in with device sync on: push soon even without a data change,
+       so a legacy channel migrates home and the owner's password wrap lands on
+       the row (a fresh device cannot bootstrap until the wrap exists) */
+    if (SESSION.pw && dsCanPush()) scheduleSyncPush();
     if (installedFromCloud) toast('Welcome back — your data arrived from the cloud');
     return { user: auth.session };
   }
@@ -3418,7 +3869,7 @@
     auth.session = null;
     saveAuth(auth);
     try { sessionStorage.removeItem('spr-session'); sessionStorage.removeItem('spr-session-db'); } catch (e) {}
-    SESSION = { user: null, dk: null };
+    SESSION = { user: null, dk: null, pw: null };
     location.reload();
   }
   function addUser(username, password, name, role) {
@@ -3436,33 +3887,39 @@
     return null;
   }
 
+  let loginSetupMode = false;   /* fresh browsers open on the sign-in card — signing in with an existing account pulls its data from the cloud; setup is an explicit choice */
   function renderLogin() {
-    const firstRun = getAuth().users.length === 0 && !dsOn();
-    const card = firstRun
+    const freshBrowser = getAuth().users.length === 0 && !readV2();
+    const setupCard = freshBrowser && loginSetupMode;
+    const card = setupCard
       ? '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Set up this browser</h2>' +
-          '<p>First time on this device. Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
+          '<p>Starting fresh? Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
           '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="suPass">Password (8+ characters)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
+          '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-signin">&larr; I already use SPR — sign in instead</button></div>' +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>'
       : '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Students Performance Report</h2>' +
-          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') + (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '') + '</p>' +
+          '<p>' + (cryptoOK() ? 'Sign in — your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') +
+          (cryptoOK() && freshBrowser ? '<br><b>New device?</b> Just sign in with your usual SPR account — if device sync is on, your data arrives from the cloud automatically.' :
+           (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b> — sign in and your data arrives from the cloud.' : '')) + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
           '<div class="login-field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>' +
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
           (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
+          (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
     openDlg(card);
-    setTimeout(function() { var u = document.getElementById(firstRun ? 'suUser' : 'loginUser'); if (u) u.focus(); }, 50);
+    setTimeout(function() { var u = document.getElementById(setupCard ? 'suUser' : 'loginUser'); if (u) u.focus(); }, 50);
   }
   async function firstRunCreate(username, password) {
     const auth = getAuth();
@@ -3483,7 +3940,7 @@
     auth.users.push({ username: username, hash: hashPassword(password), name: username, role: 'admin' });
     auth.session = { username: username, name: username, role: 'admin' };
     saveAuth(auth);
-    SESSION = { user: username, dk: dk };
+    SESSION = { user: username, dk: dk, pw: password };
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
     return { user: auth.session };
   }

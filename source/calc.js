@@ -36,15 +36,38 @@
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
   const round1 = (v) => (v === null ? null : Math.round(v * 10) / 10);
 
+  /* ---------- score validity (single source of truth) -------------------
+     Workbook rules: an observation raw score is out of 10; weekly/test cells
+     are score/total pairs with 0 <= score <= total and total > 0. Ingress
+     paths (grid entry, paste, Excel import, backup restore) must REJECT
+     values that fail these rules; and for anything that still slips into
+     stored data (legacy saves, hand-edited backups) the calc engine treats
+     the value as absent instead of counting it — a blank score next to a
+     filled total is NOT a zero score. -------------------------------------- */
+  const EMPTY = (x) => x === null || x === undefined || x === '';
+  function validObs(v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 10;
+  }
+  function validScore(v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0;
+  }
+  function validTotal(v) {
+    return typeof v === 'number' && isFinite(v) && v > 0;
+  }
+  function validPair(s, t) {
+    return validScore(s) && validTotal(t) && s <= t;
+  }
+
   function student(sem, sid) {
     return (sem.students || []).find((s) => s.id === sid) || null;
   }
 
   /* ---------- Classroom Observations ---------- */
-  // raw LO value for one month/skill/lo
+  // raw LO value for one month/skill/lo (invalid stored values read as absent)
   function obsValue(sem, sid, month, skill, lo) {
-    return (sem.observations[sid] && sem.observations[sid][month] &&
-            sem.observations[sid][month][skill + '-LO' + lo]) ?? null;
+    const v = (sem.observations[sid] && sem.observations[sid][month] &&
+               sem.observations[sid][month][skill + '-LO' + lo]) ?? null;
+    return validObs(v) ? v : null;
   }
 
   // month % for one skill = mean(LO1, LO2) * 10, null if no data that month
@@ -91,20 +114,17 @@
       .sort((a, b) => a - b);
   }
 
-  // month % = Σscore / Σtotal * 100 (weeks with a positive total)
+  // month % = Σscore / Σtotal * 100 (weeks with a valid score/total pair)
   function weeklyMonthPct(sem, sid, metric, month) {
     const rec = sem[metric] && sem[metric][sid] && sem[metric][sid][month];
     if (!rec) return null;
     let s = 0, t = 0, any = false;
     for (const w of Object.keys(rec)) {
       const e = rec[w];
-      if (!e) continue;
+      if (!e || EMPTY(e.s)) continue;               // no score -> not assessable
+      if (EMPTY(e.t)) continue;                     // score without total: cannot include
       const sc = Number(e.s), tt = Number(e.t);
-      if (!isNaN(sc) && !isNaN(tt) && tt > 0) { s += sc; t += tt; any = true; }
-      else if (!isNaN(sc) && (e.t === null || e.t === undefined) && sc >= 0 && e.s !== null && e.s !== undefined) {
-        // score entered without total — cannot include, flag separately
-        any = any || false;
-      }
+      if (validPair(sc, tt)) { s += sc; t += tt; any = true; }
     }
     if (!any || t === 0) return null;
     return (s / t) * 100;
@@ -116,11 +136,10 @@
     for (const m of sem.months) {
       for (const w of weeksWithData(sem, sid, metric, m)) {
         const e = sem[metric][sid][m][w];
-        const sc = Number(e.s), tt = Number(e.t);
-        out.push({
-          label: m.slice(0, 3) + ' W' + w,
-          pct: !isNaN(sc) && !isNaN(tt) && tt > 0 ? (sc / tt) * 100 : null,
-        });
+        const pct = (!e || EMPTY(e.s) || EMPTY(e.t))
+          ? null
+          : (validPair(Number(e.s), Number(e.t)) ? (Number(e.s) / Number(e.t)) * 100 : null);
+        out.push({ label: m.slice(0, 3) + ' W' + w, pct });
       }
     }
     return out;
@@ -138,8 +157,9 @@
   function testPct(sem, sid, kind) {
     const t = sem.tests && sem.tests[sid] && sem.tests[sid][kind];
     if (!t) return null;
+    if (EMPTY(t.s) || EMPTY(t.t)) return null;      // blank score or total -> no %
     const sc = Number(t.s), tt = Number(t.t);
-    if (isNaN(sc) || isNaN(tt) || tt <= 0) return null;
+    if (!validPair(sc, tt)) return null;
     return (sc / tt) * 100;
   }
 
@@ -308,10 +328,64 @@
     return out;
   }
 
+  /* ---------- sanitize stored semester data (self-healing) ----------------
+     Walks every stored score and brings it to the valid canonical form:
+     - numeric strings ("8") are coerced to numbers;
+     - observation values outside 0..10 are dropped;
+     - score/total pairs: an invalid total drops the entry, an invalid score
+       (negative, non-finite, > total) drops the score but keeps a valid total;
+     - empty leftovers are pruned.
+     Returns the number of stored VALUES removed (0 = already clean).
+     Grading rules are untouched — this only removes values that could never
+     have come from the school's workbook. ---------------------------------- */
+  const coerceNum = (x) => (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x)) ? Number(x) : x);
+  function sanitizeSemester(sem) {
+    let dropped = 0;
+    const fixPair = (e) => {          // e = {s,t} score/total holder (mutated)
+      e.s = coerceNum(e.s); e.t = coerceNum(e.t);
+      // invalid total (present but unusable) -> clear it, keep the score for later
+      if (!EMPTY(e.t) && !validTotal(e.t)) { e.t = null; dropped++; }
+      // invalid score (present but negative/non-finite/above total) -> clear it, keep total
+      if (!EMPTY(e.s) && (!validScore(e.s) || (!EMPTY(e.t) && e.s > e.t))) { e.s = null; dropped++; }
+      return (EMPTY(e.s) && EMPTY(e.t));   // nothing left -> caller deletes
+    };
+    for (const sid of Object.keys(sem.observations || {})) {
+      for (const m of Object.keys(sem.observations[sid])) {
+        const cell = sem.observations[sid][m];
+        for (const k of Object.keys(cell)) {
+          const v = coerceNum(cell[k]);
+          if (EMPTY(v)) { delete cell[k]; continue; }          // absent -> prune, not "invalid"
+          if (!validObs(v)) { delete cell[k]; dropped++; continue; }
+          cell[k] = v;
+        }
+        if (!Object.keys(cell).length) delete sem.observations[sid][m];
+      }
+      if (!Object.keys(sem.observations[sid] || {}).length) delete sem.observations[sid];
+    }
+    for (const metric of ['spelling', 'daily']) {
+      for (const sid of Object.keys(sem[metric] || {})) {
+        for (const m of Object.keys(sem[metric][sid])) {
+          const rec = sem[metric][sid][m];
+          for (const w of Object.keys(rec)) if (!rec[w] || fixPair(rec[w])) delete rec[w];
+          if (!Object.keys(rec).length) delete sem[metric][sid][m];
+        }
+        if (!Object.keys(sem[metric][sid] || {}).length) delete sem[metric][sid];
+      }
+    }
+    for (const sid of Object.keys(sem.tests || {})) {
+      for (const kind of Object.keys(sem.tests[sid])) {
+        if (fixPair(sem.tests[sid][kind])) delete sem.tests[sid][kind];
+      }
+      if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
+    }
+    return dropped;
+  }
+
   return {
     SKILLS, TESTS, COMPONENTS_ALL, FINAL_MIN_ASSESSED,
     assessedCount, getAssessmentCompleteness,
     letter, mean, round1, student,
+    validObs, validScore, validTotal, validPair, sanitizeSemester,
     obsValue, obsMonthPct, obsMonthPctOverall, obsSkillPct,
     weeksWithData, weeklyMonthPct, weeklyPctList, weeklySemesterPct,
     testPct, gradeStudent, gradeAll,

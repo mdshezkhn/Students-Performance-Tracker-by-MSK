@@ -3,3 +3,4 @@ deploy/
 qa_*
 _*.txt
 *.xlsx
+node_modules/

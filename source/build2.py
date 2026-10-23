@@ -10,9 +10,8 @@ Outputs:
   dist/app/manifest.webmanifest + icons/
   deploy/                    mirror of what gets committed at repo root
 
-The owner's original build.py (with local-only seed_data.json) stays valid;
-this script never touches student data — the public build always has
-window.SEED = null.
+This script never touches student data — the public build always has
+window.SEED = null (the seed it embeds is the verified-synthetic demo class).
 """
 import hashlib, json, pathlib, shutil
 
@@ -22,7 +21,10 @@ SRC, LIBS = ROOT, ROOT / 'libs'
 DIST, DEPLOY = REPO / 'dist', REPO / 'deploy'
 
 def read(p):
-    return pathlib.Path(p).read_text(encoding='utf-8')
+    # newline='' keeps the files' own line endings: the build output is
+    # byte-identical on Windows and Linux (CI verifies the committed build)
+    with open(p, 'r', encoding='utf-8', newline='') as f:
+        return f.read()
 
 # ---------- guard: never silently clobber hand-edited published files ----
 # The published site (repo root) must always equal the last committed build
@@ -88,9 +90,12 @@ assert '%%POSTER%%' not in landing and '__FONTS__' not in landing and '__LANDING
 # ---------- write dist + deploy ----------
 if DIST.exists(): shutil.rmtree(DIST)
 (DIST / 'app').mkdir(parents=True)
-(DIST / 'app' / 'index.html').write_text(app_html, encoding='utf-8')
-(DIST / 'app' / 'sw.js').write_text(sw, encoding='utf-8')
-(DIST / 'index.html').write_text(landing, encoding='utf-8')
+def write(p, text):
+    with open(p, 'w', encoding='utf-8', newline='') as f:
+        f.write(text)
+write(DIST / 'app' / 'index.html', app_html)
+write(DIST / 'app' / 'sw.js', sw)
+write(DIST / 'index.html', landing)
 
 if DEPLOY.exists(): shutil.rmtree(DEPLOY)
 shutil.copytree(DIST, DEPLOY)

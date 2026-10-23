@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # build must succeed from a clean clone (guard included: aborts if the
+      # committed root artifacts were hand-edited away from the last build)
+      - name: Build (build2.py from a clean clone)
+        run: python source/build2.py
+
+      # the committed build must equal what the build produces from source
+      - name: Committed app build is up to date
+        run: |
+          cmp --silent dist/app/index.html app/index.html \
+            || (echo "::error::app/index.html is stale - run 'python source/build2.py' and commit the deploy output"; exit 1)
+
+      - name: Install dev dependencies (jsdom)
+        run: npm install --no-audit --no-fund
+
+      - name: Unit + regression tests
+        run: npm test
+
+      - name: Device-sync browser suite (jsdom)
+        run: node tests/test-device-sync.js

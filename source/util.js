@@ -78,6 +78,15 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
+  /* normalise a gender value to M / F / '' (unknown spellings kept as-is
+     upper-cased, never silently destroyed) — 男->M, 女->F, male/f/m -> M ... */
+  const normGender = (g) => {
+    const t = String(g ?? '').trim();
+    if (!t) return '';
+    if (t === '男' || t === 'M' || t.toUpperCase() === 'MALE' || t.toUpperCase() === 'BOY') return 'M';
+    if (t === '女' || t === 'F' || t.toUpperCase() === 'FEMALE' || t.toUpperCase() === 'GIRL') return 'F';
+    return t;
+  };
   const num = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
   const r1 = (v) => (v === null ? null : Math.round(v * 10) / 10);
   const r2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
@@ -114,6 +123,6 @@
   return {
     MONTHS, MONTH_ABBR, CNY, LOS, INSTRUCTIONS_LINES,
     suggestMonths, suggestHint, springStart, fmtCny,
-    uid, esc, num, r1, r2, canonMonth,
+    uid, esc, num, r1, r2, canonMonth, normGender,
   };
 });
