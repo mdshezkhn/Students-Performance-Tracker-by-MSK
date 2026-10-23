@@ -21,10 +21,11 @@ SRC, LIBS = ROOT, ROOT / 'libs'
 DIST, DEPLOY = REPO / 'dist', REPO / 'deploy'
 
 def read(p):
-    # newline='' keeps the files' own line endings: the build output is
-    # byte-identical on Windows and Linux (CI verifies the committed build)
+    # read with the file's own endings, then NORMALISE to LF: git autocrlf
+    # differences between machines must never leak into the build. The output
+    # is byte-identical on Windows and Linux (CI verifies the committed build)
     with open(p, 'r', encoding='utf-8', newline='') as f:
-        return f.read()
+        return f.read().replace('\r\n', '\n')
 
 # ---------- guard: never silently clobber hand-edited published files ----
 # The published site (repo root) must always equal the last committed build

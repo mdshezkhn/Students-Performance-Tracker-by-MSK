@@ -3864,7 +3864,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (inTerm ? '<span class="in-term">current month of the term</span>' : '') +
         '</div>' +
       '</section>' +
-      (rvN ? '<div class="panel no-print" style="margin:0 0 14px;border-color:#c9973b"><b>' + rvN + ' quarantined score' + (rvN > 1 ? 's' : '') + '</b> — not counted in any grade. <button class="btn sm" data-action="dash-review-goto">Review them</button></div>' : '') +
+      (rvN ? '<div class="panel no-print" style="margin:0 0 14px;border-color:#c9973b"><b>' + rvN + ' quarantined score' + (rvN > 1 ? 's' : '') + '</b> — not counted in any grade. <button class="btn sm" data-action="dash-review-goto">Review them</button></div>' : '') +
       tabHtml + filterBar + body;
 
     /* ---- charts & data tables ---- */
@@ -5857,26 +5857,26 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       })();
       return;
     }
-    if (a === 'dash-review-goto') { location.hash = '#/manage'; return; }
-    if (a === 'review-goto') {
-      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
-      if (sem) { DB.currentSemesterId = sem.id; saveDB(); }
-      location.hash = '#/entry/obs'; toast('Find the cell listed under Manage → quarantined scores'); return;
-    }
-    if (a === 'review-discard') {
-      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
-      if (sem && Array.isArray(sem.review)) {
-        const all = reviewItems();
-        const idx = Number(el.dataset.i);
-        const target = all[idx];
-        if (target) {
-          sem.review = sem.review.filter((r) => !(r === target.item));
-          saveDB(true); toast('Discarded — the value stays out of every calculation');
-        }
-      }
-      if (location.hash === '#/manage') renderManage(); else renderClasses();
-      return;
-    }
+    if (a === 'dash-review-goto') { location.hash = '#/manage'; return; }
+    if (a === 'review-goto') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem) { DB.currentSemesterId = sem.id; saveDB(); }
+      location.hash = '#/entry/obs'; toast('Find the cell listed under Manage → quarantined scores'); return;
+    }
+    if (a === 'review-discard') {
+      const sem = DB.semesters.find((x) => x.id === el.dataset.sem);
+      if (sem && Array.isArray(sem.review)) {
+        const all = reviewItems();
+        const idx = Number(el.dataset.i);
+        const target = all[idx];
+        if (target) {
+          sem.review = sem.review.filter((r) => !(r === target.item));
+          saveDB(true); toast('Discarded — the value stays out of every calculation');
+        }
+      }
+      if (location.hash === '#/manage') renderManage(); else renderClasses();
+      return;
+    }
     if (a === 'change-pass-open') {
       if (!SESSION.user) return;
       const me = myUser() || {};
