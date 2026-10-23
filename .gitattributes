@@ -1,0 +1,4 @@
+# published artifacts must stay byte-exact — never eol-normalised
+app/index.html -text
+app/sw.js -text
+index.html -text
