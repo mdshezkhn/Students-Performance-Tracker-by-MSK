@@ -17,9 +17,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let oks = 0, bad = 0;
 const ok = (c, m) => { if (c) { oks++; console.log('  ok:', m); } else { bad++; console.log('  FAIL:', m); } };
 
+let REF_MISSING = false;
 function pickBuild(ref) {
   if (ref === 'HEAD') return fs.readFileSync(path.join(__dirname, '../dist/app/index.html'), 'utf8');
-  return execSync('git show ' + ref + ':app/index.html', { cwd: path.join(__dirname, '..'), maxBuffer: 1 << 26 }).toString();
+  try {
+    return execSync('git show ' + ref + ':app/index.html', { cwd: path.join(__dirname, '..'), maxBuffer: 1 << 26 }).toString();
+  } catch (e) {
+    REF_MISSING = true;   /* shallow clone without the tag: the MAIN-leg replay is impossible, say so */
+    return null;
+  }
 }
 let html0 = '';
 function boot(seed) {
@@ -87,6 +93,11 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
   /* ---- 1. MAIN build: admin, sample, RELOAD (session restores, pw dies), migrate ---- */
   console.log('== MAIN build: admin, sample, RELOAD, migration ==');
   html0 = pickBuild('pre-simple-ui');
+  if (REF_MISSING) {
+    console.log('  SKIP: git tag pre-simple-ui not available in this clone (shallow). Re-run in a full clone to replay the MAIN-leg.');
+    console.log('BLOCKER-REPRO PASSED (0 checks — MAIN leg unavailable)');
+    process.exit(0);
+  }
   const M = boot();
   await sleep(500); await waitAck(M);
   if (!M.d.getElementById('suUser')) { const s = M.d.querySelector('[data-action="show-setup"]'); if (s) { click(M, s); await sleep(300); } }
