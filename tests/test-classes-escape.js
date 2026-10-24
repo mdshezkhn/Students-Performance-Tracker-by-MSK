@@ -1,5 +1,10 @@
-/* Standalone check (not part of the suites): the rail-less Classes screen
-   must carry Sign out + Privacy — the 2026-10-24 trapped-user fix. */
+/* Standalone check (also in npm run test:jsdom): the rail-less Classes screen
+   must never dead-end — 2026-10-24 trapped-user fixes:
+   A) Sign out + Privacy always present (escape).
+   B) With device sync on: "Check for newer copy" present (a class-less device
+      can never reach Manage → Device sync).
+   C) Open on a class this device cannot unlock → an actionable dialog (not a
+      vanishing toast), whose confirm triggers the cloud pull check. */
 const fs = require('fs');
 const path = require('path');
 const webcrypto = require('crypto').webcrypto;
@@ -10,40 +15,74 @@ const appHtmlPath = ['../dist/app/index.html', '../app/index.html']
 const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 
 const IX = [{ id: 'c1', name: 'Grade 5 English', school: 'ESL', eal: 'te1', support: 'ts1', createdAt: 1, updatedAt: 1 }];
-const pre =
-  'try{localStorage.setItem("spr-mode-v1","class")}catch(e){}' +
-  'try{localStorage.setItem("spr-class-index-v1",' + JSON.stringify(JSON.stringify(IX)) + ')}catch(e){}' +
-  'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[{username:"te1",name:"Teacher One",role:"eal",keyring:{}}],session:null}))}catch(e){}' +
-  'try{sessionStorage.setItem("spr-session",JSON.stringify({user:"te1",dk:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",keys:{}}))}catch(e){}' +
-  'window.__SB={};' +
-  'window.Chart=function(){};Chart.defaults={font:{},color:"",borderColor:""};' +
-  'window.fetch=function(){return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve([])}})};' +
-  '(function(){var dd=document.getElementById("dlg");if(dd&&!dd.showModal){dd.showModal=function(){this.open=true};dd.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();';
-const html = html0.slice(0, html0.lastIndexOf('</body>')) + '<script>' + pre + '</script>' + html0.slice(html0.lastIndexOf('</body>'));
-const vc = new VirtualConsole(); vc.on('jsdomError', () => {});
-const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost/app/index.html#/classes', pretendToBeVisual: true, virtualConsole: vc, storageQuota: 10000000 });
-const w = dom.window, d = w.document;
-try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
-if (!w.TextEncoder) w.TextEncoder = TextEncoder;
-if (!w.TextDecoder) w.TextDecoder = TextDecoder;
+function preJs(dsOn) {
+  let s =
+    'try{localStorage.setItem("spr-mode-v1","class")}catch(e){}' +
+    'try{localStorage.setItem("spr-class-index-v1",' + JSON.stringify(JSON.stringify(IX)) + ')}catch(e){}' +
+    'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[{username:"te1",name:"Teacher One",role:"eal",keyring:{}}],session:null}))}catch(e){}' +
+    'try{sessionStorage.setItem("spr-session",JSON.stringify({user:"te1",dk:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",keys:{}}))}catch(e){}' +
+    'window.__SB={};' +
+    'window.Chart=function(){};Chart.defaults={font:{},color:"",borderColor:""};' +
+    'window.fetch=function(u,o){window.__fetches=(window.__fetches||[])+1;return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve([])}})};' +
+    '(function(){var dd=document.getElementById("dlg");if(dd&&!dd.showModal){dd.showModal=function(){this.open=true};dd.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();';
+  if (dsOn) s += 'try{localStorage.setItem("spr-devicesync-v1",JSON.stringify({on:true,owner:"mo",channel:"11111111-2222-3333-4444-555555555555",key:"AAAA",device:"Test · device",pairedAt:"2026-10-24T00:00:00Z"}))}catch(e){}';
+  return s;
+}
+function boot(pre) {
+  const html = html0.slice(0, html0.lastIndexOf('</body>')) + '<script>' + pre + '</script>' + html0.slice(html0.lastIndexOf('</body>'));
+  const vc = new VirtualConsole(); vc.on('jsdomError', () => {});
+  const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost/app/index.html#/classes', pretendToBeVisual: true, virtualConsole: vc, storageQuota: 10000000 });
+  const w = dom.window, d = w.document;
+  try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
+  if (!w.TextEncoder) w.TextEncoder = TextEncoder;
+  if (!w.TextDecoder) w.TextDecoder = TextDecoder;
+  return { w, d };
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let ok = 0, bad = 0;
   const check = (c, m) => { if (c) { ok++; console.log('  ok:', m); } else { bad++; console.log('  FAIL:', m); } };
+
+  /* ---- A: escape basics, sync OFF ---- */
+  console.log('== A: escape bar (sync off) ==');
+  const A = boot(preJs(false));
   await sleep(1500);
-  const t = d.body.textContent || '';
-  check(/Your classes/.test(t), 'classes screen rendered for a class-mode teacher with no key');
-  const out = d.querySelector('.page [data-action="logout"]');
-  check(!!out, 'Sign out button present on the Classes screen');
-  check(!!d.querySelector('.page [data-action="privacy-open"]'), 'Privacy link present on the Classes screen');
-  check(/No classes yet|Your administrator will pair you/.test(t) || !!d.querySelector('[data-action="class-open"]'), 'empty-pairing state handled (not an error screen)');
+  check(/Your classes/.test(A.d.body.textContent || ''), 'classes screen rendered for a class-mode teacher with no key');
+  check(!!A.d.querySelector('.page [data-action="logout"]'), 'Sign out button present on the Classes screen');
+  check(!!A.d.querySelector('.page [data-action="privacy-open"]'), 'Privacy link present on the Classes screen');
+  check(!A.d.querySelector('.page [data-action="ds-now"]'), 'no sync-check button when device sync is off');
+  const out = A.d.querySelector('.page [data-action="logout"]');
   if (out) {
-    out.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    out.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
     await sleep(700);
-    const gone = !(w.sessionStorage.getItem && w.sessionStorage.getItem('spr-session'));
-    check(gone, 'Sign out click clears the session (escape works)');
+    check(!(A.w.sessionStorage.getItem && A.w.sessionStorage.getItem('spr-session')), 'Sign out click clears the session (escape works)');
   }
+
+  /* ---- B/C: sync ON — pull button + honest open-failure dialog ---- */
+  console.log('== B: sync-check button + open-failure dialog (sync on) ==');
+  const B = boot(preJs(true));
+  await sleep(1500);
+  const syncBtn = B.d.querySelector('.page [data-action="ds-now"]');
+  check(!!syncBtn, '"Check for newer copy" present on the Classes screen when sync is on');
+  const openBtn = B.d.querySelector('[data-action="class-open"]');
+  check(!!openBtn, 'class card offers Open');
+  if (openBtn) {
+    openBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+    await sleep(900);
+    const dlg = B.d.getElementById('dlg');
+    const dt = dlg ? (dlg.textContent || '') : '';
+    check(!!(dlg && dlg.open), 'cannot-open shows a DIALOG (not a vanishing toast)');
+    check(/Cannot open|does not hold the unlock key/.test(dt), 'dialog says what is wrong');
+    check(/Check for a newer copy/.test(dt), 'dialog offers the concrete way out');
+    const confirm = dlg ? dlg.querySelector('[data-x="1"]') : null;
+    if (confirm) {
+      confirm.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(900);
+      check((B.w.__fetches || 0) > 0, 'confirming the dialog actually contacts the cloud (pull check ran)');
+    }
+  }
+
   console.log(bad ? 'ESCAPE-CHECK FAILURES: ' + bad : 'ESCAPE-CHECK PASSED (' + ok + ')');
   process.exit(bad ? 1 : 0);
 })().catch((e) => { console.error('ERR', e); process.exit(1); });

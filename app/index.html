@@ -2906,9 +2906,20 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const meta = classIndex().find((c) => c.id === id);
     if (!meta) { toast('That class no longer exists here', true); return; }
     const raw = localStorage.getItem(classBlobKey(id));
-    if (!raw) { toast('Class data is missing on this device — restore a backup or re-open the share link', true); return; }
     let key = (SESSION.keys || {})[id];
-    if (!key) { toast('You do not hold the key for ' + meta.name + ' — ask the admin to pair you with this class', true); return; }
+    if (!raw || !key) {
+      /* a silent toast here reads as "the button did nothing" — say what is
+         wrong and offer the concrete way out (pull the newest cloud copy) */
+      const what = !raw
+        ? 'The workbook data for <b>' + U.esc(meta.name) + '</b> is not on this device.'
+        : 'This device does not hold the unlock key for <b>' + U.esc(meta.name) + '</b>.';
+      const how = dsOn()
+        ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.'
+        : 'Turn on device sync (Manage &rarr; Device sync) on the device that has this class, then pull the copy here — or restore a backup on this screen.';
+      const ok = await confirmDlg('Cannot open ' + meta.name + ' yet', what + '<br><br>' + how, dsOn() ? 'Check for a newer copy' : 'Understood');
+      if (ok && dsOn()) dsPullCheck(true);
+      return;
+    }
     try {
       const wb = normalizeDB(await CS.openClass(JSON.parse(raw), key));
       CLS = { id: id }; CLS_KEY = key;              /* only now is the class open */
@@ -2917,7 +2928,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       ui.classOpen = true;
       try { localStorage.setItem('spr-last-class', id); } catch (e) {}
       buildShell(); location.hash = '#/dashboard'; route();
-    } catch (e) { CLS = null; CLS_KEY = null; toast('Could not open ' + meta.name + ' with your key', true); }
+    } catch (e) {
+      CLS = null; CLS_KEY = null;
+      const ok = await confirmDlg('Could not open ' + meta.name,
+        'The saved copy on this device does not match your key (it may be older or newer than what this device holds).<br><br>' + (dsOn() ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.' : 'Restore a backup of this class on this screen, or pair this device again from the device that holds the class.'),
+        dsOn() ? 'Check for a newer copy' : 'Understood');
+      if (ok && dsOn()) dsPullCheck(true);
+    }
   }
   function closeClass() {
     try { if (saveTimer) { clearTimeout(saveTimer); persistNow(true); } } catch (e) {}
@@ -3146,8 +3163,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
     $('#app').innerHTML =
       '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
-      /* way out — this screen has no nav rail, so sign-out lives here */
+      /* way out — this screen has no nav rail, so sign-out lives here.
+         The sync check matters most HERE: a device that cannot open any class
+         can never reach Manage → Device sync, so this is its only path to the
+         newest cloud copy. */
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
       '</div>' +
@@ -6782,7 +6803,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
          pairing migrates here on the first admin sign-in */
       const owner = (cfg && cfg.adoptedAcct && cfg.owner) ? cfg.owner : SESSION.user;
       const chan = await dsChan(owner);
-      const row = await sbGet(chan).catch(function () { return null; });
+      /* a FAILED read must abort the push: sealing without the previous row
+         would publish a local-only envelope and clobber the cloud union
+         (accounts AND deletion tombstones). "No row yet" (first push) is fine. */
+      let rowReadErr = null;
+      const row = await sbGet(chan).catch(function (e) { rowReadErr = (e && e.message) || 'read failed'; return null; });
+      if (rowReadErr) {
+        cfg.lastResult = 'fail'; dsSaveCfg(cfg);
+        if (interactive) toast('Could not read the cloud copy (' + rowReadErr + ') — not overwriting it blind; try again later.', true);
+        return false;
+      }
       /* accounts travel additively: union this device's list with the cloud
          row's BEFORE sealing, so a stale short list here can no longer erase
          colleagues from the copy every other device installs */
@@ -6944,7 +6974,20 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const localSum = await dsSum(dsContentString());
     if (obj.sum === localSum) { cfg.lastPush = row.pushed_at || cfg.lastPush; dsSaveCfg(cfg); if (interactive) toast('This device already has the newest copy'); if (location.hash === '#/manage') renderManage(); return; }
     const cloudTs = obj.ts || 0;
-    if (cloudTs <= DS_BOOT_TS) { if (interactive) toast('This device has newer data than the cloud — nothing to open'); return; }
+    if (cloudTs <= DS_BOOT_TS) {
+      /* contents differ (the sum check above passed) but neither side is
+         strictly newer — the copies have diverged. A flat "nothing to open"
+         refusal here dead-ends a device whose local copy is broken (e.g. a
+         class blob went missing), so offer the copy with honest wording. */
+      if (!interactive) return;
+      const okD = await confirmDlg('The cloud copy differs from this device',
+        'Neither copy is newer: this device last saved <b>' + new Date(DS_BOOT_TS).toLocaleString() + '</b>; the cloud copy was saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore.',
+        'Open cloud copy');
+      if (!okD) { toast('Kept this device’s copy'); return; }
+      stashSafetyBackup('before replacing data');
+      dsInstall(obj);
+      return;
+    }
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b> — newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsAuthDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account — use the password from the device that saved it.' : ''),
@@ -7294,7 +7337,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (sprMode() === 'class') {
       const ix = classIndex();
       const lastId = localStorage.getItem('spr-last-class');
-      const meta = ix.find((c) => c.id === lastId && SESSION.keys[c.id]) || ix.filter((c) => SESSION.keys[c.id])[0];
+      const openable = function (c) { return SESSION.keys[c.id] && localStorage.getItem(classBlobKey(c.id)); };
+      const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0];
       if (meta) SPR_LOGIN_AUTO_CLASS = meta.id;   /* opened after the gate drops */
     }
     await persistNow(true);

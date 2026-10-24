@@ -597,6 +597,7 @@ async function loginCloudAs(B, user, pass) {
   /* removing the sign-in kills its pointer; the data row survives */
   syncSB(Bt);
   click(Bt, Bt.d.querySelector('[data-action="acct-del"][data-user="' + TEA + '"]'));
+  const delAt = Date.now() - 1000;
   await sleep(150);
   click(Bt, Bt.d.querySelector('#dlg [data-x="1"]'));
   const ptrDead = await waitFor(function () {
@@ -620,6 +621,19 @@ async function loginCloudAs(B, user, pass) {
     return t.indexOf('No cloud copy') !== -1 || t.indexOf('Wrong password') !== -1;
   }, 25000);
   ok(goneRej, 'deleted teacher account cannot sign in anywhere anymore');
+  /* the tombstone rides the DEBOUNCED (4 s) data-row push. S10 adopts the
+     cloud copy, so it must not start until the post-deletion copy is on the
+     row (pushed_at newer than the deletion click). Deterministic — the old
+     debug sleep here was accidentally load-bearing. */
+  const delPushed = await waitFor(function () {
+    syncSB(Bt);
+    const r = SB[dataRows[0]];
+    return !!(r && r.pushed_at && new Date(r.pushed_at).getTime() > delAt);
+  }, 30000);
+  ok(delPushed, 'post-deletion copy published (tombstone travels on the row)');
+  await sleep(5500);   /* outlive the 4 s debounce: no straggler push may overwrite it */
+  syncSB(Bt);
+  ok(SB[dataRows[0]] && new Date(SB[dataRows[0]].pushed_at).getTime() > delAt, 'row still carries the post-deletion copy after the debounce window');
 
   /* ---------- S9: no surprise .json downloads; in-app safety copies ---------- */
   console.log('== S9: safety copies replace the .json download ==');
