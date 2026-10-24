@@ -276,16 +276,20 @@
     const raw = localStorage.getItem(classBlobKey(id));
     let key = (SESSION.keys || {})[id];
     if (!raw || !key) {
-      /* a silent toast here reads as "the button did nothing" — say what is
-         wrong and offer the concrete way out (pull the newest cloud copy) */
+      /* never a dead end: one sentence + ONE primary button + Sign out is
+         always visible on the screen behind */
       const what = !raw
-        ? 'The workbook data for <b>' + U.esc(meta.name) + '</b> is not on this device.'
+        ? 'The data for <b>' + U.esc(meta.name) + '</b> is not on this device.'
         : 'This device does not hold the unlock key for <b>' + U.esc(meta.name) + '</b>.';
-      const how = dsOn()
-        ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.'
-        : 'Turn on device sync (Manage &rarr; Device sync) on the device that has this class, then pull the copy here — or restore a backup on this screen.';
-      const ok = await confirmDlg('Cannot open ' + meta.name + ' yet', what + '<br><br>' + how, dsOn() ? 'Check for a newer copy' : 'Understood');
-      if (ok && dsOn()) dsPullCheck(true);
+      const ok = await confirmDlg('Cannot open ' + meta.name + ' yet',
+        what + '<br><br>' + (dsOn()
+          ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
+          : 'Restore a backup file on this screen' + (myUser() && myUser().role !== 'admin' ? ', or ask your admin to set up device sync for you.' : '.')),
+        dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
+      if (ok) {
+        if (dsOn()) dsPullCheck(true);
+        else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+      }
       return;
     }
     try {
@@ -299,9 +303,14 @@
     } catch (e) {
       CLS = null; CLS_KEY = null;
       const ok = await confirmDlg('Could not open ' + meta.name,
-        'The saved copy on this device does not match your key (it may be older or newer than what this device holds).<br><br>' + (dsOn() ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.' : 'Restore a backup of this class on this screen, or pair this device again from the device that holds the class.'),
-        dsOn() ? 'Check for a newer copy' : 'Understood');
-      if (ok && dsOn()) dsPullCheck(true);
+        'The saved copy on this device does not match this device\u2019s key.<br><br>' + (dsOn()
+          ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
+          : 'Restore a backup file on this screen' + (myUser() && myUser().role !== 'admin' ? ', or ask your admin for help.' : '.')),
+        dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
+      if (ok) {
+        if (dsOn()) dsPullCheck(true);
+        else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+      }
     }
   }
   function closeClass() {
