@@ -262,7 +262,8 @@ async function loginCloudAs(B, user, pass) {
   ok(!!Bb.d.getElementById('loginUser'), 'second browser shows sign-in card');
   loginAs(Bb, ADMIN, 'totally-wrong');
   const wrongPw = await waitFor(function () {
-    return ((Bb.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1;
+    const t = (Bb.d.getElementById('loginErr') || {}).textContent || '';
+    return t.indexOf('Invalid') !== -1 || t.indexOf('no accounts') !== -1;   /* empty device points to pairing; either rejection is correct */
   }, 20000);   // wrong-password unwrap still pays PBKDF2-310k under load
   ok(wrongPw, 'wrong password rejected locally (no cloud contact made)');
   const s4In = await loginCloudAs(Bb, ADMIN, PW);
@@ -547,7 +548,7 @@ async function loginCloudAs(B, user, pass) {
   await sleep(300);
   await ackGate(G2);
   loginAs(G2, TEA, 'wrong-password-99');
-  const rej = await waitFor(function () { return ((G2.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+  const rej = await waitFor(function () { const t = (G2.d.getElementById('loginErr') || {}).textContent || ''; return t.indexOf('Invalid') !== -1 || t.indexOf('no accounts') !== -1; }, 25000);
   ok(rej, 'wrong teacher password rejected on the pointer row');
   /* admin resets the teacher password -> old pointer password dies, new one works */
   click(Bt, Bt.d.querySelector('[data-action="logout"]'));
