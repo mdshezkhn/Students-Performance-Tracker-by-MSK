@@ -2908,6 +2908,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const raw = localStorage.getItem(classBlobKey(id));
     let key = (SESSION.keys || {})[id];
     if (!raw || !key) {
+      /* the account holds a wrap for this class but the session does not hold
+         the unwrapped key (e.g. right after a migration reload): one sign-in
+         picks it back up — say THAT instead of the scary key-missing text */
+      const me2 = myUser();
+      if (raw && me2 && me2.keyring && me2.keyring[id]) {
+        const okRe = await confirmDlg('One more sign-in needed',
+          'This device holds your key for <b>' + U.esc(meta.name) + '</b>, but this session was restored without it. Sign in once more and the class opens straight away.',
+          'Sign out now');
+        if (okRe) doLogout();
+        return;
+      }
       /* never a dead end: one sentence + ONE primary button + Sign out is
          always visible on the screen behind */
       const what = !raw
