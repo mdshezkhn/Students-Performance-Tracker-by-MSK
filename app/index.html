@@ -3171,6 +3171,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+        '<button class="uc-out" data-action="start-fresh" style="font-size:11.5px;padding:5px 12px;color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
       '</div>' +
       pageHead('Your classes',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
@@ -3528,6 +3529,33 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   /* ---- export / restore EVERYTHING (admin) ---- */
+  /* nuke this device's app state and reload to the sign-in screen. The cloud
+     copy and other devices are untouched; a full backup downloads first so
+     nothing can be lost even if the cloud copy were stale. */
+  async function startFreshDevice() {
+    const yes = await confirmDlg('Start fresh on this device',
+      'This erases the app&rsquo;s data on <b>THIS DEVICE ONLY</b> &mdash; the cloud copy and your other computers are not touched. Signing in again afterwards re-downloads everything from the cloud. A backup file downloads first, just in case.',
+      'Erase &amp; restart');
+    if (!yes) return;
+    try { exportEverything(); } catch (e) {}
+    setTimeout(function () {
+      try {
+        const kill = [];
+        for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('spr-') === 0) kill.push(k); }
+        kill.forEach(function (k) { localStorage.removeItem(k); });
+        const kills = [];
+        for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k && k.indexOf('spr-') === 0) kills.push(k); }
+        kills.forEach(function (k) { sessionStorage.removeItem(k); });
+      } catch (e) {}
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { try { r.unregister(); } catch (e2) {} }); }).catch(function () {});
+      }
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (ks) { ks.forEach(function (k) { try { caches.delete(k); } catch (e2) {} }); }).catch(function () {});
+      }
+      setTimeout(function () { location.href = location.pathname; location.reload(); }, 400);
+    }, 700);   /* give the backup download a moment to start */
+  }
   async function exportEverything() {
     if (!myUser() || myUser().role !== 'admin') return;
     const ix = classIndex();
@@ -5554,6 +5582,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'class-share') { classShareDialog(el.dataset.id); return; }
     if (a === 'class-export-file') { exportClassFile(el.dataset.id); return; }
     if (a === 'export-all') { exportEverything(); return; }
+    if (a === 'start-fresh') { startFreshDevice(); return; }
     if (a === 'review-approve') { reviewDecide(el.dataset.id, true); return; }
     if (a === 'review-reject') { reviewDecide(el.dataset.id, false); return; }
     if (a === 'show-setup') { loginSetupMode = true; renderLogin(); return; }

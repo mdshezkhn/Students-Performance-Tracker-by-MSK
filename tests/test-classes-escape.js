@@ -83,6 +83,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
+  /* ---- D: Start fresh on this device — the user-requested nuke button ---- */
+  console.log('== D: Start fresh wipes spr-* state after an automatic backup ==');
+  const C = boot(preJs(true));
+  await sleep(1500);
+  A.w.localStorage.setItem('spr-last-class', 'x');   /* marker a wipe must remove */
+  C.w.localStorage.setItem('spr-last-class', 'x');
+  const freshBtn = C.d.querySelector('.page [data-action="start-fresh"]');
+  check(!!freshBtn, '"Start fresh on this device" button present');
+  if (freshBtn) {
+    freshBtn.dispatchEvent(new C.w.MouseEvent('click', { bubbles: true }));
+    await sleep(600);
+    const dlg = C.d.getElementById('dlg');
+    check(!!(dlg && dlg.open && /Start fresh on this device/.test(dlg.textContent || '')), 'confirm dialog warns this device only');
+    const yes = dlg ? dlg.querySelector('[data-x="1"]') : null;
+    if (yes) {
+      yes.dispatchEvent(new C.w.MouseEvent('click', { bubbles: true }));
+      await sleep(1600);   /* 700ms backup grace + wipe */
+      let leftovers = 0;
+      for (let i = 0; i < C.w.localStorage.length; i++) { const k = C.w.localStorage.key(i); if (k && k.indexOf('spr-') === 0) leftovers++; }
+      check(leftovers === 0, 'every spr-* localStorage key erased');
+      check(!C.w.sessionStorage.getItem('spr-session'), 'session storage erased (signed out)');
+    }
+  }
+
   console.log(bad ? 'ESCAPE-CHECK FAILURES: ' + bad : 'ESCAPE-CHECK PASSED (' + ok + ')');
   process.exit(bad ? 1 : 0);
 })().catch((e) => { console.error('ERR', e); process.exit(1); });
