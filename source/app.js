@@ -3978,7 +3978,9 @@
   /* a legacy pre-account pairing (random channel, no adoptedAcct flag) keeps
      admin-only pushes until an admin's fresh sign-in migrates the channel to
      the account home — a teacher must never fork a second cloud island */
-  function dsCanPush() { return dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
+  /* P1.3: device sync OFF must mean ZERO cloud requests — the on-flag is
+     checked again here so no path can push without an explicitly-enabled cfg */
+  function dsCanPush() { return dsOn() && dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
   function dsDeviceName() {
     const c = dsCfg(); if (c && c.device) return c.device;
     const ua = navigator.userAgent || '';
