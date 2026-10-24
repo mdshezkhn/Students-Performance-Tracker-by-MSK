@@ -312,12 +312,16 @@
   }
   async function classPersistNow(silent) {
     if (!CLS || !CLS_KEY) return;
+    try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}
     try {
       const blob = await CS.sealClass(DB, CLS_KEY);
       localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
       const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
       if (m) { m.updatedAt = Date.now(); m.pendingCount = classPendingCount(); setClassIndex(ix); }
       flashSaved(silent);
+      /* shared-database hook (later phase): a school Supabase table will
+         broadcast per-score changes so co-teachers' dashboards update live.
+         Today's device sync only copies the whole sealed workbook. */
       scheduleSyncPush();
     } catch (e) { toast('Could not save the class workbook — storage full?', true); }
   }
@@ -1290,7 +1294,15 @@
           '<div class="chart-box" style="height:' + Math.max(220, Math.min(gAll.filter(gateOk).length, 30) * 20) + 'px"><canvas id="ch-byStu" role="img" aria-label="Final score by student bar chart"></canvas></div></div>';
     }
 
-    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students',
+    let upd = '';
+    try {
+      const at = Number(localStorage.getItem('spr-last-save-at') || 0);
+      if (at) {
+        const d = new Date(at), mins = Math.round((Date.now() - at) / 60000);
+        upd = ' \u00b7 Updated ' + (mins < 1 ? 'just now' : ('at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')));
+      }
+    } catch (e0) {}
+    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students' + upd,
       '<a class="btn primary no-print" href="#/entry/sp">Enter scores</a>' +
       '<a class="btn no-print" href="#/grading">Grading</a>' +
       '<a class="btn no-print" href="#/analysis/class">Analysis</a>' +
