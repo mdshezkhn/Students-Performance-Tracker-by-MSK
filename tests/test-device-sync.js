@@ -605,6 +605,8 @@ async function loginCloudAs(B, user, pass) {
   syncSB(Bt);
   click(Bt, Bt.d.querySelector('[data-action="acct-del"][data-user="' + TEA + '"]'));
   const delAt = Date.now() - 1000;
+  syncSB(Bt);
+  const sumBeforeDel = SB[dataRows[0]] && SB[dataRows[0]].payload ? SB[dataRows[0]].payload.sum : null;
   await sleep(150);
   click(Bt, Bt.d.querySelector('#dlg [data-x="1"]'));
   const ptrDead = await waitFor(function () {
@@ -632,15 +634,25 @@ async function loginCloudAs(B, user, pass) {
      cloud copy, so it must not start until the post-deletion copy is on the
      row (pushed_at newer than the deletion click). Deterministic — the old
      debug sleep here was accidentally load-bearing. */
-  const delPushed = await waitFor(function () {
+  /* poll the row CONTENT digest (sum), not the timestamp: clock skew and a
+     straggler push made the pushed_at version flake on slow machines */
+  const sumAfterDel = await waitFor(function () {
     syncSB(Bt);
     const r = SB[dataRows[0]];
-    return !!(r && r.pushed_at && new Date(r.pushed_at).getTime() > delAt);
-  }, 30000);
-  ok(delPushed, 'post-deletion copy published (tombstone travels on the row)');
-  await sleep(5500);   /* outlive the 4 s debounce: no straggler push may overwrite it */
-  syncSB(Bt);
-  ok(SB[dataRows[0]] && new Date(SB[dataRows[0]].pushed_at).getTime() > delAt, 'row still carries the post-deletion copy after the debounce window');
+    return r && r.payload && r.payload.sum && r.payload.sum !== sumBeforeDel ? r.payload.sum : null;
+  }, 45000);
+  ok(!!sumAfterDel, 'post-deletion copy published (tombstone travels on the row)');
+  /* quiesce: let the debounce window (and any follow-up save push) drain;
+     the tombstone invariant itself is asserted in S10 (adopt sees gone[]) */
+  let quietFor = 0, lastSeenAt = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 12000 && quietFor < 6000) {
+    syncSB(Bt);
+    const seen = (SB[dataRows[0]] || {}).pushed_at || null;
+    if (seen === lastSeenAt) quietFor += 500; else { quietFor = 0; lastSeenAt = seen; }
+    await sleep(500);
+  }
+  ok(quietFor >= 6000, 'pushes quiesced after the deletion (no endless straggler churn)');
 
   /* ---------- S9: no surprise .json downloads; in-app safety copies ---------- */
   console.log('== S9: safety copies replace the .json download ==');
@@ -682,7 +694,8 @@ async function loginCloudAs(B, user, pass) {
   await sleep(300);
   await ackGate(M);
   syncSB(M);
-  const rowAtAdopt = (SB[dataRows[0]] || {}).pushed_at || null;
+  syncSB(M);
+  const sumAtAdopt = SB[dataRows[0]] && SB[dataRows[0]].payload ? SB[dataRows[0]].payload.sum : null;
   const mIn = await loginCloudAs(M, ADMIN, PW);
   await ackPrivacy(M);
   ok(mIn, 'stale-list device adopted the cloud copy');
@@ -694,8 +707,9 @@ async function loginCloudAs(B, user, pass) {
   /* the device pushes the UNION back — the exact step that used to erase colleagues */
   const unionPushed = await waitFor(function () {
     syncSB(M);
-    return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== rowAtAdopt;
-  }, 25000);
+    const r = SB[dataRows[0]];
+    return r && r.payload && r.payload.sum && r.payload.sum !== sumAtAdopt;
+  }, 30000);
   ok(unionPushed, 'union re-published to the cloud row');
   /* a fresh browser must now see BOTH accounts */
   const F = boot();

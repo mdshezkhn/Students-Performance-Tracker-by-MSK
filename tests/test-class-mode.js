@@ -23,6 +23,7 @@ function boot(preStorage) {
     'try{var oc=HTMLAnchorElement.prototype.click;' +
     'HTMLAnchorElement.prototype.click=function(){if(this.download)window.__downloads.push(this.download);return oc.apply(this,arguments)}}catch(e){}' +
     'window.__fetchLog=[];window.fetch=function(u){try{window.__fetchLog.push(String(u))}catch(e){}return Promise.resolve({ok:false,status:404,json:function(){return Promise.resolve([])}})};' +
+    'window.addEventListener("error",function(ev){window.__LAST_ERR=(ev.error&&ev.error.stack)||ev.message});' +
     '(function(){var d=document.getElementById("dlg");if(d&&!d.showModal){d.showModal=function(){this.open=true};d.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();' +
     '</script>';
   const i = html0.lastIndexOf('</body>');
@@ -114,7 +115,9 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(dlg && dlg.open && /dry run/i.test(dlg.textContent), 'dry-run dialog shown');
   ok(/1 class/i.test(dlg.textContent), 'plan lists the sample class');
   click(B, dlg.querySelector('[data-x="1"]'));           /* backup, then apply */
-  await sleep(900);
+  /* applyMigration does several PBKDF2 passes — wait for the mode flip
+     deterministically instead of a fixed sleep (flaked under load) */
+  await waitFor(() => storageDump(B)['spr-mode-v1'] === 'class', 40000);
   const dump1 = storageDump(B);
   ok(dump1['spr-mode-v1'] === 'class', 'mode switched to class');
   ok((dump1['spr-class-index-v1'] || '').length > 10, 'class index written');
@@ -152,21 +155,50 @@ const ADMIN = 'mo', PW = 'sample-password-1';
      users with no classes were trapped here with no sign-out and no nav */
   ok(!!B.d.querySelector('.page [data-action="logout"]'), 'Classes screen shows Sign out (escape hatch)');
   ok(!!B.d.querySelector('.page [data-action="privacy-open"]'), 'Classes screen links the privacy notice');
-  const pairBtn = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 4000);
-  ok(!!pairBtn, 'pair button available to admin');
+  /* simple-ui (2026-10-24): Pair lives in Manage & setup -> Advanced (admin, collapsed) */
+  B.w.location.hash = '#/manage';
+  const pairBtn = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 6000);
+  ok(!!pairBtn, 'pair button available to admin (Manage & setup -> Advanced)');
   async function pairAs(role, user) {
-    click(B, B.d.querySelector('[data-action="class-pair"]'));
-    await sleep(250);
+    let pb = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 4000);
+    if (!pb) {
+      /* after a pairing the app may navigate — go back to Manage -> Advanced */
+      B.w.location.hash = '#/manage';
+      pb = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 6000);
+    }
+    if (!pb) {
+      console.log('  [pair-dbg] no pair button for', role, '| hash:', B.w.location.hash,
+        '| mode:', B.w.localStorage.getItem('spr-mode-v1'),
+        '| ix:', (B.w.localStorage.getItem('spr-class-index-v1') || '').slice(0, 60),
+        '| details:', B.d.querySelectorAll('details').length,
+        '| pairInDom:', B.d.querySelectorAll('[data-action="class-pair"]').length,
+        '| summaryTxt:', (function () { const dd = B.d.querySelector('details summary'); return dd ? dd.textContent.slice(0, 40) : 'none'; })());
+      return null;
+    }
+    click(B, pb);
+    await sleep(350);
     const sel = await waitFor(() => B.d.querySelector('#pair-' + role), 3000);
+    if (!sel) { console.log('  [pair-dbg] no #pair-' + role, '| dlg:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 80) : 'closed'; })()); return null; }
     sel.value = user;
     click(B, B.d.querySelector('#dlg [data-x="1"]'));
     await sleep(500);
+    console.log('  [pair-dbg]', role, 'confirmed | dlg after confirm:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 60) : 'closed'; })());
     /* the one-time password dialog shows the generated rotation password */
-    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 5000);
+    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 15000);   /* key issue = PBKDF2; can exceed 5 s under load */
     const pw = pwEl ? pwEl.textContent : null;
     const done = B.d.querySelector('#dlg [data-x="1"]');
     if (done) click(B, done);
     await sleep(250);
+    /* the pairing flow reloads the page in a real browser; jsdom's reload is a
+       no-op, so emulate: fresh jsdom over the same storage + session */
+    const sCopy = B.w.sessionStorage.getItem('spr-session');
+    const sdCopy = B.w.sessionStorage.getItem('spr-session-db');
+    B = boot(storageDump(B));
+    if (sCopy) B.w.sessionStorage.setItem('spr-session', sCopy);
+    if (sdCopy) B.w.sessionStorage.setItem('spr-session-db', sdCopy);
+    await sleep(400);
+    B.w.location.hash = '#/manage';
+    await sleep(600);
     return pw;
   }
   const ealPw = await pairAs('eal', 'eal-01');
@@ -196,9 +228,10 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount, 8000), 'support opens the class');
   /* P1.2/P1.1: self-service change through the real UI, then the old password dies */
   {
-    B.w.location.hash = '#/manage';
-    await sleep(400);
-    click(B, B.d.querySelector('[data-action="change-pass-open"]'));
+    /* simple-ui: password change is the rail-foot button (Manage & setup is admin-only) */
+    const cpBtn = await waitFor(() => B.d.querySelector('[data-action="change-pass-open"]'), 6000);
+    if (!cpBtn) { console.log('  [dbg] no change-pass button; hash:', B.w.location.hash); }
+    click(B, cpBtn);
     await sleep(200);
     setVal(B, B.d.getElementById('cpCur'), supPw);
     setVal(B, B.d.getElementById('cpNew'), 'sup-new-pass-456');

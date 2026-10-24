@@ -498,7 +498,14 @@
   }
   /* roles: admin (Mo) sees & controls everything; management sees Ranking too;
      teacher = the everyday markbook tools, exactly as before */
-  function roleLabel(r) { r = classRole(r); return (CS && CS.roleLabel(r)) || (r === 'admin' ? 'Admin' : 'Teacher'); }
+  function roleLabel(r) {
+    /* display the STORED role faithfully — classRole() maps legacy 'teacher'
+       to 'eal' for permissions, but the Users tab must not re-label a plain
+       teacher as an EAL teacher (2026-10-24 review note) */
+    const raw = String(r || '');
+    const labels = { admin: 'Admin', manager: 'Manager', management: 'Manager', eal: 'EAL teacher', support: 'Supporting teacher', teacher: 'Teacher' };
+    return labels[raw] || labels[classRole(raw)] || (CS && CS.roleLabel(classRole(raw))) || raw;
+  }
   function isMgmt() { const r = classRole((currentUser() || {}).role); return r === 'admin' || r === 'manager'; }
   function buildShell() {
     const sem = cur();
@@ -654,7 +661,6 @@
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
-      '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
       '</main></div>';
   }
   /* admin-only Advanced panel - every technical action, one plain description,
@@ -2339,7 +2345,6 @@
         pageHead('Manage & setup', 'setup, pairing and recovery tools') +
         renderClassesAdvanced(classIndex(), false) +
         '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
-        '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
         '</main></div>';
       window.scrollTo(0, 0);
       return;
@@ -3489,8 +3494,12 @@
         try {
           const res = await doLoginFull(u, p);
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
-          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
+          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+          /* single-class auto-open then takes the landing: on success it points
+             #/dashboard itself; on failure its honest dialog shows over the
+             working chooser (never a blank screen, never a dead end) */
           if (SPR_LOGIN_AUTO_CLASS) { const cid0 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid0); }
+          toast('Welcome back, ' + res.user.name); maybeJoin();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
       })();

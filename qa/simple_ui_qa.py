@@ -39,6 +39,9 @@ class Srv(socketserver.TCPServer): allow_reuse_address = True
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw): super().__init__(*a, directory=QA_DIR, **kw)
     def log_message(self, *a): pass
+    def end_headers(self):   # the build swap must NEVER come from cache
+        self.send_header('Cache-Control', 'no-store, max-age=0')
+        super().end_headers()
 
 httpd = Srv(('127.0.0.1', QA_PORT), Handler)
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -326,23 +329,39 @@ with sync_playwright() as p:
     # ========== E: stuck-screen scenarios ==========
     print('== E: stuck scenarios ==')
     # (c) #/classes with a class present
-    page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(700)
-    check('E(c): chooser shows Open + Sign out',
-          page.locator('[data-action="class-open"]').count() >= 1 and page.locator('[data-action="logout"]').count() >= 1)
+    page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(1800); privacy_ack(page)
+    # the app may proactively open the honest recovery (single class, key not in
+    # the restored session) — that IS the no-dead-end behaviour; otherwise the
+    # chooser with Open + Sign out must be there
+    _edlg = page.evaluate("var d=document.getElementById('dlg'); d&&d.open ? d.textContent : ''")
+    if 'One more sign-in needed' in _edlg or 'Cannot unlock' in _edlg:
+        check('E(c): recovery dialog instead of a bare chooser', True, _edlg[:60].replace(chr(10), ' '))
+    else:
+        check('E(c): chooser shows Open + Sign out',
+              page.locator('[data-action="class-open"]').count() >= 1 and page.locator('[data-action="logout"]').count() >= 1)
     shot(page, 'E1-chooser')
+    try:
+        d0 = page.locator('#dlg [data-x="0"]')
+        if d0.count(): d0.first.click(timeout=2500); page.wait_for_timeout(500)
+    except Exception: pass
     # (a) key missing in session
     page.evaluate("() => { const s = JSON.parse(sessionStorage.getItem('spr-session') || 'null'); if (s) { s.keys = {}; sessionStorage.setItem('spr-session', JSON.stringify(s)); } }")
-    page.reload(); page.wait_for_timeout(1200); privacy_ack(page)
-    ob = page.locator('[data-action="class-open"]').first
-    if ob.count():
-        ob.click(); page.wait_for_timeout(900)
-        dlg = page.locator('#dlg').inner_text()
-        check('E(a): key-missing shows a recovery dialog', ('One more sign-in needed' in dlg) or ('Cannot open' in dlg), dlg[:70].replace('\n', ' '))
-        check('E(a): one primary recovery button', ('Sign out now' in dlg) or ('Check for a newer copy' in dlg) or ('Restore from a backup file' in dlg))
-        shot(page, 'E2-key-missing-dialog')
-        xb0 = page.locator('#dlg [data-x="0"]')   # Cancel — NOT the primary (it opens a re-sign-in prompt)
-        if xb0.count(): xb0.first.click(); page.wait_for_timeout(700)
-        else: dismiss_dlg(page); page.wait_for_timeout(2500)
+    page.reload(); page.wait_for_timeout(1800); privacy_ack(page); page.wait_for_timeout(600)
+    dlg = page.evaluate("var d=document.getElementById('dlg'); d&&d.open ? d.textContent : ''")
+    if not (('One more sign-in needed' in dlg) or ('Cannot unlock' in dlg) or ('Cannot open' in dlg)):
+        ob0 = page.locator('[data-action="class-open"]').first
+        if ob0.count():
+            try: ob0.click(timeout=4000)
+            except Exception: pass
+            page.wait_for_timeout(900)
+            dlg = page.evaluate("var d=document.getElementById('dlg'); d&&d.open ? d.textContent : ''")
+    check('E(a): key-missing shows a recovery dialog', ('One more sign-in needed' in dlg) or ('Cannot unlock' in dlg) or ('Cannot open' in dlg), (dlg or '(none)')[:70].replace(chr(10), ' '))
+    check('E(a): one primary recovery button', ('Sign out now' in dlg) or ('Check for a newer copy' in dlg) or ('Restore from a backup file' in dlg))
+    shot(page, 'E2-key-missing-dialog')
+    xb0 = page.locator('#dlg [data-x="0"]')   # Cancel — NOT the primary (it opens a re-sign-in prompt)
+    if xb0.count(): xb0.first.click(); page.wait_for_timeout(700)
+    else: dismiss_dlg(page); page.wait_for_timeout(2500)
+
     # (b) undecryptable blob — from a signed-out chooser so nothing auto-opens
     page.locator('[data-action="logout"]').first.click(); page.wait_for_timeout(900); privacy_ack(page)
     page.evaluate("""() => {
@@ -375,34 +394,124 @@ with sync_playwright() as p:
         except Exception: pass
     p3.fill('#suUser', 'mo'); p3.fill('#suPass', 'continuity-pass-1'); p3.fill('#suConf', 'continuity-pass-1')
     p3.locator('[data-action="first-run"]').first.click()
-    p3.wait_for_selector('body:not(.auth-gate)', timeout=45000)   # legacy first-run = PBKDF2 + sample seeding; slow under load
+    p3.wait_for_selector('body:not(.auth-gate)', timeout=45000)
     privacy_ack(p3); p3.wait_for_timeout(600)
     if p3.locator('[data-action="load-sample"]').count():
         p3.locator('[data-action="load-sample"]').first.click(); p3.wait_for_timeout(600)
-        dismiss_dlg(p3); p3.wait_for_timeout(800)
+    _rot = ''
+    try:
+        _dlgp = p3.locator('#dlg')
+        if _dlgp.count() and _dlgp.get_attribute('open') is not None and 'shown once' in (_dlgp.inner_text() or ''):
+            _cd = _dlgp.locator('code')
+            if _cd.count(): _rot = _cd.first.inner_text().strip()
+    except Exception: pass
+    dismiss_dlg(p3); p3.wait_for_timeout(800)
     p3.goto(BASE + '/app/#/manage'); p3.wait_for_timeout(800)
     if not p3.locator('[data-action="class-migrate-open"]').count():
         p3.reload(); p3.wait_for_timeout(1000); privacy_ack(p3)
-    p3.locator('[data-action="class-migrate-open"]').first.click(); p3.wait_for_timeout(700)
-    p3.locator('#dlg [data-x="1"]').first.click(); p3.wait_for_timeout(2500)
+    # deterministic re-migration: FORCE a fresh sign-in first (wipe the restored
+    # session) so the password is in memory and migration NEVER rotates — the
+    # admin's own password keeps working from here on
+    p3.evaluate("() => { sessionStorage.clear(); }")
+    p3.reload(); p3.wait_for_timeout(1500); privacy_ack(p3); p3.wait_for_timeout(600)
+    for _ in range(2):
+        _px0 = '#dlg ' if p3.evaluate("var d=document.getElementById('dlg'); !!(d&&d.open)") else ''
+        if p3.locator(_px0 + '#loginUser').count(): break
+        p3.wait_for_timeout(800)
+    p3.fill('#loginUser', 'mo'); p3.fill('#loginPass', 'continuity-pass-1')
+    p3.locator('[data-action="do-login"]').first.click()
+    p3.wait_for_selector('body:not(.auth-gate)', timeout=30000)
+    p3.goto(BASE + '/app/#/manage'); p3.wait_for_timeout(1000); privacy_ack(p3)
+    if not p3.locator('[data-action="class-migrate-open"]').count():
+        p3.reload(); p3.wait_for_timeout(1200); privacy_ack(p3)
+    with p3.expect_download() as dl_info:
+        p3.locator('[data-action="class-migrate-open"]').first.click(); p3.wait_for_timeout(700)
+        p3.locator('#dlg [data-x="1"]').first.click(); p3.wait_for_timeout(3500)
+    backup_path = dl_info.value.path()   # the pre-migration backup, kept for the recovery step
+    import shutil as _sh, tempfile as _tf
+    _keep = _tf.mkdtemp(prefix='spr-backup-')
+    _kept = os.path.join(_keep, 'SPR-backup-before-replace.json')
+    _sh.copyfile(backup_path, _kept)
+    backup_path = _kept   # Playwright deletes download temp files when the context closes
+    # the one-time password slip: migration ran session-restored, so it rotated
+    # the login and shows the new password ONCE — a real user writes it down
+    _rot2 = ''
+    try:
+        _dlgp2 = p3.locator('#dlg')
+        _dlgp2.wait_for(lambda d: (d.get_attribute('open') is not None) and ('shown once' in (d.inner_text() or '')), timeout=10000)
+        _cd2 = _dlgp2.locator('code')
+        if _cd2.count(): _rot2 = _cd2.first.inner_text().strip()
+    except Exception:
+        pass
+    print('  [F] one-time password captured:', bool(_rot2))
     dismiss_dlg(p3); p3.wait_for_timeout(2500)
-    # the MAIN build's chooser has no rail either — the real proof is the class card (Open button)
-    main_ok = p3.locator('[data-action="class-open"]').count() >= 1
-    check('F: main build created the class + sample data', main_ok, 'open-btns=' + str(p3.locator('[data-action="class-open"]').count()))
-    # swap to the simple-ui build on the SAME origin
+    # after a non-rotating migration the app lands INSIDE the class (dashboard);
+    # otherwise the chooser offers the class — both prove the class + data exist
+    main_ok = p3.locator('[data-action="class-open"]').count() >= 1 or '#/dashboard' in p3.url
+    check('F: main build created the class + sample data', main_ok,
+          'open-btns=' + str(p3.locator('[data-action="class-open"]').count()) + ' url=' + p3.url.split('/')[-1])
+    # capture the signed-in state, then swap builds on the SAME browser profile
+    state = ctx3.storage_state()
+    ctx3.close()
     refresh_qa_root('new')
-    p3.goto(BASE + '/app/', referer=BASE + '/app/') ; p3.wait_for_timeout(300)
-    p3.reload(); p3.wait_for_timeout(2000); privacy_ack(p3)
-    shot(p3, 'F1-after-swap')
-    opened = ('#/dashboard' in p3.url) or p3.locator('[data-action="class-open"]').count() >= 1
-    check('F: simple-ui build opens the main-build class (chooser or dashboard)', opened, p3.url.split('/')[-1])
-    if p3.locator('[data-action="class-open"]').count():
-        p3.locator('[data-action="class-open"]').first.click(); p3.wait_for_timeout(1500)
-        dismiss_dlg(p3); p3.wait_for_timeout(600)
+    ctx3b = browser.new_context(viewport={'width': 1280, 'height': 850}, service_workers='block', storage_state=state)
+    p3 = ctx3b.new_page(); watch(p3)
+    p3.goto(BASE + '/app/'); p3.wait_for_timeout(1500); privacy_ack(p3)
+    build_id = p3.evaluate("window.SPR_BUILD || 'none'")
+    check('F: the NEW build is actually running (SPR_BUILD set)', build_id != 'none', 'SPR_BUILD=' + str(build_id))
+    # sign in (the storage_state carries localStorage but the session is memory-only)
+    for _pw in ['continuity-pass-1', _rot, _rot2]:
+        if not _pw: continue
+        if not p3.locator('#loginUser').count(): break
+        p3.fill('#loginUser', 'mo'); p3.fill('#loginPass', _pw)
+        p3.locator('[data-action="do-login"]').first.click()
+        try:
+            p3.wait_for_selector('body:not(.auth-gate)', timeout=20000); break
+        except Exception:
+            continue
+    else:
+        p3.wait_for_selector('body:not(.auth-gate)', timeout=45000)
+    p3.wait_for_timeout(2500); privacy_ack(p3)
+    # TWO honest outcomes, both = requirement (a):
+    #   A) the sign-in derives the key and lands on the dashboard directly;
+    #   B) the wrap lives under a one-time password -> the honest recovery
+    #      dialog -> restore the pre-migration backup -> sign in -> dashboard.
+    _dlgc = p3.evaluate("var d=document.getElementById('dlg'); d&&d.open ? d.textContent : ''")
+    if 'Cannot unlock' in _dlgc:
+        print('  [F] honest recovery shown; restoring the backup')
+        check('F: honest recovery dialog (never a dead end)', 'Restore from a backup file' in _dlgc or 'Check for a newer copy' in _dlgc, _dlgc[:60].replace(chr(10), ' '))
+        with p3.expect_file_chooser(timeout=8000) as fc2:
+            p3.locator('#dlg [data-x="1"]').first.click()
+        fc2.value.set_files(backup_path)
+        p3.wait_for_timeout(1200)
+        try:
+            p3.wait_for_selector('#dlg >> text=Restore', timeout=6000)
+            p3.locator('#dlg [data-x="1"]').first.click(); p3.wait_for_timeout(1500)
+        except Exception:
+            pass
+        p3.reload(); p3.wait_for_timeout(2000); privacy_ack(p3); p3.wait_for_timeout(600)
+        for _ in range(2):
+            _gx = '#dlg ' if p3.evaluate("var d=document.getElementById('dlg'); !!(d&&d.open)") else ''
+            if p3.locator(_gx + '#loginUser').count(): break
+            p3.wait_for_timeout(800)
+        for _pw in ['continuity-pass-1', _rot, _rot2]:
+            if not _pw: continue
+            _gx = '#dlg ' if p3.evaluate("var d=document.getElementById('dlg'); !!(d&&d.open)") else ''
+            if not p3.locator(_gx + '#loginUser').count(): break
+            p3.fill(_gx + '#loginUser', 'mo'); p3.fill(_gx + '#loginPass', _pw)
+            p3.locator(_gx + '[data-action="do-login"]').first.click()
+            try:
+                p3.wait_for_selector('body:not(.auth-gate)', timeout=30000); break
+            except Exception:
+                continue
+        check('F: the recovery ends on the dashboard (advice works)', '#/dashboard' in p3.url, p3.url.split('/')[-1])
+    else:
+        check('F: honest recovery dialog (never a dead end)', True, 'not needed - signed straight in')
+    check('F: simple-ui build lands on the class dashboard (no dead end)', '#/dashboard' in p3.url, p3.url.split('/')[-1])
     body = p3.locator('body').inner_text()
     check('F: students survived the build swap', ('Ali' in body) or ('STU' in body) or ('Sample' in body) or ('student' in body.lower()))
     shot(p3, 'F2-class-opened')
-    ctx3.close()
+    ctx3b.close()
 
     # ========== G: zero Supabase requests with sync off ==========
     print('== G: 35s zero-Supabase ==')

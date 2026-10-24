@@ -1,0 +1,81 @@
+serving E:\links-personal\links-personal\web\workspace\spr-repo\qa_root on http://127.0.0.1:8941
+engine: chromium
+== A: fresh setup ==
+  PASS A: after sign-in a screen with a visible way forward renders (not stuck)
+  PASS A: after load-sample reload the app is usable (session or sign-in)
+  PASS A: migration offered after legacy data exists
+  [migrate] safeguard toast hit — re-signing in
+  [capture] Page.wait_for_function: Timeout 20000ms exceeded.
+  [rotated] none
+  PASS A: after migration the class dashboard is the landing (no dead end) — dashboard
+== B: teacher accounts ==
+  PASS B: two teacher accounts created via Users tab — rows on Users tab
+  PASS B: pairing dialog completed
+  PASS B: EAL teacher sidebar is the four teacher tools — Dashboard | Students | Enter scores | Report Cards
+  PASS B: EAL teacher lands straight on the dashboard (auto-open) — dashboard
+  PASS B/C: teacher #/users URL refused — classes
+== C: live dashboard ==
+  PASS C: dashboard re-renders after save (SPA, no reload)
+  PASS C: dashboard shows an Updated-at line
+== D: Users tab ==
+  PASS D: Users tab reachable for admin
+  PASS D: account list renders — 3 rows
+  PASS D: search filters the list — 1 row after filter
+  PASS D: CSV header is exactly the agreed columns — username,display_name,role,class_or_grade,paired_with,status
+  PASS D: CSV carries no secrets
+== E: stuck scenarios ==
+  PASS E(c): chooser shows Open + Sign out
+  PASS E(a): key-missing shows a recovery dialog — One more sign-in needed  This device holds your key for Sample Class 4
+  PASS E(a): one primary recovery button
+  PASS E(b): undecryptable blob shows the recovery dialog — Could not open Sample Class 4B  The saved copy on this device does not
+== F: continuity (main build -> simple-ui build) ==
+  [console.warning] Service Worker registration blocked by Playwright
+  [console.warning] Service Worker registration blocked by Playwright
+  [console.warning] Service Worker registration blocked by Playwright
+  PASS F: main build created the class + sample data — open-btns=1
+  [console.warning] Service Worker registration blocked by Playwright
+  PASS F: the NEW build is actually running (SPR_BUILD set) — SPR_BUILD=63fbd7022b
+  PASS F: sign-in gives the honest recovery (never a dead end) — Cannot unlock Sample Class 4B on this device  The saved copy
+  [console.warning] Service Worker registration blocked by Playwright
+  PASS F: backup restored the pre-split markbook — legacy
+  [console.warning] Service Worker registration blocked by Playwright
+  [console.warning] Service Worker registration blocked by Playwright
+  FAIL F: simple-ui build lands on the class dashboard (no dead end) — classes
+  PASS F: students survived the build swap
+== G: 35s zero-Supabase ==
+  watching network for 35 s...
+  PASS G: zero Supabase requests with sync off (35 s) — 0
+  PASS P: phone dashboard renders
+  PASS P: phone chooser shows Sign out
+
+==== RESULTS ====
+PASS A: after sign-in a screen with a visible way forward renders (not stuck)
+PASS A: after load-sample reload the app is usable (session or sign-in)
+PASS A: migration offered after legacy data exists
+PASS A: after migration the class dashboard is the landing (no dead end) — dashboard
+PASS B: two teacher accounts created via Users tab — rows on Users tab
+PASS B: pairing dialog completed
+PASS B: EAL teacher sidebar is the four teacher tools — Dashboard | Students | Enter scores | Report Cards
+PASS B: EAL teacher lands straight on the dashboard (auto-open) — dashboard
+PASS B/C: teacher #/users URL refused — classes
+PASS C: dashboard re-renders after save (SPA, no reload)
+PASS C: dashboard shows an Updated-at line
+PASS D: Users tab reachable for admin
+PASS D: account list renders — 3 rows
+PASS D: search filters the list — 1 row after filter
+PASS D: CSV header is exactly the agreed columns — username,display_name,role,class_or_grade,paired_with,status
+PASS D: CSV carries no secrets
+PASS E(c): chooser shows Open + Sign out
+PASS E(a): key-missing shows a recovery dialog — One more sign-in needed  This device holds your key for Sample Class 4
+PASS E(a): one primary recovery button
+PASS E(b): undecryptable blob shows the recovery dialog — Could not open Sample Class 4B  The saved copy on this device does not
+PASS F: main build created the class + sample data — open-btns=1
+PASS F: the NEW build is actually running (SPR_BUILD set) — SPR_BUILD=63fbd7022b
+PASS F: sign-in gives the honest recovery (never a dead end) — Cannot unlock Sample Class 4B on this device  The saved copy
+PASS F: backup restored the pre-split markbook — legacy
+FAIL F: simple-ui build lands on the class dashboard (no dead end) — classes
+PASS F: students survived the build swap
+PASS G: zero Supabase requests with sync off (35 s) — 0
+PASS P: phone dashboard renders
+PASS P: phone chooser shows Sign out
+TOTAL: 29 checks, 1 failures

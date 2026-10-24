@@ -116,7 +116,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   check(!!W.w.__SEED_DONE, 'seed built with ClassStore crypto' + (W.w.__SEED_ERR ? ' (' + W.w.__SEED_ERR + ')' : ''));
   await sleep(300);
   await loginAs(W, 'Mo', PW);
-  await sleep(900);
+  await waitFor(() => W.w.location.hash.indexOf('#/dashboard') === 0, 12000);   /* auto-open finishes its unwrap */
   check(W.w.location.hash.indexOf('#/dashboard') === 0, 'single class opens automatically (#/dashboard), got ' + W.w.location.hash);
   check(navIds(W).join(',') === 'dashboard,students,entry,reports,ranking,users,manage', 'admin sidebar: 4 tools + Ranking + Users + Manage');
   check(!W.d.getElementById('classSwitch'), 'no class switcher with a single class');

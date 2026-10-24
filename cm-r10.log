@@ -1,0 +1,33 @@
+  ok: under-length admin password rejected at setup
+  ok: setup with an under-length password did not sign in
+  ok: admin signed in with a compliant password
+  ok: legacy sample data persisted
+  ok: admin re-signs after the sample reload
+  ok: legacy sample data loaded (2 semesters)
+  ok: migration panel offered to admin
+  ok: dry-run dialog shown
+  ok: plan lists the sample class
+  ok: mode switched to class
+  ok: class index written
+  ok: pre-migration backup downloaded
+  ok: admin signs into class mode
+  ok: class data reachable after migration (auto-open or class home)
+  ok: sample class listed after migration (auto-opened)
+  ok: class workbook carries all semesters
+  ok: dashboard renders inside the class
+  ok: 11-character teacher password rejected
+  ok: 12-character teacher password accepted
+  ok: support account provisioned
+  ok: Classes screen shows Sign out (escape hatch)
+  ok: Classes screen links the privacy notice
+  ok: pair button available to admin (Manage & setup -> Advanced)
+  [pair-dbg] eal confirmed | dlg after confirm: closed
+  [pair-dbg] no pair button for support | hash: #/manage | mode: class | ix: [{"id":"c-sample-class-4b-ae7s","name":"Sample Class 4B","sc | details: 0 | pairInDom: 0 | summaryTxt: none
+  ok: one-time password issued for eal-01 (8epaw-tdyry-e5ej4-v7664)
+  FAIL: one-time password issued for sup-01 (5-5-5-5 generator)
+  FAIL: support signs in with the issued password
+  FAIL: support sees the paired class
+  ok: support gets no admin buttons
+SUITE ERROR TypeError: Cannot read properties of null (reading 'dispatchEvent')
+    at click (E:\links-personal\links-personal\web\workspace\spr-repo\tests\test-class-mode.js:45:29)
+    at main (E:\links-personal\links-personal\web\workspace\spr-repo\tests\test-class-mode.js:214:5)
