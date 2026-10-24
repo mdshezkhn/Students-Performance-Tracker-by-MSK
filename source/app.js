@@ -497,6 +497,7 @@
     if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
+    if (view === 'users' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users is admin-only, URL included */
     const navView = view;
     switch (view) {
       case 'students': renderStudents(); break;
@@ -508,6 +509,7 @@
       case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
       case 'ranking': renderRanking(); break;
       case 'manage': renderManage(); break;
+      case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
       default: renderDashboard();
     }
@@ -2155,6 +2157,51 @@
     });
   }
 
+  /* simple-ui admin Users tab: every account this device knows, plain words,
+     no secrets (never render hashes, keyrings or wraps) */
+  function usersClassInfo(un, role) {
+    const r = classRole(role);
+    if (r === 'admin' || r === 'manager') return { classes: 'All classes', partner: '' };
+    const ix = classIndex();
+    const mine = ix.filter((c) => c.eal === un || c.support === un);
+    if (!mine.length) return { classes: 'Not paired yet', partner: '' };
+    const partner = mine.map((c) => (c.eal === un ? c.support : c.eal) || '').filter(Boolean).join(', ');
+    return { classes: mine.map((c) => c.name).join(', '), partner: partner };
+  }
+  function renderUsers() {
+    const f = ui.usersView || (ui.usersView = { q: '', role: 'all' });
+    const all = getAuth().users;
+    const q = f.q.trim().toLowerCase();
+    const rows = all.filter((u) => (f.role === 'all' || classRole(u.role) === f.role) &&
+      (!q || (u.username + ' ' + (u.name || '')).toLowerCase().includes(q)));
+    const cell = (v) => U.esc(v || '\u2014');
+    $('#content').innerHTML = pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
+      '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
+      '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
+        '<label>Search <input class="inp" id="usersQ" placeholder="Name or username\u2026" value="' + U.esc(f.q) + '"></label>' +
+        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'EAL teacher'], ['support', 'Supporting teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        '<button class="btn" data-action="users-csv">Download list (CSV)</button>' +
+        '<button class="btn" data-action="acct-add-open">Add account</button>' +
+        '<button class="btn" data-action="class-roster-btn">Import roster CSV</button>' +
+      '</div></div>' +
+      (rows.length ? '<table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
+        rows.map((u) => {
+          const ci = usersClassInfo(u.username, u.role);
+          const selfNow = u.username === SESSION.user;
+          return '<tr><td>' + U.esc(u.name || u.username) + '</td>' +
+            '<td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
+            '<td>' + roleLabel(u.role) + '</td>' +
+            '<td>' + cell(ci.classes) + '</td>' +
+            '<td>' + cell(ci.partner) + '</td>' +
+            '<td>' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
+            '<td>' + (selfNow ? '' :
+              '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
+              '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+        : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>';
+  }
+
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
@@ -3056,6 +3103,33 @@
       if (location.hash === '#/manage') renderManage();
       return;
     }
+    if (a === 'users-csv') {
+      const head = 'username,display_name,role,class_or_grade,paired_with,status';
+      const lines = getAuth().users.map((u) => {
+        const ci = usersClassInfo(u.username, u.role);
+        const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+        return [u.username, u.name || u.username, roleLabel(u.role), ci.classes, ci.partner, u.disabled ? 'Disabled' : 'Active'].map(esc).join(',');
+      });
+      const blob = new Blob([head + '\n' + lines.join('\n')], { type: 'text/csv' });
+      const a2 = document.createElement('a');
+      a2.href = URL.createObjectURL(blob);
+      a2.download = 'spr-accounts.csv';
+      document.body.appendChild(a2); a2.click(); a2.remove();
+      return;
+    }
+    if (a === 'user-toggle') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
+      const un = el.dataset.user;
+      const auth = getAuth();
+      const u = auth.users.find((x) => x.username === un);
+      if (!u || un === SESSION.user) return;
+      u.disabled = !u.disabled;
+      saveAuth(auth);
+      if (dsCanPush()) scheduleSyncPush();
+      toast(un + (u.disabled ? ' disabled' : ' enabled') + ' \u2014 they cannot sign in while disabled');
+      renderUsers();
+      return;
+    }
     if (a === 'acct-add-open') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Add a sign-in</h3>' +
@@ -3549,6 +3623,8 @@
     if (t.classList && t.classList.contains('cell')) { onGridInput(t); return; }
     if (t.id === 'stuSearch') { ui.q = t.value; const el = $('#stuList'); if (el && cur()) el.innerHTML = stuCards(cur()); return; }
     if (t.id === 'dashSearch') { (ui.dash = ui.dash || {}).q = t.value; const el = $('#dashEvBody'); if (el && cur()) el.innerHTML = dashEvidenceRows(cur()); return; }
+    if (t.id === 'usersQ') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).q = t.value; renderUsers(); return; }
+    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).role = t.value; renderUsers(); return; }
     if (t.dataset && t.dataset.rn) {
       const semRn = cur(); if (!semRn) return;
       semRn.reportNotes = semRn.reportNotes || {};
@@ -4744,6 +4820,7 @@
     /* username matching is case-insensitive: the cloud channel already
        lowercases (dsChan), and users type "mo"/"Mo"/"MO" interchangeably */
     const user = auth.users.find((u) => String(u.username).toLowerCase() === username.toLowerCase());
+    if (user && user.disabled) return { error: 'This account is disabled \u2014 ask your administrator.' };
     if (!user) {
       if (auth.users.length === 0) {
         return { error: 'This device holds no accounts yet. If you use SPR on another device, tap "I use SPR on another device" below to pull your cloud copy — or set up this device fresh.' };
