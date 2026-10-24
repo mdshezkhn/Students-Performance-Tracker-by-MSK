@@ -6728,12 +6728,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!v2.wraps) v2.wraps = {};
     const cw = (obj.v2 && obj.v2.wraps) || {};
     let wrapChanged = false;
+    const canonical = function (un) { const m = merged.find(function (u) { return String(u.username).toLowerCase() === String(un).toLowerCase(); }); return m ? m.username : null; };
     for (const un of Object.keys(cw)) {
-      if (!merged.some(function (u) { return u.username === un; })) continue;
-      if (dir === 'install' ? (JSON.stringify(v2.wraps[un]) !== JSON.stringify(cw[un])) : !v2.wraps[un]) { v2.wraps[un] = cw[un]; wrapChanged = true; }
+      const cu = canonical(un);
+      if (!cu) continue;   /* wrap without a live account — tombstones handle removal */
+      const existing = wrapForV2(v2, cu);
+      if (dir === 'install' ? (JSON.stringify(existing) !== JSON.stringify(cw[un])) : !existing) { v2.wraps[cu] = cw[un]; wrapChanged = true; }
     }
     for (const un of Object.keys(localBy)) {   /* a local-only account keeps its wrap through an install */
-      if (byUn[un] === localBy[un] && !v2.wraps[un] && localV2 && localV2.wraps && localV2.wraps[un]) { v2.wraps[un] = localV2.wraps[un]; wrapChanged = true; }
+      if (byUn[un] === localBy[un] && !wrapForV2(v2, un) && localV2 && localV2.wraps) { const lw = wrapForV2(localV2, un); if (lw) { v2.wraps[un] = lw; wrapChanged = true; } }
     }
     for (const un of gone) { for (const wk of Object.keys(v2.wraps)) { if (wk.toLowerCase() === un && v2.wraps[wk]) { delete v2.wraps[wk]; wrapChanged = true; } } }
     if (changed) { auth.users = merged; saveAuth(auth); }
@@ -7092,8 +7095,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     catch (e) { return false; }   /* AES-GCM auth failed → wrong password */
     const keyB64 = b64uFromBytes(keyBytes);
     const obj = await dsOpenWith(row, keyB64);
-    const u = (obj.users || []).find(function (x) { return x.username === username; });
-    const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
+    const u = (obj.users || []).find(function (x) { return String(x.username).toLowerCase() === String(username).toLowerCase(); });
+    if (!u) return false;
+    const vr = await verifyUserPw(u, password, obj.v2); if (!vr || !vr.ok) return false;
     return { chan: chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at };
   }
   /* install a verified cloud copy on this device and join its sync channel */
@@ -7251,9 +7255,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* Password verification WITHOUT any stored hash: try (1) the account's
      login wrap, (2) the v2 master-key wrap, (3) a legacy FNV hash — the last
      only to migrate pre-P1.1 accounts, and only until they next sign in. */
+  /* data-key wraps are keyed by the account's stored username, but users type
+     the name in any case ("Mo"/"mo") — look the wrap up case-insensitively so
+     a wrap stored under one spelling unlocks the account under another */
+  function wrapForV2(v2, name) {
+    if (!v2 || !v2.wraps || !name) return null;
+    if (v2.wraps[name]) return v2.wraps[name];
+    const k = String(name).toLowerCase();
+    for (const key of Object.keys(v2.wraps)) { if (key.toLowerCase() === k && v2.wraps[key]) return v2.wraps[key]; }
+    return null;
+  }
   async function verifyUserPw(user, password, v2) {
     if (user.login && (await CS.verifyLogin(user.login, password))) return { ok: true, via: 'login' };
-    const w = v2 && v2.wraps && v2.wraps[user.username];
+    const w = wrapForV2(v2, user.username);
     if (w) { try { await unwrapWrap(w, password); return { ok: true, via: 'v2' }; } catch (e) {} }
     if (user.hash && user.hash === hashPassword(password)) return { ok: true, via: 'legacy-hash', staleDefault: user.hash === LEGACY_DEFAULT_HASH };
     return { ok: false };
@@ -7351,13 +7365,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       /* first encrypted run: seal the current workbook under this user's password */
       dk = crypto.getRandomValues(new Uint8Array(32));
       v2 = { fmt: 2, wraps: {}, ts: Date.now() };
-      v2.wraps[username] = await makeWrap(dk, password);
+      v2.wraps[user.username] = await makeWrap(dk, password);   /* canonical spelling — typed case must not fork the wrap */
       DB = DB || emptyDB();
       v2.data = await sealDB(DB, dk);
       writeV2(v2);
       try { localStorage.removeItem(LS_KEY); } catch (e) {}
     } else {
-      const w = v2.wraps && v2.wraps[username];
+      const w = wrapForV2(v2, user.username);
       if (!w) return { error: 'No data key is stored for this account. Sign in as the admin once, then sign in again with this account.' };
       try { dk = await unwrapWrap(w, password); }
       catch (e) { return { error: 'Invalid username or password.' }; }
@@ -7442,7 +7456,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       try {
         const v2 = readV2() || { fmt: 2, wraps: {} };
         v2.wraps = v2.wraps || {};
-        v2.wraps[username] = await makeWrap(SESSION.dk, password);
+        v2.wraps[u.username] = await makeWrap(SESSION.dk, password);
         writeV2(v2);
       } catch (e) { return 'password set, but key wrapping failed: ' + e.message; }
     }
@@ -7493,7 +7507,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             dsInstallFrom(hit, hit.owner || un);
             const res = await doLoginFull(un, pw);
             if (res && res.error) { const eEl2 = $('#odErr'); if (eEl2) eEl2.textContent = res.error; else toast(res.error, true); return; }
-            closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+            closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); maybeJoin();
+            if (SPR_LOGIN_AUTO_CLASS) { const cid1 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid1); }   /* paired sign-in goes straight into the class, like a normal sign-in */
           } catch (err) { const eEl = $('#odErr'); if (eEl) eEl.textContent = err.message || String(err); else toast('Sign-in failed: ' + (err.message || String(err)), true); }
           finally { b.disabled = false; }
         };
@@ -7599,6 +7614,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
               } catch (e3) { CLS = null; CLS_KEY = null; }
             }
             if (!CLS) DB = emptyDB();
+            else {
+              /* the early route() bounced a class-mode #/dashboard to #/classes
+                 while CLS was still null — now that the class is open, go back */
+              ui.classOpen = true;
+              if (location.hash.indexOf('#/dashboard') !== 0) location.hash = '#/dashboard';
+              buildShell(); route();
+            }
           } else {
             DB = normalizeDB(await unsealDB(v2.data, SESSION.dk));
           }

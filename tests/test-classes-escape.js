@@ -126,9 +126,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (eu && ep) {
     eu.value = '  mo  '; ep.value = 'secret123';   /* wrong case + stray spaces, right password */
     E.d.querySelector('[data-action="do-login"]').dispatchEvent(new E.w.MouseEvent('click', { bubbles: true }));
-    await sleep(2500);
+    /* the legacy-hash migration does two PBKDF2 passes — poll, don't fixed-sleep */
+    let gateDropped = false;
+    for (let t = 0; t < 30; t++) { await sleep(500); if (!E.d.body.classList.contains('auth-gate')) { gateDropped = true; break; } }
+    check(gateDropped, '"mo" + password opens the "Mo" account (no lockout)');
     const errEl = E.d.querySelector('#loginErr');
-    check(!E.d.body.classList.contains('auth-gate'), '"mo" + password opens the "Mo" account (no lockout)');
     check(!(errEl && /Invalid username or password/.test(errEl.textContent || '')), 'no false "Invalid username or password"');
   }
 
