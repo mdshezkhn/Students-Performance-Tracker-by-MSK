@@ -1,0 +1,6 @@
+serving E:\links-personal\links-personal\web\workspace\spr-repo\qa_root on http://127.0.0.1:8941
+engine: chromium
+== A: fresh setup ==
+  PASS A: after sign-in a screen with a visible way forward renders (not stuck)
+  [re-sign-dbg] gate:  | hash:  | err: none | dlg: none | suUser: 0 | loginUser: 0
+  FAIL A: re-sign-in after load-sample reload — sign-in failed

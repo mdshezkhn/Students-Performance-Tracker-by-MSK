@@ -1,0 +1,4 @@
+username,display_name,role,class_or_grade,paired_with,status
+"mo","mo","Admin","All classes","","Active"
+"eal-01","EAL-01","EAL teacher","Sample Class 4B","","Active"
+"sup-01","SUP-01","EAL teacher","Not paired yet","","Active"

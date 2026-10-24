@@ -1,0 +1,59 @@
+serving E:\links-personal\links-personal\web\workspace\spr-repo\qa_root on http://127.0.0.1:8941
+engine: chromium
+== A: fresh setup ==
+  PASS A: after sign-in a screen with a visible way forward renders (not stuck)
+  PASS A: migration offered after legacy data exists
+  [rotated] ['mo']
+  [dlg?] open: none
+  [auth] [{"u":"mo","kr":["c-sample-class-4b-5mqx"],"hash":false,"login":true}]
+  [sess] {"u":"mo","keys":[]}
+  [dlg?] open: Cannot open Sample Class 4B yetThis device does not hold the unlock key for Sample Class 4B.Restore a backup file on this screen.CancelResto
+  [auth] [{"u":"mo","kr":["c-sample-class-4b-5mqx"],"hash":false,"login":true}]
+  [sess] {"u":"mo","keys":[]}
+  [open-click blocked] Locator.click: Timeout 6000ms exceeded.
+Call log:
+  - waiting for locator("[data-action=\"class-open\"]").firs
+  [dlg now] Cannot open Sample Class 4B yetThis device does not hold the unlock key for Sample Class 4B.Restore a backup file on this screen.CancelRestore from a backup file
+  FAIL A: after migration the class dashboard is the landing (no dead end) — classes
+== B: teacher accounts ==
+  FAIL B: two teacher accounts created via Users tab — rows on Users tab
+  FAIL B: pairing dialog reachable — no Pair button found
+  FAIL B: EAL teacher sidebar is the four teacher tools
+  FAIL B: EAL teacher lands straight on the dashboard (auto-open)
+  FAIL B/C: teacher #/users URL refused — users
+== C: live dashboard ==
+Traceback (most recent call last):
+  File "E:\links-personal\links-personal\web\workspace\spr-repo\qa\simple_ui_qa.py", line 252, in <module>
+    dash_before = page.locator('#content').inner_text()[:400]
+                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\sync_api\_generated.py", line 12419, in inner_text
+    self._sync(self._impl_obj.inner_text(timeout=to_milliseconds(timeout)))
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\_impl\_sync_base.py", line 111, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\_impl\_locator.py", line 514, in inner_text
+    return await self._frame.inner_text(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\_impl\_frame.py", line 748, in inner_text
+    return await self._channel.send(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+        "innerText", self._timeout, locals_to_params(locals())
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\_impl\_connection.py", line 78, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Mohammed\AppData\Roaming\Python\Python314\site-packages\playwright\_impl\_connection.py", line 636, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Locator.inner_text: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#content")
+

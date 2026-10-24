@@ -280,7 +280,8 @@
          the unwrapped key (e.g. right after a migration reload): one sign-in
          picks it back up — say THAT instead of the scary key-missing text */
       const me2 = myUser();
-      if (raw && me2 && me2.keyring && me2.keyring[id]) {
+      const meRaw = me2 && (getAuth().users || []).find(function (x) { return x.username === me2.username; });
+      if (raw && meRaw && meRaw.keyring && meRaw.keyring[id]) {   /* myUser() has no keyring — read the raw auth record */
         const okRe = await confirmDlg('One more sign-in needed',
           'This device holds your key for <b>' + U.esc(meta.name) + '</b>, but this session was restored without it. Sign in once more and the class opens straight away.',
           'Sign out now');
@@ -516,11 +517,18 @@
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
       if (cv === 'manage') {
         /* admin without a class open reaches the Advanced tools here (the
-           no-class renderManage branch draws a standalone page) */
-        if (classRole((currentUser() || {}).role) === 'admin') { renderManage(); railActive('manage'); window.scrollTo(0, 0); return; }
+           no-class renderManage branch draws a standalone page); with a class
+           open the shell may have been wiped by a self-contained page (Users)
+           — rebuild it before the full Manage body writes into #content */
+        if (classRole((currentUser() || {}).role) === 'admin') {
+          if (CLS && !$('#content')) buildShell();
+          renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
+        }
         location.hash = '#/classes'; return;
       }
-    }    if (!DB.semesters.length) { renderWelcome(); return; }
+    }
+    if (!$('#content')) buildShell();   /* a self-contained page (Users/classes) may have wiped the shell — every switch view needs it back */
+    if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let view = parts[0] || 'dashboard';
@@ -1070,6 +1078,13 @@
       });
   }
   async function migrateApply(src, plan, pairings) {
+    if (!SESSION.pw) {
+      /* SESSION.pw is memory-only and dies with a reload; without it the admin's
+         class-key wrap would be sealed under a RANDOM password (shown once and
+         effectively unknowable). Refuse instead — one clean sign-in fixes it. */
+      toast('One more sign-in is needed before migrating — sign in and start the migration again.', true);
+      return;
+    }
     try {
       const auth = getAuth();
       const users = auth.users.map((u) => ({ username: u.username, role: classRole(u.role) }));
@@ -3236,6 +3251,7 @@
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
         if (location.hash === '#/manage') renderManage();
+        else if (location.hash === '#/users') renderUsers();   /* the new row appears immediately on the Users tab */
       })();
       return;
     }

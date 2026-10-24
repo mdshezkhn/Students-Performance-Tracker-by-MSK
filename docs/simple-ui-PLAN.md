@@ -10,3 +10,21 @@
 8. New admin Users tab (`#/users`, URL-guarded): list, search, role filter, CSV (exact agreed columns, no secrets), Add account, Import roster CSV, per-row Disable/Enable + Reset password; disabled accounts cannot sign in.
 9. Dashboard shows "Updated just now / HH:MM" after each save + a code comment marking the future shared-database hook.
 10. Tests: new `tests/test-simple-ui.js` (30 checks: stuck scenarios a/b/c, role sidebars, users guard/tab/CSV/secrets, disable, zero-request); escape suite updated for admin-only Advanced; all existing suites kept green; rebuilt artifacts committed (sw `25dc3a3290`).
+
+---
+## Status update (2026-10-24, reviewer fixes applied)
+
+5. **Correction**: the Advanced panel lives in **Manage & setup (admin only)**, collapsed,
+   one plain sentence per tool — the brief's original placement. The chooser screen carries
+   no technical buttons at all. `#/manage` is reachable even with no class open (a stuck
+   admin must reach Start fresh / restore), teachers are redirected (their password change
+   moved to a "Password" button in the sidebar footer).
+7. New `tests/test-pair-open.js` (9): full pair flow — publish, pair as lowercase `mo`,
+   auto-open, reload. class-mode suite green again (65).
+8. Bug fixes found by QA: wrap-lookup keyed by typed username; `dsAccountLookup` null crash;
+   migration sealing the admin's key under an unknown password after reload (SESSION.pw
+   safeguard); Users-tab re-render wiping the shell; renderManage null `#content` without a
+   class.
+9. Real-browser QA: `qa/simple_ui_qa.py` — scenarios A-G + phone at 390x844, screenshots in
+   `docs/qa/simple-ui/`. Final run: **26 checks, 0 failures**, including G = 0 Supabase
+   requests in 35 s with sync off.

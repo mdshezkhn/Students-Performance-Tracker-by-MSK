@@ -50,17 +50,22 @@ from playwright.sync_api import sync_playwright
 supa_requests = []
 def watch(page):
     page.on('request', lambda r: supa_requests.append(r.url) if 'supabase.co' in r.url else None)
-    page.on('console', lambda m: print('  [console.' + m.type + ']', m.text[:150]) if m.type in ('error', 'warning') else None)
+    page.on('console', lambda m: print('  [console.' + m.type + ']', m.text[:200]) if m.type in ('error', 'warning') else None)
+    page.on('pageerror', lambda e: print('  [pageerror] REPR:', repr(e)[:500]))
 
 def privacy_ack(page):
     page.wait_for_timeout(700)   # Document.init opens the gate shortly after boot
-    for sel in ('[data-action="privacy-gate-ack"]', '[data-action="privacy-ack"]'):
+    for _ in range(4):           # the gate can re-open once after a reload — ack until gone
         try:
             dlg = page.locator('#dlg')
-            if dlg.count() and dlg.get_attribute('open') is not None:
+            if not (dlg.count() and dlg.get_attribute('open') is not None): return
+            txt = (dlg.inner_text() or '')
+            clicked = False
+            for sel in ('[data-action="privacy-gate-ack"]', '[data-action="privacy-ack"]'):
                 b = page.locator(sel)
-                if b.count(): b.first.click(); page.wait_for_timeout(400)
-        except Exception: pass
+                if b.count(): b.first.click(); clicked = True; page.wait_for_timeout(450); break
+            if not clicked: return
+        except Exception: return
 
 def sign_in(page, u, pw):
     privacy_ack(page)
@@ -101,6 +106,7 @@ def dismiss_dlg(page):
             if b.count(): b.first.click(); page.wait_for_timeout(500)
     except Exception: pass
 
+ONLY_G = os.environ.get('ONLY_G')
 with sync_playwright() as p:
     try:
         browser = p.chromium.launch()
@@ -115,6 +121,8 @@ with sync_playwright() as p:
     print('== A: fresh setup ==')
     ctx = browser.new_context(viewport={'width': 1280, 'height': 850})
     page = ctx.new_page(); watch(page)
+    ctx.add_init_script("window.addEventListener('error', function (ev) { window.__LAST_ERR = (ev.error && ev.error.stack) || ev.message; });"
+                        "window.addEventListener('unhandledrejection', function (ev) { window.__LAST_ERR = 'REJECTION: ' + ((ev.reason && ev.reason.stack) || ev.reason); });")
     page.goto(BASE + '/app/', wait_until='networkidle')
     page.wait_for_timeout(800)
     privacy_ack(page); page.wait_for_timeout(400)   # the gate is modal — clear it before touching the login card
@@ -127,11 +135,20 @@ with sync_playwright() as p:
     privacy_ack(page); page.wait_for_timeout(600)
     shot(page, 'A2-after-signin')
     check('A: after sign-in a screen with a visible way forward renders (not stuck)',
-          page.locator('[data-action="logout"]').count() > 0, page.url.split('/')[-1])
+          page.locator('[data-action="logout"], [data-action="load-sample"]').count() > 0, page.url.split('/')[-1])
     # legacy first run: load the sample semester, then split it into a class workbook
     if page.locator('[data-action="load-sample"]').count():
         page.locator('[data-action="load-sample"]').first.click(); page.wait_for_timeout(600)
         dismiss_dlg(page); page.wait_for_timeout(800)
+        # load-sample reloads the app; the session restores silently (dk from
+        # sessionStorage) — sign in again ONLY if the gate actually came up
+        privacy_ack(page); page.wait_for_timeout(700)
+        if page.locator('#loginUser').count():
+            if not sign_in(page, 'mo', 'simple-ui-pass-1'):
+                check('A: re-sign-in after load-sample reload', False, 'sign-in failed'); sys.exit(1)
+        check('A: after load-sample reload the app is usable (session or sign-in)',
+              page.locator('#loginUser').count() == 0, page.evaluate('document.body.className'))
+        page.wait_for_timeout(600)
     page.goto(BASE + '/app/#/manage'); page.wait_for_timeout(800)
     if not page.locator('[data-action="class-migrate-open"]').count():
         page.reload(); page.wait_for_timeout(1000); privacy_ack(page)
@@ -139,6 +156,20 @@ with sync_playwright() as p:
     page.locator('[data-action="class-migrate-open"]').first.click(); page.wait_for_timeout(700)
     shot(page, 'A3-migration-dry-run')
     page.locator('#dlg [data-x="1"]').first.click()   # Download backup, then apply
+    page.wait_for_timeout(1200)
+    toasts0 = page.evaluate("Array.from(document.querySelectorAll('.toast')).map(function (t) { return t.textContent; }).join(' | ')")
+    if 'One more sign-in is needed before migrating' in toasts0:
+        # the restored session has no in-memory password — sign out and back in, retry once
+        print('  [migrate] safeguard toast hit — re-signing in')
+        page.locator('[data-action="logout"]').first.click(); page.wait_for_timeout(1200)
+        privacy_ack(page); page.wait_for_timeout(400)
+        if not sign_in(page, 'mo', 'simple-ui-pass-1'):
+            check('A: re-sign-in before migration retry', False, 'sign-in failed'); sys.exit(1)
+        page.goto(BASE + '/app/#/manage'); page.wait_for_timeout(800)
+        if not page.locator('[data-action="class-migrate-open"]').count():
+            page.reload(); page.wait_for_timeout(1000); privacy_ack(page)
+        page.locator('[data-action="class-migrate-open"]').first.click(); page.wait_for_timeout(700)
+        page.locator('#dlg [data-x="1"]').first.click()
     try:
         rotated = capture_pw_once(page)   # migration rotates the admin password (shown once) - waits for it
     except Exception as e:
@@ -151,28 +182,52 @@ with sync_playwright() as p:
             d = page.locator('#dlg')
             print('  [dlg]', d.get_attribute('open'), (d.inner_text() or '')[:200].replace(chr(10), ' '))
         except Exception: pass
+    print('  [rotated]', {k: (v[:3] + '...' + v[-2:] + ' len' + str(len(v))) for k, v in rotated.items()} or 'none')
     admin_pw = rotated.get('mo', 'simple-ui-pass-1')
-    page.wait_for_timeout(2000)   # finish(): reload to the chooser
-    privacy_ack(page); page.wait_for_timeout(400)   # each fresh session re-opens the gate; it intercepts everything
-    shot(page, 'A4-after-migration')
-    print('  [dbg2] after-ack dlg open:', page.evaluate("var d=document.getElementById('dlg'); d && d.open ? d.textContent.slice(0,120) : 'none'"))
-    if '#/classes' in page.url and page.locator('[data-action="class-open"]').count():
-        page.locator('[data-action="class-open"]').first.click(); page.wait_for_timeout(1200)
-        if 'One more sign-in needed' in page.locator('#dlg').inner_text():
-            page.locator('#dlg [data-x="1"]').first.click(); page.wait_for_timeout(1500)   # sign out
-            sign_in(page, 'mo', admin_pw); page.wait_for_timeout(1800)
-            if '#/classes' not in page.url: page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(800)
+    page.wait_for_timeout(2500)   # finish(): reload to the chooser
+    privacy_ack(page); page.wait_for_timeout(500)
+
+    def accept_dialog(page, needle, timeout=9000):
+        """wait for the #dlg to open with `needle` in its text; click [data-x=1]"""
+        try:
+            page.wait_for_function("(needle) => { const d = document.getElementById('dlg'); return !!(d && d.open && d.textContent.includes(needle)); }", arg=needle, timeout=timeout)
+            page.locator('#dlg [data-x="1"]').first.click()
+            page.wait_for_timeout(900)
+            return True
+        except Exception:
+            return False
+
+    # the migration reload can surface 'One more sign-in needed' (session
+    # restored without the freshly-rotated key) — accept it, re-sign in
+    if accept_dialog(page, 'One more sign-in needed'):
+        privacy_ack(page); page.wait_for_timeout(400)
+        ok_in = sign_in(page, 'mo', admin_pw)
+        page.wait_for_timeout(2000)   # sign-in auto-opens the class
+    # otherwise (or afterwards) an Open click gets us in
+    for _ in range(2):
+        if '#/dashboard' in page.url: break
+        page.wait_for_timeout(600)
+    
         if '#/classes' in page.url and page.locator('[data-action="class-open"]').count():
-            page.locator('[data-action="class-open"]').first.click(); page.wait_for_timeout(1500)
-    if os.environ.get('ONLY_A'):
-        page.screenshot(path=os.path.join(SHOTS, 'A6-where-we-ended.png'))
-        print('  [dbg A] hash:', page.evaluate('location.hash'))
-        print('  [dbg A] body:', page.evaluate('document.body.className'))
-        try: print('  [dbg A] dlg:', page.evaluate("var d=document.getElementById('dlg'); d && d.open ? d.textContent.slice(0,180) : 'none'"))
-        except Exception as e: print('  [dbg A] dlg?', str(e)[:60])
-    check('A: after migration, one Open reaches the class dashboard (no dead end)',
-          page.locator('.nav').count() > 0 and '#/dashboard' in page.url, page.url.split('/')[-1])
+            try:
+                page.locator('[data-action="class-open"]').first.click(timeout=6000)
+            except Exception as e:
+                print('  [open-click blocked]', str(e)[:110])
+                print('  [dlg now]', page.evaluate("var d=document.getElementById('dlg'); d && d.open ? d.textContent.slice(0,200) : 'none'"))
+            page.wait_for_timeout(800)
+            page.wait_for_timeout(1500)
+            if accept_dialog(page, 'One more sign-in needed', timeout=4000):
+                privacy_ack(page); page.wait_for_timeout(400)
+                sign_in(page, 'mo', admin_pw); page.wait_for_timeout(2000)
+        else:
+            page.wait_for_timeout(800)
+    check('A: after migration the class dashboard is the landing (no dead end)',
+          '#/dashboard' in page.url and page.locator('.nav').count() > 0, page.url.split('/')[-1])
     shot(page, 'A5-dashboard')
+    if '#/dashboard' not in page.url:
+        print('  [A-end] hash:', page.evaluate('location.hash'), '| gate:', page.evaluate('document.body.className'))
+        try: print('  [A-end] loginErr:', page.evaluate("var e=document.getElementById('loginErr'); e ? e.textContent : 'none'"))
+        except Exception: pass
 
     # ========== B: teacher accounts + pairing ==========
     print('== B: teacher accounts ==')
@@ -182,15 +237,19 @@ with sync_playwright() as p:
         page.locator('[data-action="acct-add-open"]').first.click(); page.wait_for_timeout(400)
         page.fill('#naUser', un); page.fill('#naName', un.upper()); page.fill('#naPass', 'teacher-pass-123'); page.fill('#naConf', 'teacher-pass-123')
         page.select_option('#naRole', role)
-        page.locator('[data-action="acct-add"]').first.click(); page.wait_for_timeout(1200)
+        page.locator('[data-action="acct-add"]').first.click()
+        try:   # the dialog closes when the async account creation finishes
+            page.wait_for_function("() => { const d = document.getElementById('dlg'); return !d || !d.open; }", timeout=20000)
+        except Exception: pass
+        page.wait_for_timeout(500)
         dismiss_dlg(page); page.wait_for_timeout(400)
         made[un] = 'teacher-pass-123'
     check('B: two teacher accounts created via Users tab',
           page.locator('#app table tbody tr, #content table tbody tr').count() >= 3, 'rows on Users tab')
     shot(page, 'B1-users-tab')
     # pair them to the class via Advanced
-    page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(700)
-    det = page.locator('details').first
+    page.goto(BASE + '/app/#/manage'); page.wait_for_timeout(800)   # Pair lives in Manage & setup -> Advanced since simple-ui
+    det = page.locator('details').filter(has=page.locator('[data-action="class-pair"]')).first
     if det.count(): det.locator('summary').click(); page.wait_for_timeout(400)
     pair_btn = page.locator('[data-action="class-pair"]').first
     if pair_btn.count():
@@ -198,7 +257,7 @@ with sync_playwright() as p:
         shot(page, 'B2-pair-dialog')
         try:
             page.select_option('#pair-eal', 'eal-01')
-            page.locator('#dlg [data-x="1"]').first.click(); page.wait_for_timeout(1800)
+            page.locator('#dlg [data-x="1"]').first.click(); page.wait_for_timeout(2500)
             made.update(capture_pw_once(page))   # pairing rotates the teacher password - capture it
             dismiss_dlg(page); page.wait_for_timeout(600)
             check('B: pairing dialog completed', True)
@@ -206,23 +265,24 @@ with sync_playwright() as p:
             check('B: pairing dialog completed', False, str(e)[:90])
     else:
         check('B: pairing dialog reachable', False, 'no Pair button found')
-    # teacher signs in on a fresh context
-    ctx2 = browser.new_context(viewport={'width': 1280, 'height': 850})
-    p2 = ctx2.new_page(); watch(p2)
-    p2.goto(BASE + '/app/'); p2.wait_for_timeout(800)
-    ok_in = sign_in(p2, 'eal-01', made.get('eal-01', 'teacher-pass-123'))
-    p2.wait_for_timeout(1200)
-    shot(p2, 'B3-eal-signin')
-    nav = p2.locator('.nav a').all_inner_texts()
+    # teacher signs in on the SAME browser (accounts are device-local; a shared
+    # classroom machine is the realistic deployment until the shared DB lands)
+    page.locator('[data-action="logout"]').first.click(); page.wait_for_timeout(900); privacy_ack(page)
+    ok_in = sign_in(page, 'eal-01', made.get('eal-01', 'teacher-pass-123'))
+    page.wait_for_timeout(2500)
+    shot(page, 'B3-eal-signin')
+    nav = page.locator('.nav a').all_inner_texts()
     check('B: EAL teacher sidebar is the four teacher tools',
           nav and nav[0] == 'Dashboard' and 'Manage & setup' not in nav and 'Users' not in nav, ' | '.join(nav[:6]))
-    check('B: EAL teacher lands in the class (not stranded on chooser)',
-          '#/dashboard' in p2.url or p2.locator('[data-action="class-open"]').count() == 1, p2.url.split('/')[-1])
-    shot(p2, 'B4-eal-view')
+    check('B: EAL teacher lands straight on the dashboard (auto-open)',
+          '#/dashboard' in page.url, page.url.split('/')[-1])
+    shot(page, 'B4-eal-view')
     # teacher cannot open #/users
-    p2.goto(BASE + '/app/#/users'); p2.wait_for_timeout(700)
-    check('B/C: teacher #/users URL refused', '#/users' not in p2.url, p2.url.split('/')[-1])
-    ctx2.close()
+    page.goto(BASE + '/app/#/users'); page.wait_for_timeout(700)
+    check('B/C: teacher #/users URL refused', '#/users' not in page.url, page.url.split('/')[-1])
+    # back to admin for the C/D sections
+    page.locator('[data-action="logout"]').first.click(); page.wait_for_timeout(900); privacy_ack(page)
+    sign_in(page, 'mo', 'simple-ui-pass-1'); page.wait_for_timeout(1500)
 
     # ========== C: live dashboard ==========
     print('== C: live dashboard ==')
@@ -277,15 +337,23 @@ with sync_playwright() as p:
     if ob.count():
         ob.click(); page.wait_for_timeout(900)
         dlg = page.locator('#dlg').inner_text()
-        check('E(a): key-missing shows the recovery dialog', 'Cannot open' in dlg, dlg[:70].replace('\n', ' '))
-        check('E(a): one primary recovery button', ('Check for a newer copy' in dlg) or ('Restore from a backup file' in dlg))
+        check('E(a): key-missing shows a recovery dialog', ('One more sign-in needed' in dlg) or ('Cannot open' in dlg), dlg[:70].replace('\n', ' '))
+        check('E(a): one primary recovery button', ('Sign out now' in dlg) or ('Check for a newer copy' in dlg) or ('Restore from a backup file' in dlg))
         shot(page, 'E2-key-missing-dialog')
-        dismiss_dlg(page)
-    # (b) undecryptable blob
+        xb0 = page.locator('#dlg [data-x="0"]')   # Cancel — NOT the primary (it opens a re-sign-in prompt)
+        if xb0.count(): xb0.first.click(); page.wait_for_timeout(700)
+        else: dismiss_dlg(page); page.wait_for_timeout(2500)
+    # (b) undecryptable blob — from a signed-out chooser so nothing auto-opens
+    page.locator('[data-action="logout"]').first.click(); page.wait_for_timeout(900); privacy_ack(page)
     page.evaluate("""() => {
       const ix = JSON.parse(localStorage.getItem('spr-class-index-v1') || '[]');
       if (ix.length) localStorage.setItem('spr-class-' + ix[0].id, JSON.stringify({ fmt: 1, broken: true }));
     }""")
+    # if the session restored, force the chooser; if the gate showed, sign back in (auto-open fails into the chooser)
+    if page.locator('#loginUser').count():
+        sign_in(page, 'mo', 'simple-ui-pass-1'); page.wait_for_timeout(2500)
+    if page.locator('[data-action="logout"]').count() and not page.locator('[data-action="class-open"]').count():
+        page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(900)
     page.reload(); page.wait_for_timeout(1200); privacy_ack(page)
     ob = page.locator('[data-action="class-open"]').first
     if ob.count():
@@ -297,7 +365,7 @@ with sync_playwright() as p:
 
     # ========== F: data continuity main -> simple-ui ==========
     print('== F: continuity (main build -> simple-ui build) ==')
-    ctx3 = browser.new_context(viewport={'width': 1280, 'height': 850})
+    ctx3 = browser.new_context(viewport={'width': 1280, 'height': 850}, service_workers='block')
     p3 = ctx3.new_page(); watch(p3)
     refresh_qa_root('main')
     p3.goto(BASE + '/app/'); p3.wait_for_timeout(1000)
@@ -307,7 +375,7 @@ with sync_playwright() as p:
         except Exception: pass
     p3.fill('#suUser', 'mo'); p3.fill('#suPass', 'continuity-pass-1'); p3.fill('#suConf', 'continuity-pass-1')
     p3.locator('[data-action="first-run"]').first.click()
-    p3.wait_for_selector('body:not(.auth-gate)', timeout=25000)
+    p3.wait_for_selector('body:not(.auth-gate)', timeout=45000)   # legacy first-run = PBKDF2 + sample seeding; slow under load
     privacy_ack(p3); p3.wait_for_timeout(600)
     if p3.locator('[data-action="load-sample"]').count():
         p3.locator('[data-action="load-sample"]').first.click(); p3.wait_for_timeout(600)
@@ -318,8 +386,9 @@ with sync_playwright() as p:
     p3.locator('[data-action="class-migrate-open"]').first.click(); p3.wait_for_timeout(700)
     p3.locator('#dlg [data-x="1"]').first.click(); p3.wait_for_timeout(2500)
     dismiss_dlg(p3); p3.wait_for_timeout(2500)
-    main_ok = p3.locator('.nav').count() > 0 and p3.locator('[data-action="class-open"], .nav').count() > 0
-    check('F: main build created the class + sample data', main_ok)
+    # the MAIN build's chooser has no rail either — the real proof is the class card (Open button)
+    main_ok = p3.locator('[data-action="class-open"]').count() >= 1
+    check('F: main build created the class + sample data', main_ok, 'open-btns=' + str(p3.locator('[data-action="class-open"]').count()))
     # swap to the simple-ui build on the SAME origin
     refresh_qa_root('new')
     p3.goto(BASE + '/app/', referer=BASE + '/app/') ; p3.wait_for_timeout(300)
@@ -344,12 +413,15 @@ with sync_playwright() as p:
     p4.goto(BASE + '/app/'); p4.wait_for_timeout(1000)
     privacy_ack(p4); p4.wait_for_timeout(400)
     # fresh profile: first-run setup (sync is off by default — no cloud config exists)
+    if not p4.locator('#suUser').count():
+        try: p4.locator('[data-action="show-setup"]').first.click(); p4.wait_for_timeout(400)
+        except Exception: pass
     if p4.locator('#suUser').count():
         p4.fill('#suUser', 'g'); p4.fill('#suPass', 'g-suite-pass-1234'); p4.fill('#suConf', 'g-suite-pass-1234')
         p4.locator('[data-action="first-run"]').first.click()
     else:
         sign_in(p4, 'g', 'g-suite-pass-1234')
-    p4.wait_for_selector('body:not(.auth-gate)', timeout=25000)
+    p4.wait_for_selector('body:not(.auth-gate)', timeout=60000)   # first-run PBKDF2 is slow under load
     privacy_ack(p4); p4.wait_for_timeout(500)
     if p4.locator('[data-action="load-sample"]').count():
         p4.locator('[data-action="load-sample"]').first.click(); p4.wait_for_timeout(600)
@@ -364,12 +436,16 @@ with sync_playwright() as p:
           str(len(supa_requests)) + (' : ' + supa_requests[0][:90] if supa_requests else ''))
     ctx4.close()
 
-    # phone viewport spot-check
-    ctx5 = browser.new_context(viewport={'width': 390, 'height': 844})
-    p5 = ctx5.new_page()
-    p5.goto(BASE + '/app/'); p5.wait_for_timeout(900)
-    shot(p5, 'A6-phone-signin')
-    ctx5.close()
+    # phone viewport (390x844): resize the signed-in admin page (accounts are
+    # device-local, so a separate phone context could only show the sign-in card)
+    page.set_viewport_size({'width': 390, 'height': 844})
+    page.goto(BASE + '/app/#/dashboard'); page.wait_for_timeout(1200)
+    shot(page, 'P2-phone-dashboard')
+    check('P: phone dashboard renders', page.locator('#content, .page').count() > 0)
+    page.goto(BASE + '/app/#/classes'); page.wait_for_timeout(1000)
+    shot(page, 'P3-phone-chooser')
+    check('P: phone chooser shows Sign out', page.locator('[data-action="logout"]').count() >= 1)
+    page.set_viewport_size({'width': 1280, 'height': 850})
 
     browser.close()
 
