@@ -277,17 +277,43 @@
     let key = (SESSION.keys || {})[id];
     if (!raw || !key) {
       /* the account holds a wrap for this class but the session does not hold
-         the unwrapped key (e.g. right after a migration reload): one sign-in
-         picks it back up — say THAT instead of the scary key-missing text */
+         the unwrapped key. Three honest cases:
+           a) session restored (no password in memory) -> one real sign-in
+              derives it: say so;
+           b) password in memory -> derive RIGHT NOW, no re-sign-in theatre;
+           c) derive impossible (the wrap lives under a one-time migration
+              password this device never saw) -> say exactly that and offer
+              the real recoveries (cloud copy / backup file). Never advice
+              that cannot work. */
       const me2 = myUser();
       const meRaw = me2 && (getAuth().users || []).find(function (x) { return x.username === me2.username; });
       if (raw && meRaw && meRaw.keyring && meRaw.keyring[id]) {   /* myUser() has no keyring — read the raw auth record */
-        const okRe = await confirmDlg('One more sign-in needed',
-          'This device holds your key for <b>' + U.esc(meta.name) + '</b>, but this session was restored without it. Sign in once more and the class opens straight away.',
-          'Sign out now');
-        if (okRe) doLogout();
-        return;
-      }
+        if (!SESSION.pw) {
+          const okRe = await confirmDlg('One more sign-in needed',
+            'This device holds your key for <b>' + U.esc(meta.name) + '</b>, but this session was restored without it. Sign in once more and the class opens straight away.',
+            'Sign out now');
+          if (okRe) doLogout();
+          return;
+        }
+        try { key = await CS.unwrapKey(meRaw.keyring[id], SESSION.pw); } catch (e) { key = null; }
+        if (key) {
+          SESSION.keys[id] = key;
+          classKeysToSession();
+          /* fall through — the class opens below */
+        } else {
+          const ok = await confirmDlg('Cannot unlock ' + meta.name + ' on this device',
+            'The saved copy needs its class key, and this device cannot derive it from your password. This happens when the class was set up while the sign-in had expired — the key was then saved under a one-time password that was shown only once.<br><br>' +
+            (dsOn()
+              ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
+              : 'Restore the backup file you downloaded when the class was set up (or ask your admin for a fresh key).'),
+            dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
+          if (ok) {
+            if (dsOn()) dsPullCheck(true);
+            else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+          }
+          return;
+        }
+      } else {
       /* never a dead end: one sentence + ONE primary button + Sign out is
          always visible on the screen behind */
       const what = !raw
@@ -303,6 +329,7 @@
         else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
       }
       return;
+      }   /* else: no wrap at all — the generic recovery above */
     }
     try {
       const wb = normalizeDB(await CS.openClass(JSON.parse(raw), key));
@@ -310,6 +337,27 @@
       DB = wb;
       DB.sprClass = 1; DB.id = id;   /* DB IS the class workbook now */
       ui.classOpen = true;
+      /* self-heal: if the stored wrap cannot be derived from the user's real
+         password (e.g. it was sealed under a one-time migration password on
+         another device), re-seal it now while we hold the correct key —
+         after this, sign-in alone unlocks the class again on every device */
+      if (SESSION.pw) {
+        const meH = myUser();
+        const meRawH = meH && (getAuth().users || []).find(function (x) { return x.username === meH.username; });
+        if (meRawH) {
+          let wrapOk = false;
+          try { wrapOk = !!(meRawH.keyring && meRawH.keyring[id] && await CS.unwrapKey(meRawH.keyring[id], SESSION.pw)); } catch (e) {}
+          if (!wrapOk) {
+            try {
+              meRawH.keyring = meRawH.keyring || {};
+              meRawH.keyring[id] = await CS.wrapKey(key, SESSION.pw);
+              saveAuth(getAuth());
+              classKeysToSession();
+              toast('Class key repaired on this device');
+            } catch (e) {}
+          }
+        }
+      }
       try { localStorage.setItem('spr-last-class', id); } catch (e) {}
       buildShell(); location.hash = '#/dashboard'; route();
     } catch (e) {
@@ -1014,6 +1062,28 @@
     fr.onload = async () => {
       let data = null;
       try { data = JSON.parse(fr.result); } catch (e) { toast('Not a valid export file', true); return; }
+      /* the pre-migration backup is the raw legacy markbook (what the migration
+         wizard downloads) — accept it and put the device back the way it was
+         BEFORE the split, so migration can simply be run again */
+      if (data && data.spr !== 1 && Array.isArray(data.semesters)) {
+        try { validateDB(data); } catch (e) { toast('Not a restorable backup: ' + e.message, true); return; }
+        const okGo = await confirmDlg('Restore this backup?',
+          'This puts back the single markbook from before the class split (' + data.semesters.length + ' semester(s)). Class workbooks already on this device are kept untouched. After the restore you can run <b>Review migration</b> again.', 'Restore');
+        if (!okGo) return;
+        stashSafetyBackup('before restoring the pre-migration backup');
+        try {
+          DB = normalizeDB(data);
+          CLS = null; CLS_KEY = null; ui.classOpen = false;
+          try { localStorage.removeItem(MODE_KEY); } catch (e2) {}
+          try { localStorage.removeItem('spr-last-class'); } catch (e2) {}
+          const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
+          v2.fmt = 2; v2.data = await sealDB(DB, SESSION.dk); v2.ts = Date.now();
+          writeV2(v2);
+          toast('Backup restored — your markbook is back. Review migration to split it again.');
+          location.hash = '#/manage'; location.reload();
+        } catch (e) { toast('Restore failed: ' + e.message + ' — nothing was changed', true); }
+        return;
+      }
       if (!data || data.spr !== 1 || data.type !== 'spr-export-all' || !Array.isArray(data.classes)) { toast('This is not an "Export everything" file', true); return; }
       const okGo = await confirmDlg('Restore everything',
         'This replaces all class workbooks on this device with the ' + data.classes.length + ' class(es) from the file. A safety copy of the current state is kept first. Class keys are re-issued: you (admin) get keys now; teachers are re-paired afterwards.', 'Restore');
@@ -4955,7 +5025,13 @@
       const ix = classIndex();
       const lastId = localStorage.getItem('spr-last-class');
       const openable = function (c) { return SESSION.keys[c.id] && localStorage.getItem(classBlobKey(c.id)); };
-      const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0];
+      const hasBlob = function (c) { return !!localStorage.getItem(classBlobKey(c.id)); };
+      /* key in hand -> open right away; otherwise a single class with data on
+         this device is STILL auto-opened: openClass either derives the key
+         from the just-typed password or shows one honest recovery screen —
+         never the bare chooser (the 2026-10-24 owner's case) */
+      const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0]
+        || ((ix.filter(hasBlob).length === 1 && SESSION.pw) ? ix.filter(hasBlob)[0] : null);
       if (meta) SPR_LOGIN_AUTO_CLASS = meta.id;   /* opened after the gate drops */
     }
     await persistNow(true);
@@ -5190,6 +5266,7 @@
             saveAuth(auth);
           }
           ready = true;
+          try { window.__SPR_SESSION_RESTORED = sess.user; } catch (e5) {}
         }
       } catch (e) { try { sessionStorage.removeItem('spr-session'); } catch (e2) {} }
       if (!ready) {
