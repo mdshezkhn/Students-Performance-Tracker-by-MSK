@@ -1,5 +1,0 @@
-serving E:\links-personal\links-personal\web\workspace\spr-repo\qa_root on http://127.0.0.1:8941
-engine: chromium
-== A: fresh setup ==
-  PASS A: after sign-in a screen with a visible way forward renders (not stuck)
-  FAIL A: re-sign-in after load-sample reload — sign-in failed
