@@ -410,14 +410,17 @@
   }
 
   /* ============================ shell & router ============================ */
-  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['ranking', 'Ranking'], ['manage', 'Manage & setup']];
-  /* class mode adds a Classes home + (for reviewers) a Review queue entry */
+  /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
+     reachable from the dashboard buttons. Admin adds Users + Manage & setup;
+     Ranking keeps its current role rules (admin + management). */
+  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
-    const list = NAV.slice();
-    if (sprMode() === 'class') {
-      list.unshift(['classes', '‹ All classes']);
-      if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
-    }
+    const r = classRole((currentUser() || {}).role);
+    let list;
+    if (r === 'admin') list = NAV_T.concat([['ranking', 'Ranking'], ['users', 'Users'], ['manage', 'Manage & setup']]);
+    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking']]);
+    else list = NAV_T.slice();
+    if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
     return list;
   }
   /* roles: admin (Mo) sees & controls everything; management sees Ranking too;
@@ -431,8 +434,16 @@
         '<nav class="rail">' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
-          '<div class="nav">' + navList().filter((n) => n[0] !== 'ranking' || isMgmt()).map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
-          '<div class="rail-foot"><label for="semSelect">Semester</label>' +
+          '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
+          '<div class="rail-foot">' +
+          (function () {   /* small class switcher - only when this account holds more than one class */
+            if (sprMode() !== 'class') return '';
+            const ix = CS.classesFor(myUser() || {}, classIndex());
+            if (ix.length < 2) return '';
+            return '<label for="classSwitch">Class</label><select id="classSwitch">' +
+              ix.map((c) => '<option value="' + U.esc(c.id) + '"' + (CLS && CLS.id === c.id ? ' selected' : '') + '>' + U.esc(c.name) + '</option>').join('') + '</select>';
+          })() +
+          '<label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
             (function() { var u = currentUser(); if (!u) return '';
@@ -517,9 +528,6 @@
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
-      (myUser() && myUser().role === 'admin' ?
-        '<button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair</button>' +
-        '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button>' : '') +
       '</div></div>';
   }
 
@@ -529,43 +537,58 @@
     const mine = CS.classesFor(me, ix);
     const admin = me.role === 'admin';
     const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
+    /* simple-ui: this screen is a plain chooser. Everything technical lives in
+       the admin-only Advanced panel below; teachers see class name + Open. */
     $('#app').innerHTML =
       '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
-      /* way out — this screen has no nav rail, so sign-out lives here.
-         The sync check matters most HERE: a device that cannot open any class
-         can never reach Manage → Device sync, so this is its only path to the
-         newest cloud copy. */
+      /* way out + recovery - always a visible Sign out; the sync check lives
+         here because a device that cannot open a class reaches nowhere else */
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
-        '<button class="uc-out" data-action="start-fresh" style="font-size:11.5px;padding:5px 12px;color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
       '</div>' +
-      pageHead('Your classes',
+      pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
         (me.role === 'manager' ? ' — whole school, read-only' : me.role === 'support' ? ' — you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ' — you edit your class and approve observation changes from your support partner' : '')) +
-      (admin ? '<div class="flex mb" style="flex-wrap:wrap">' +
-        '<button class="btn primary" data-action="class-new-open">New class</button>' +
-        '<button class="btn" data-action="class-import-btn">Import class file</button>' +
-        '<button class="btn" data-action="class-roster-btn">Import roster (accounts CSV)</button>' +
-        '<button class="btn" data-action="export-all">Export everything</button>' +
-        '<button class="btn" data-action="restore-all-btn">Restore everything</button>' +
-        '</div>' : '') +
-      (legacySource ? '<div class="panel" style="margin:0 0 16px;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
-        '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
-        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       (me.role === 'manager' ? '<p class="small muted" style="margin:0 0 14px">Manager view: every class, read-only. Printing and on-screen review are open; editing stays with each class&rsquo;s teachers.</p>' : '') +
       (mine.length ? '<div class="class-grid">' + mine.map(classCard).join('') + '</div>'
-        : '<div class="empty" style="padding:44px 24px"><div class="big">No classes yet</div>' +
-          '<p class="small">' + (admin ? 'Create a class, import a class file, or migrate the old single markbook.' : 'Your administrator will pair you with a class — it appears here the moment they do.') + '</p>' +
-          (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button><button class="btn" data-action="class-import-btn">Import class file</button></div>' : '') +
+        : '<div class="empty" style="padding:44px 24px"><div class="big">' + (admin ? 'No classes yet' : 'No class yet — ask your admin') + '</div>' +
+          '<p class="small">' + (admin ? 'Create a class to get started.' : 'Your administrator sets up your class — it appears here the moment they do.') + '</p>' +
+          (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button></div>' : '') +
           '</div>') +
-      '<p class="small muted" style="margin-top:22px">Each class is a separate encrypted workbook; only colleagues holding that class&rsquo;s key can open it. This is an <b>agreed-rule control between colleagues</b> — anyone holding a class key can read and change its data, so hand keys only to your own class team. <a href="#" data-action="privacy-open">Privacy &amp; data notice</a>.</p>' +
+      (admin ? renderClassesAdvanced(ix, legacySource) : '') +
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
       '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
       '</main></div>';
+  }
+  /* admin-only Advanced panel - every technical action, one plain description,
+     collapsed by default; nothing here is reachable by teachers */
+  function renderClassesAdvanced(ix, legacySource) {
+    return '<details style="margin-top:26px;border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:10px 14px;background:rgba(127,127,127,.04)">' +
+      '<summary style="cursor:pointer"><b>Advanced</b> <span class="small muted">(admin) — setup, pairing and recovery tools</span></summary>' +
+      '<div class="flex" style="flex-wrap:wrap;margin-top:12px">' +
+        '<button class="btn" data-action="class-import-btn">Import class file</button>' +
+        '<button class="btn" data-action="class-roster-btn">Import roster <span class="small">(accounts CSV)</span></button>' +
+        '<button class="btn" data-action="export-all">Export everything</button>' +
+        '<button class="btn" data-action="restore-all-btn">Restore everything</button>' +
+      '</div>' +
+      '<p class="small muted" style="margin:8px 0 0">Import class file = add a class from a file another device exported. Import roster = create sign-ins from a CSV list. Export everything = download a full safety copy of all data. Restore everything = load such a copy back in.</p>' +
+      (legacySource ? '<div class="panel" style="margin:12px 0 0;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
+        '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
+        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
+      (ix.length ? '<h4 style="margin:16px 0 8px">Pairing &amp; share links</h4><table class="tbl"><tbody>' +
+        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</td>' +
+          '<td><button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair…</button> ' +
+          '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button></td></tr>').join('') +
+        '</tbody></table>' +
+        '<p class="small muted" style="margin:8px 0 0">Each class is a separate encrypted workbook; only colleagues holding that class&rsquo;s key can open it — an <b>agreed-rule control between colleagues</b>, so hand keys only to your own class team.</p>' : '') +
+      '<div style="margin-top:14px;border-top:1px solid rgba(127,127,127,.25);padding-top:10px">' +
+        '<button class="uc-out" data-action="start-fresh" style="color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
+        '<span class="small muted" style="margin-left:8px">Wipes SPR from this browser and starts over — a backup download is offered first.</span></div>' +
+      '</details>';
   }
 
   /* ---- support teacher proposes an observation change ---- */
@@ -1270,6 +1293,7 @@
     $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students',
       '<a class="btn primary no-print" href="#/entry/sp">Enter scores</a>' +
       '<a class="btn no-print" href="#/grading">Grading</a>' +
+      '<a class="btn no-print" href="#/analysis/class">Analysis</a>' +
       '<button class="btn no-print" data-action="export-xlsx">Export SPR Excel</button>') +
 
       '<section class="cover">' +
@@ -3552,6 +3576,7 @@
     if (t.id === 'dashSkill') { (ui.dash = ui.dash || {}).skill = t.value; renderDashboard(); return; }
     if (t.id === 'dashRag') { (ui.dash = ui.dash || {}).rag = t.value; renderDashboard(); return; }
     if (t.id === 'scatMode') { ui.scat = t.value; renderDashboard(); return; }
+    if (t.id === 'classSwitch') { if (t.value && (!CLS || CLS.id !== t.value)) openClass(t.value); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
     if (t.id === 'file-xlsx') { if (t.files && t.files.length) importXlsxFiles(Array.from(t.files)); t.value = ''; return; }
     if (t.id === 'file-class') { if (t.files && t.files.length) importClassFileGo(t.files[0]); t.value = ''; return; }
