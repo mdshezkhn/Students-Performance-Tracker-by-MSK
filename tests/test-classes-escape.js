@@ -15,11 +15,11 @@ const appHtmlPath = ['../dist/app/index.html', '../app/index.html']
 const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 
 const IX = [{ id: 'c1', name: 'Grade 5 English', school: 'ESL', eal: 'te1', support: 'ts1', createdAt: 1, updatedAt: 1 }];
-function preJs(dsOn) {
+function preJs(dsOn, admin) {
   let s =
     'try{localStorage.setItem("spr-mode-v1","class")}catch(e){}' +
     'try{localStorage.setItem("spr-class-index-v1",' + JSON.stringify(JSON.stringify(IX)) + ')}catch(e){}' +
-    'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[{username:"te1",name:"Teacher One",role:"eal",keyring:{}}],session:null}))}catch(e){}' +
+    'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[' + JSON.stringify(admin ? { username: 'te1', name: 'Admin One', role: 'admin', keyring: {} } : { username: 'te1', name: 'Teacher One', role: 'eal', keyring: {} }) + '],session:null}))}catch(e){}' +
     'try{sessionStorage.setItem("spr-session",JSON.stringify({user:"te1",dk:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",keys:{}}))}catch(e){}' +
     'window.__SB={};' +
     'window.Chart=function(){};Chart.defaults={font:{},color:"",borderColor:""};' +
@@ -34,6 +34,7 @@ function boot(pre) {
   const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost/app/index.html#/classes', pretendToBeVisual: true, virtualConsole: vc, storageQuota: 10000000 });
   const w = dom.window, d = w.document;
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
+  if (!w.URL.createObjectURL) w.URL.createObjectURL = function () { return 'blob:test'; };   /* jsdom lacks it; the backup download path needs it */
   if (!w.TextEncoder) w.TextEncoder = TextEncoder;
   if (!w.TextDecoder) w.TextDecoder = TextDecoder;
   return { w, d };
@@ -85,12 +86,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---- D: Start fresh on this device — the user-requested nuke button ---- */
   console.log('== D: Start fresh wipes spr-* state after an automatic backup ==');
-  const C = boot(preJs(true));
+  const C = boot(preJs(true, true));   /* admin: the button lives under Advanced */
   await sleep(1500);
   A.w.localStorage.setItem('spr-last-class', 'x');   /* marker a wipe must remove */
   C.w.localStorage.setItem('spr-last-class', 'x');
   const freshBtn = C.d.querySelector('.page [data-action="start-fresh"]');
-  check(!!freshBtn, '"Start fresh on this device" button present');
+  check(!!freshBtn, '"Start fresh on this device" button present (admin Advanced)');
+  { const T2 = boot(preJs(true, false));
+    await sleep(1200);
+    check(!T2.d.querySelector('.page [data-action="start-fresh"]'), 'teacher does NOT see Start fresh (admin-only now)');
+    T2.w.close(); }
   if (freshBtn) {
     freshBtn.dispatchEvent(new C.w.MouseEvent('click', { bubbles: true }));
     await sleep(600);

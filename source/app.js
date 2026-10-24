@@ -497,7 +497,8 @@
        with no class open has an empty in-memory DB but must see its class list */
     if (sprMode() === 'class' && !document.body.classList.contains('auth-gate')) {
       const cv = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
-      if (!CLS && cv !== 'classes') { location.hash = '#/classes'; return; }
+      if (!CLS && cv !== 'classes' && !(cv === 'users' && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
+      if (cv === 'users') { if (classRole((currentUser() || {}).role) === 'admin') { renderUsers(); window.scrollTo(0, 0); return; } location.hash = '#/classes'; return; }
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
     }    if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
@@ -2184,7 +2185,12 @@
     const rows = all.filter((u) => (f.role === 'all' || classRole(u.role) === f.role) &&
       (!q || (u.username + ' ' + (u.name || '')).toLowerCase().includes(q)));
     const cell = (v) => U.esc(v || '\u2014');
-    $('#content').innerHTML = pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
+    /* self-contained: reachable both from the shell (class open) and straight
+       from the chooser screen (no class open) — so draw the whole page */
+    $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
+      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
+      pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
       '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
       '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
         '<label>Search <input class="inp" id="usersQ" placeholder="Name or username\u2026" value="' + U.esc(f.q) + '"></label>' +
@@ -2208,7 +2214,8 @@
               '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
         }).join('') + '</tbody></table>'
         : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
-      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>';
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+      '</main></div>';
   }
 
   function renderManage() {
