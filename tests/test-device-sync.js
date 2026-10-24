@@ -474,10 +474,16 @@ async function loginCloudAs(B, user, pass) {
   const TEAPW3 = 'self-service-pass-3';
   syncSB(Bt);
   const ptrCtSelf = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
-  Bt.w.location.hash = '#/manage';
-  await sleep(300);
-  click(Bt, Bt.d.querySelector('[data-action="change-pass-open"]'));
-  await sleep(200);
+  /* simple-ui: password change moved to the sidebar footer button (Manage & setup is admin-only) */
+  await waitFor(() => !!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 8000);
+  ok(!!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 'teacher has a Password button in the sidebar');
+  click(Bt, Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'));
+  await sleep(800);
+  if (!Bt.d.querySelector('[data-action="change-pass-save"]')) {
+    const dl = Bt.d.getElementById('dlg');
+    console.log('  [dbg] dlg open:', !!(dl && dl.open), '| text:', ((dl && dl.textContent) || '').slice(0, 120));
+  }
+  await waitFor(() => !!Bt.d.querySelector('[data-action="change-pass-save"]'), 6000);
   setVal(Bt, Bt.d.getElementById('cpCur'), TEAPW);
   setVal(Bt, Bt.d.getElementById('cpNew'), TEAPW3);
   setVal(Bt, Bt.d.getElementById('cpConf'), TEAPW3);

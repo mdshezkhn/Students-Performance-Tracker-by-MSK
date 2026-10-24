@@ -3092,6 +3092,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
           '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
           '<div class="rail-foot">' +
+          /* every role keeps self-service password change (Manage & setup is
+             admin-only since simple-ui) — plain button, same dialog as before */
+          '<button class="btn sm" data-action="change-pass-open" style="margin-bottom:8px">Password</button>' +
           (function () {   /* small class switcher - only when this account holds more than one class */
             if (sprMode() !== 'class') return '';
             const ix = CS.classesFor(myUser() || {}, classIndex());
@@ -3140,9 +3143,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
        with no class open has an empty in-memory DB but must see its class list */
     if (sprMode() === 'class' && !document.body.classList.contains('auth-gate')) {
       const cv = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
-      if (!CLS && cv !== 'classes' && !(cv === 'users' && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
+      if (!CLS && cv !== 'classes' && !((cv === 'users' || cv === 'manage') && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
       if (cv === 'users') { if (classRole((currentUser() || {}).role) === 'admin') { renderUsers(); window.scrollTo(0, 0); return; } location.hash = '#/classes'; return; }
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
+      if (cv === 'manage') {
+        /* admin without a class open reaches the Advanced tools here (the
+           no-class renderManage branch draws a standalone page) */
+        if (classRole((currentUser() || {}).role) === 'admin') { renderManage(); railActive('manage'); window.scrollTo(0, 0); return; }
+        location.hash = '#/classes'; return;
+      }
     }    if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
@@ -3151,6 +3160,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
     if (view === 'users' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users is admin-only, URL included */
+    if (view === 'manage' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }  /* Manage & setup is admin-only too */
     const navView = view;
     switch (view) {
       case 'students': renderStudents(); break;
@@ -3216,7 +3226,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<p class="small">' + (admin ? 'Create a class to get started.' : 'Your administrator sets up your class — it appears here the moment they do.') + '</p>' +
           (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button></div>' : '') +
           '</div>') +
-      (admin ? renderClassesAdvanced(ix, legacySource) : '') +
+
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
@@ -3228,13 +3238,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function renderClassesAdvanced(ix, legacySource) {
     return '<details style="margin-top:26px;border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:10px 14px;background:rgba(127,127,127,.04)">' +
       '<summary style="cursor:pointer"><b>Advanced</b> <span class="small muted">(admin) — setup, pairing and recovery tools</span></summary>' +
-      '<div class="flex" style="flex-wrap:wrap;margin-top:12px">' +
-        '<button class="btn" data-action="class-import-btn">Import class file</button>' +
-        '<button class="btn" data-action="class-roster-btn">Import roster <span class="small">(accounts CSV)</span></button>' +
-        '<button class="btn" data-action="export-all">Export everything</button>' +
-        '<button class="btn" data-action="restore-all-btn">Restore everything</button>' +
+      '<div style="margin-top:12px">' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="class-import-btn">Import class file</button><span class="small muted">Add a class from a file another device exported.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="class-roster-btn">Import roster (accounts CSV)</button><span class="small muted">Create several sign-ins at once from a CSV list.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="export-all">Export everything</button><span class="small muted">Download a full safety copy of all data.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="restore-all-btn">Restore everything</button><span class="small muted">Load such a safety copy back in.</span></div>' +
       '</div>' +
-      '<p class="small muted" style="margin:8px 0 0">Import class file = add a class from a file another device exported. Import roster = create sign-ins from a CSV list. Export everything = download a full safety copy of all data. Restore everything = load such a copy back in.</p>' +
       (legacySource ? '<div class="panel" style="margin:12px 0 0;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
         '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
         '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
@@ -4864,6 +4873,24 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
+    if (sprMode() === 'class' && !CLS) {
+      /* no class open on this device: no shell exists yet, so draw the whole
+         page (like renderUsers) with just the admin Advanced panel — a stuck
+         admin still reaches Start fresh / restore / pull tools here */
+      $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
+        '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+          (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
+          '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+          '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+        '</div>' +
+        pageHead('Manage & setup', 'setup, pairing and recovery tools') +
+        renderClassesAdvanced(classIndex(), false) +
+        '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+        '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
+        '</main></div>';
+      window.scrollTo(0, 0);
+      return;
+    }
     $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
@@ -5017,7 +5044,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<button class="btn danger" data-action="wipe">Erase everything</button>' +
       '</div>' +
       '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
-      '<input type="file" id="file-json" accept=".json" hidden>';
+      '<input type="file" id="file-json" accept=".json" hidden>' +
+      ((classRole((currentUser() || {}).role) === 'admin')
+        ? renderClassesAdvanced(classIndex(), sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length) +
+          '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+          '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>'
+        : '');
   }
   function rosterAdd() {
     const sem = cur();

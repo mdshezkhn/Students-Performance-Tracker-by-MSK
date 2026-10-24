@@ -178,7 +178,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   const appHtml = C.d.getElementById('app').innerHTML;
   const outsideDetails = appHtml.split('<details')[0];   /* everything rendered before the collapsed panel */
   check(outsideDetails.indexOf('Key &amp; link') === -1 && outsideDetails.indexOf('Export everything') === -1 && outsideDetails.indexOf('Import class file') === -1, 'no jargon buttons in the default admin view');
-  check(appHtml.indexOf('<details') !== -1 && appHtml.indexOf('Export everything') > appHtml.indexOf('<details'), 'jargon lives only inside the collapsed Advanced panel');
+  check(appHtml.indexOf('<details') === -1 && appHtml.indexOf('Export everything') === -1, 'chooser has no Advanced panel at all - it lives in Manage & setup (2026-10-24 move)');
 
   /* ---- A/a: class present but key missing in session ---- */
   console.log('== A/a: Open with key missing => recovery dialog ==');
@@ -212,6 +212,37 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   await sleep(700);
   check(navIds(E).length === 0 || navIds(E).join(',') === 'dashboard,students,entry,reports', 'teacher sidebar = Dashboard, Students, Enter scores, Report Cards (or chooser, no key)');
   check(E.w.location.hash !== '#/users', 'teacher opening #/users is redirected away');
+
+  /* ---- X: Advanced lives on Manage & setup, never on the chooser (2026-10-24) ---- */
+  console.log('== X: Advanced placement ==');
+  check(E.w.location.hash.indexOf('#/classes') === 0 || E.w.location.hash.indexOf('#/dashboard') === 0, 'teacher landed somewhere sane: ' + E.w.location.hash);
+  const Ehtml = E.d.getElementById('app').innerHTML + ((E.d.getElementById('content') || {}).innerHTML || '');
+  check(Ehtml.indexOf('class-migrate-open') === -1 && Ehtml.indexOf('class-share') === -1 && Ehtml.indexOf('start-fresh') === -1, 'no technical buttons anywhere in the teacher view');
+  const M = boot(richSeed(), '');
+  await waitFor(() => M.w.__SEED_DONE || M.w.__SEED_ERR, 15000);
+  await sleep(300);
+  await loginAs(M, 'Mo', PW);
+  await sleep(700);
+  M.w.location.hash = '#/manage';
+  await sleep(900);
+  const Mhtml = (M.d.getElementById('content') || {}).innerHTML || '';
+  check(Mhtml.indexOf('class-migrate-open') !== -1 || Mhtml.indexOf('class-pair') !== -1, 'Manage & setup hosts the Advanced panel (admin)');
+  check(Mhtml.indexOf('start-fresh') !== -1, 'Start fresh is under Manage & setup Advanced');
+  check(Mhtml.indexOf('<details') !== -1, 'Advanced is collapsed by default (<details>)');
+  const Ch = boot(richSeed(), '');
+  await waitFor(() => Ch.w.__SEED_DONE || Ch.w.__SEED_ERR, 15000);
+  await sleep(300);
+  await loginAs(Ch, 'Mo', PW);
+  await sleep(700);
+  Ch.w.localStorage.removeItem('spr-class-P4C4');   /* blob gone -> chooser on next navigation */
+  Ch.w.location.hash = '#/classes';
+  await sleep(500);
+  const Chtml = Ch.d.getElementById('app').innerHTML;
+  check(Chtml.indexOf('class-migrate-open') === -1 && Chtml.indexOf('data-action="class-pair"') === -1 && Chtml.indexOf('start-fresh') === -1, 'chooser screen carries no technical buttons (admin)');
+  check(!!Ch.d.querySelector('[data-action="logout"]'), 'chooser still shows Sign out');
+  Ch.w.location.hash = '#/manage';
+  await sleep(500);
+  check(Ch.w.location.hash === '#/manage', 'admin CAN reach #/manage');
 
   console.log(bad ? '\nSIMPLE-UI FAILURES: ' + bad : '\nSIMPLE-UI PASSED (' + ok + ')');
   process.exit(bad ? 1 : 0);

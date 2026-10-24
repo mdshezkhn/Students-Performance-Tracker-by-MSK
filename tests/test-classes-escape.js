@@ -90,10 +90,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(1500);
   A.w.localStorage.setItem('spr-last-class', 'x');   /* marker a wipe must remove */
   C.w.localStorage.setItem('spr-last-class', 'x');
+  C.w.location.hash = '#/manage';   /* Advanced (and Start fresh) live in Manage & setup since 2026-10-24 */
+  await sleep(700);
   const freshBtn = C.d.querySelector('.page [data-action="start-fresh"]');
   check(!!freshBtn, '"Start fresh on this device" button present (admin Advanced)');
   { const T2 = boot(preJs(true, false));
     await sleep(1200);
+    T2.w.location.hash = '#/manage';
+    await sleep(500);
     check(!T2.d.querySelector('.page [data-action="start-fresh"]'), 'teacher does NOT see Start fresh (admin-only now)');
     T2.w.close(); }
   if (freshBtn) {
