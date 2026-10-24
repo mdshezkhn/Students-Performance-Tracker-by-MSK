@@ -11,6 +11,11 @@ Shipped 2026-10-21 (pairing-link model), reworked 2026-10-22 to
   state — accounts, wrapped data keys, sealed workbook, master-password wrap —
   is AES-GCM-sealed under a random 256-bit sync key and written to the
   account's row in `spr_channels` (Supabase).
+- **Accounts travel additively** (2026-10-24): the account list in the cloud
+  row is the UNION of the pusher's list and the row's previous list — a device
+  with a stale short list can no longer erase colleagues created elsewhere.
+  A deleted sign-in stays deleted via a tombstone list (`gone`) that travels
+  in the envelope; re-creating the same username later lifts the tombstone.
 - **Sign in anywhere**: on any other system, just sign in with the admin
   username + password. The channel id is derived from the username
   (`ds1-<sha256>`), and the sync key is stored inside the row **wrapped under

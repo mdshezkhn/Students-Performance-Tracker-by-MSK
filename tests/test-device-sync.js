@@ -647,6 +647,49 @@ async function loginCloudAs(B, user, pass) {
   ok(stashH.length === 1 && stashH[0].db && Array.isArray(stashH[0].db.semesters), 'safety copy stashed in-app instead');
   ok(H2.w.localStorage.getItem('spr-auth-v1').indexOf(ADMIN) !== -1, 'cloud accounts installed over the old ones');
 
+  /* ---------- S10 (2026-10-24): accounts survive sync — no vanishing colleagues ---------- */
+  console.log('== S10: stale short account list must not erase colleagues ==');
+  /* the real-world bug: a device whose local list was [mo, Management] adopted
+     the school copy, then its next PUSH published that stale list and every
+     other device lost the accounts created elsewhere. Accounts must now travel
+     additively (union + tombstones). */
+  const STALE = 'mgmt-local';
+  const M = boot({ 'spr-auth-v1': JSON.stringify({ users: [
+    { username: ADMIN, name: ADMIN, role: 'admin' },                                  /* stale record, no wrap */
+    { username: STALE, name: 'Management', role: 'manager', keyring: {}, login: { v: 1 } }  /* local-only account */
+  ], session: null }) });
+  await sleep(300);
+  await ackGate(M);
+  syncSB(M);
+  const rowAtAdopt = (SB[dataRows[0]] || {}).pushed_at || null;
+  const mIn = await loginCloudAs(M, ADMIN, PW);
+  await ackPrivacy(M);
+  ok(mIn, 'stale-list device adopted the cloud copy');
+  const mAuth = JSON.parse(M.w.localStorage.getItem('spr-auth-v1') || 'null');
+  ok(!!(mAuth && mAuth.users.some(function (u) { return u.username === STALE; })), 'local-only account SURVIVED the adoption');
+  ok(!!(mAuth && mAuth.users.some(function (u) { return u.username === ADMIN && u.login && u.login.v !== 1; })), 'admin record taken from the cloud (fresher), not the stale local one');
+  const mGone = JSON.parse(M.w.localStorage.getItem('spr-ds-gone-v1') || '[]');
+  ok(Array.isArray(mGone) && mGone.indexOf(TEA) !== -1, 'teacher tombstone arrived with the copy (stays deleted)');
+  /* the device pushes the UNION back — the exact step that used to erase colleagues */
+  const unionPushed = await waitFor(function () {
+    syncSB(M);
+    return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== rowAtAdopt;
+  }, 25000);
+  ok(unionPushed, 'union re-published to the cloud row');
+  /* a fresh browser must now see BOTH accounts */
+  const F = boot();
+  await sleep(300);
+  await ackGate(F);
+  const fIn = await loginCloudAs(F, ADMIN, PW);
+  await ackPrivacy(F);
+  ok(fIn, 'fresh browser restored the union copy');
+  const fAuth = JSON.parse(F.w.localStorage.getItem('spr-auth-v1') || 'null');
+  ok(!!(fAuth && fAuth.users.some(function (u) { return u.username === ADMIN; })), 'admin present on the fresh browser');
+  ok(!!(fAuth && fAuth.users.some(function (u) { return u.username === STALE; })), 'colleague account present on the fresh browser (the vanishing-accounts bug)');
+  ok(!(fAuth && fAuth.users.some(function (u) { return u.username === TEA; })), 'deleted teacher stays deleted after the union round-trip');
+  /* S9 re-check: this adoption also stashed instead of downloading */
+  ok(Array.isArray(M.w.__downloads) && M.w.__downloads.length === 0, 'S10 adoption downloaded zero files');
+
   console.log(fails ? ('\n' + fails + ' FAILURES') : '\nALL DEVICE-SYNC CHECKS PASSED');
   process.exit(fails ? 1 : 0);
 })().catch((e) => { console.error('SUITE ERROR', e); process.exit(1); });

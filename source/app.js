@@ -287,7 +287,7 @@
       buildShell(); location.hash = '#/dashboard'; route();
     } catch (e) { CLS = null; CLS_KEY = null; toast('Could not open ' + meta.name + ' with your key', true); }
   }
-  function closeClass() { console.error('[closeClass] from ' + new Error().stack.split(String.fromCharCode(10)).slice(2, 4).join(' <- '));
+  function closeClass() {
     try { if (saveTimer) { clearTimeout(saveTimer); persistNow(true); } } catch (e) {}
     CLS = null; CLS_KEY = null; ui.classOpen = false;
     DB = emptyDB();
@@ -514,6 +514,11 @@
     const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
     $('#app').innerHTML =
       '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
+      /* way out — this screen has no nav rail, so sign-out lives here */
+      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+      '</div>' +
       pageHead('Your classes',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
         (me.role === 'manager' ? ' — whole school, read-only' : me.role === 'support' ? ' — you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ' — you edit your class and approve observation changes from your support partner' : '')) +
@@ -2935,6 +2940,7 @@
         saveAuth(auth);
         const v2 = readV2();
         if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
+        dsAddGone(un);   /* stay deleted: without the tombstone the additive account merge would resurrect it from the cloud row */
         await dsKillPointer(un);
         if (dsCanPush()) scheduleSyncPush();   /* the removed account must leave the data row too */
         toast('Sign-in removed: ' + un);
@@ -3828,6 +3834,17 @@
   const DS_KEY = 'spr-devicesync-v1';
   const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* the pull-check must never treat the copy this device JUST installed as
+     "newer than itself": floor the boot clock at the envelope's seal time
+     (v2.ts is the SENDER's last local write — often older than the envelope) */
+  function dsBootFloor(ts) {
+    try {
+      const prev = Number(localStorage.getItem('spr-ds-boot') || 0);
+      const t = Math.max(prev, Number(ts) || 0) || Date.now();
+      localStorage.setItem('spr-ds-boot', String(t));
+      DS_BOOT_TS = Math.max(DS_BOOT_TS, t);
+    } catch (e) {}
+  }
   /* account-derived channel id: stable across password changes, guessable
      only with the username — everything inside is sealed, so an id match
      reveals nothing without the password (which is needed to unwrap the key) */
@@ -3974,6 +3991,69 @@
       return c;
     });
   }
+  /* ---- accounts survive whole-blob sync (fix 2026-10-24) ----------------
+     The cloud envelope used to REPLACE the account list with the pusher's,
+     so a device with a stale short list silently erased colleagues from the
+     copy everyone else installs. Accounts now travel ADDITIVELY:
+       - union of the cloud list and the local list, by username;
+       - the fresher side wins a conflict (local on push, cloud on install);
+       - a deleted account stays deleted via the tombstone list below. */
+  const DS_GONE_KEY = 'spr-ds-gone-v1';
+  function dsGone() { try { const g = JSON.parse(localStorage.getItem(DS_GONE_KEY)); return Array.isArray(g) ? g : []; } catch (e) { return []; } }
+  function dsAddGone(un) {
+    if (!un) return;
+    const g = dsGone();
+    if (g.indexOf(un) < 0) { g.push(un); try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g)); } catch (e) {} }
+  }
+  function dsClearGone(un) {
+    const g = dsGone();
+    if (g.indexOf(un) >= 0) { try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g.filter(function (x) { return x !== un; }))); } catch (e) {} }
+  }
+  const acctSig = function (u) { return [u.username, u.name || '', u.role || '', Object.keys(u.keyring || {}).sort().join(','), u.login ? 1 : 0].join('|'); };
+  /* merge a cloud copy's accounts into THIS device. dir 'push' = local wins
+     conflicts (we are about to publish), 'install' = cloud wins (the copy is
+     newer than this device). Returns true when local state changed. */
+  function dsMergeAccounts(obj, dir, baseV2) {
+    if (!obj || !Array.isArray(obj.users)) return false;
+    const auth0 = getAuth();
+    let gone = dsGone().concat(Array.isArray(obj.gone) ? obj.gone : []);
+    gone = gone.filter(function (v, i) { return gone.indexOf(v) === i; });
+    /* re-creating a username lifts its tombstone at creation time (dsClearGone
+       in addUser); a tombstone meeting the account STILL LISTED in an older
+       cloud copy must WIN — that cloud simply has not seen the deletion yet */
+    try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(gone)); } catch (e) {}
+    const cloudBy = {};
+    for (const u of obj.users) { if (u && u.username && gone.indexOf(u.username) < 0) cloudBy[u.username] = u; }
+    const auth = getAuth();
+    const localBy = {};
+    for (const u of auth.users) localBy[u.username] = u;
+    const byUn = (dir === 'install') ? Object.assign({}, localBy, cloudBy) : Object.assign({}, cloudBy, localBy);
+    for (const un of gone) delete byUn[un];
+    const merged = Object.keys(byUn).sort().map(function (k) { return byUn[k]; });
+    const changed = merged.length !== auth.users.length ||
+      merged.some(function (u) { return acctSig(u) !== acctSig(localBy[u.username] || { username: u.username }); });
+    /* data-key wraps travel beside the account records — union them the same
+       way so a cloud-only teacher can still unlock the archive on this device.
+       On install the cloud wrap wins (a password reset made there must land
+       here); on push the local wrap wins. baseV2 (installs) is written out in
+       full — in legacy mode its .data IS the workbook being adopted. */
+    const localV2 = readV2();
+    let v2 = baseV2 ? JSON.parse(JSON.stringify(baseV2)) : (localV2 || { fmt: 2, wraps: {}, ts: Date.now() });
+    if (!v2.wraps) v2.wraps = {};
+    const cw = (obj.v2 && obj.v2.wraps) || {};
+    let wrapChanged = false;
+    for (const un of Object.keys(cw)) {
+      if (!merged.some(function (u) { return u.username === un; })) continue;
+      if (dir === 'install' ? (JSON.stringify(v2.wraps[un]) !== JSON.stringify(cw[un])) : !v2.wraps[un]) { v2.wraps[un] = cw[un]; wrapChanged = true; }
+    }
+    for (const un of Object.keys(localBy)) {   /* a local-only account keeps its wrap through an install */
+      if (byUn[un] === localBy[un] && !v2.wraps[un] && localV2 && localV2.wraps && localV2.wraps[un]) { v2.wraps[un] = localV2.wraps[un]; wrapChanged = true; }
+    }
+    for (const un of gone) { if (v2.wraps[un]) { delete v2.wraps[un]; wrapChanged = true; } }
+    if (changed) { auth.users = merged; saveAuth(auth); }
+    if (wrapChanged || baseV2 || changed) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} }   /* direct write: no scheduleSyncPush loop */
+    return !!(changed || wrapChanged);
+  }
   function dsContentString() {
     /* digest the DECRYPTED content, never the stored ciphertext: sealDB uses a
        fresh random IV on every save, so v2.data is a different string each
@@ -4000,7 +4080,7 @@
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload() });   /* NO hash ever leaves this device */
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload(), gone: dsGone() });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
@@ -4031,14 +4111,14 @@
   }
   function dsInstall(obj) {
     try {
-      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
-      localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
+      dsMergeAccounts(obj, 'install', obj.v2);   /* union, cloud records win — never silently drop local-only accounts */
+      dsBootFloor(obj.ts);
+      try { sessionStorage.removeItem('spr-session'); } catch (e2) {}
       if (obj.v3 && obj.v3.index) {
         setClassIndex(obj.v3.index);
         for (const cid of Object.keys(obj.v3.blobs || {})) localStorage.setItem(classBlobKey(cid), JSON.stringify(obj.v3.blobs[cid]));
         try { localStorage.setItem(MODE_KEY, 'class'); } catch (e2) {}
       }
-      try { sessionStorage.removeItem('spr-session'); } catch (e2) {}
     } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
     location.reload();
   }
@@ -4071,6 +4151,12 @@
       const owner = (cfg && cfg.adoptedAcct && cfg.owner) ? cfg.owner : SESSION.user;
       const chan = await dsChan(owner);
       const row = await sbGet(chan).catch(function () { return null; });
+      /* accounts travel additively: union this device's list with the cloud
+         row's BEFORE sealing, so a stale short list here can no longer erase
+         colleagues from the copy every other device installs */
+      if (row && row.payload && row.payload.sprDS === 1 && !row.payload.dead) {
+        try { dsMergeAccounts(await dsOpen(row), 'push'); } catch (e) { /* unreadable row: the guard below handles it */ }
+      }
       let wrap = null;
       if (cfg && cfg.key && SESSION.pw && SESSION.user === owner) {
         try { wrap = await makeWrap(bytesFromB64u(cfg.key), SESSION.pw); } catch (e) { wrap = null; }
@@ -4247,11 +4333,15 @@
     const u = (obj.users || []).find(function (x) { return x.username === username; });
     const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
     try {
-      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: obj.users, session: null }));
-      localStorage.setItem(V2_KEY, JSON.stringify(obj.v2));
+      dsMergeAccounts(obj, 'install', obj.v2);
       try { localStorage.removeItem(LS_KEY); } catch (e2) {}
+      if (obj.v3 && obj.v3.index) {   /* class workbooks: without these a paired fresh browser signs into a class-less device */
+        setClassIndex(obj.v3.index);
+        for (const cid of Object.keys(obj.v3.blobs || {})) localStorage.setItem(classBlobKey(cid), JSON.stringify(obj.v3.blobs[cid]));
+        try { localStorage.setItem(MODE_KEY, 'class'); } catch (e3) {}
+      }
     } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
-    DS_BOOT_TS = (obj.v2 && obj.v2.ts) || Date.now();
+    dsBootFloor(obj.ts);
     return true;
   }
   /* the account IS the pairing. Looks up the channel derived from the given
@@ -4298,16 +4388,20 @@
   /* install a verified cloud copy on this device and join its sync channel */
   function dsInstallFrom(hit, owner) {
     try {
-      localStorage.setItem(AUTH_KEY, JSON.stringify({ users: hit.obj.users, session: null }));
-      localStorage.setItem(V2_KEY, JSON.stringify(hit.obj.v2));
+      dsMergeAccounts(hit.obj, 'install', hit.obj.v2);
       try { localStorage.removeItem(LS_KEY); } catch (e2) {}
+      if (hit.obj.v3 && hit.obj.v3.index) {   /* class workbooks travel here too — otherwise the device lands class-less */
+        setClassIndex(hit.obj.v3.index);
+        for (const cid of Object.keys(hit.obj.v3.blobs || {})) localStorage.setItem(classBlobKey(cid), JSON.stringify(hit.obj.v3.blobs[cid]));
+        try { localStorage.setItem(MODE_KEY, 'class'); } catch (e3) {}
+      }
     } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
     const cfg = dsCfg() || {};
     cfg.on = true; cfg.channel = hit.chan; cfg.key = hit.keyB64; cfg.owner = owner; cfg.adoptedAcct = true;
     cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = cfg.pairedAt || new Date().toISOString();
     dsSaveCfg(cfg);
     try { localStorage.removeItem(DS_DECLINED_KEY); } catch (e2) {}
-    DS_BOOT_TS = (hit.obj.v2 && hit.obj.v2.ts) || Date.now();
+    dsBootFloor(hit.obj.ts);
   }
   function dsPair(channel, key) {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
@@ -4593,6 +4687,7 @@
     if (auth.users.some((u) => u.username === username)) return 'username taken';
     const pwErr = CS.pwOk(role || 'teacher', password);
     if (pwErr) return pwErr;
+    dsClearGone(username);   /* re-creating a previously deleted name lifts its sync tombstone */
     auth.users.push({ username: username, name: name, role: role || 'teacher', keyring: {}, login: await CS.loginWrap(password) });
     saveAuth(auth);
     return null;
@@ -4747,6 +4842,7 @@
   async function init() {
     chartTheme();
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
+    try { DS_BOOT_TS = Math.max(DS_BOOT_TS, Number(localStorage.getItem('spr-ds-boot') || 0) || 0); } catch (e) {}
     window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
     /* a push scheduled but not yet fired when the tab is hidden/closed would
        otherwise leave the cloud copy one edit behind — flush best effort */
