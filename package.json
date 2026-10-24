@@ -8,7 +8,7 @@
     "test": "node tests/completeness.test.js && node tests/calc-regression.test.js && node tests/excel-import.test.js && node tests/classstore.test.js",
     "test:all": "npm test && node tests/test-device-sync.js",
     "test:racy": "SPR_RUN_RACY_S8=1 node tests/test-device-sync.js",
-    "test:jsdom": "node tests/test-device-sync.js && node tests/test-class-mode.js"
+    "test:jsdom": "node tests/test-device-sync.js && node tests/test-class-mode.js && node tests/test-classes-escape.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.3"

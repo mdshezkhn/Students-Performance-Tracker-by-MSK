@@ -148,6 +148,10 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   for (let t = 0; t <= 3000; t += 500) {
     await sleep(500);
   }
+  /* P1 fix (2026-10-24): the rail-less Classes screen must carry its own way out —
+     users with no classes were trapped here with no sign-out and no nav */
+  ok(!!B.d.querySelector('.page [data-action="logout"]'), 'Classes screen shows Sign out (escape hatch)');
+  ok(!!B.d.querySelector('.page [data-action="privacy-open"]'), 'Classes screen links the privacy notice');
   const pairBtn = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 4000);
   ok(!!pairBtn, 'pair button available to admin');
   async function pairAs(role, user) {
