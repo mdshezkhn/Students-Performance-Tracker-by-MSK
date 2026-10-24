@@ -107,6 +107,60 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
+  /* ---- E: sign-in username matching is case-insensitive + trimmed ---- */
+  console.log('== E: "mo" opens the "Mo" account (the 2026-10-24 lockout) ==');
+  const pwHash = fnv36('secret123');
+  const E = boot(
+    'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[{username:"Mo",name:"Mo",role:"admin",hash:"' + pwHash + '",keyring:{}}],session:null}))}catch(e){}' +
+    'try{localStorage.setItem("spr-mode-v1","archive")}catch(e){}' +
+    '(function(){var dd=document.getElementById("dlg");if(dd&&!dd.showModal){dd.showModal=function(){this.open=true};dd.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();'
+  );
+  await sleep(1500);
+  /* first run: the privacy gate + privacy notice sit over the sign-in card */
+  for (const act of ['privacy-gate-ack', 'privacy-ack']) {
+    const b = E.d.querySelector('[data-action="' + act + '"]');
+    if (b) { b.dispatchEvent(new E.w.MouseEvent('click', { bubbles: true })); await sleep(400); }
+  }
+  check(!!E.d.querySelector('[data-action="do-login"]'), 'sign-in card shown');
+  const eu = E.d.querySelector('#loginUser'), ep = E.d.querySelector('#loginPass');
+  if (eu && ep) {
+    eu.value = '  mo  '; ep.value = 'secret123';   /* wrong case + stray spaces, right password */
+    E.d.querySelector('[data-action="do-login"]').dispatchEvent(new E.w.MouseEvent('click', { bubbles: true }));
+    await sleep(2500);
+    const errEl = E.d.querySelector('#loginErr');
+    check(!E.d.body.classList.contains('auth-gate'), '"mo" + password opens the "Mo" account (no lockout)');
+    check(!(errEl && /Invalid username or password/.test(errEl.textContent || '')), 'no false "Invalid username or password"');
+  }
+
+  /* ---- F: zero-account device gets an actionable error, not a dead end ---- */
+  console.log('== F: wiped device points to the pairing link ==');
+  const F = boot(
+    'try{localStorage.setItem("spr-auth-v1",JSON.stringify({users:[],session:null}))}catch(e){}' +
+    'try{localStorage.setItem("spr-mode-v1","archive")}catch(e){}' +
+    '(function(){var dd=document.getElementById("dlg");if(dd&&!dd.showModal){dd.showModal=function(){this.open=true};dd.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();'
+  );
+  await sleep(1500);
+  for (const act of ['privacy-gate-ack', 'privacy-ack']) {
+    const b = F.d.querySelector('[data-action="' + act + '"]');
+    if (b) { b.dispatchEvent(new F.w.MouseEvent('click', { bubbles: true })); await sleep(400); }
+  }
+  const fu = F.d.querySelector('#loginUser'), fp = F.d.querySelector('#loginPass');
+  if (fu && fp) {
+    fu.value = 'mo'; fp.value = 'whatever1';
+    F.d.querySelector('[data-action="do-login"]').dispatchEvent(new F.w.MouseEvent('click', { bubbles: true }));
+    await sleep(2000);
+    const ferr = F.d.querySelector('#loginErr');
+    check(!!(ferr && /I use SPR on another device/.test(ferr.textContent || '')), 'empty-device error points to the pairing link');
+  }
+
   console.log(bad ? 'ESCAPE-CHECK FAILURES: ' + bad : 'ESCAPE-CHECK PASSED (' + ok + ')');
   process.exit(bad ? 1 : 0);
 })().catch((e) => { console.error('ERR', e); process.exit(1); });
+
+/* ---- helpers for part E (legacy-hash accounts sign in without async crypto) ---- */
+function fnv36(pw) {   /* mirrors app hashPassword() */
+  let h = 0x811c9dc5;
+  const s = String(pw);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}

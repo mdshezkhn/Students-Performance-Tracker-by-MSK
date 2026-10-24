@@ -4052,12 +4052,15 @@
   function dsGone() { try { const g = JSON.parse(localStorage.getItem(DS_GONE_KEY)); return Array.isArray(g) ? g : []; } catch (e) { return []; } }
   function dsAddGone(un) {
     if (!un) return;
+    const k = String(un).toLowerCase();   /* tombstones compare case-insensitively */
     const g = dsGone();
-    if (g.indexOf(un) < 0) { g.push(un); try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g)); } catch (e) {} }
+    if (g.indexOf(k) < 0) { g.push(k); try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g)); } catch (e) {} }
   }
   function dsClearGone(un) {
+    /* tombstones are stored lowercased (usernames are matched case-insensitively) */
+    const k = String(un || '').toLowerCase();
     const g = dsGone();
-    if (g.indexOf(un) >= 0) { try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g.filter(function (x) { return x !== un; }))); } catch (e) {} }
+    if (g.indexOf(k) >= 0) { try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(g.filter(function (x) { return x !== k; }))); } catch (e) {} }
   }
   const acctSig = function (u) { return [u.username, u.name || '', u.role || '', Object.keys(u.keyring || {}).sort().join(','), u.login ? 1 : 0].join('|'); };
   /* merge a cloud copy's accounts into THIS device. dir 'push' = local wins
@@ -4067,18 +4070,19 @@
     if (!obj || !Array.isArray(obj.users)) return false;
     const auth0 = getAuth();
     let gone = dsGone().concat(Array.isArray(obj.gone) ? obj.gone : []);
+    gone = gone.map(function (v) { return String(v).toLowerCase(); });   /* case-insensitive: "Mo" and "mo" are the same account */
     gone = gone.filter(function (v, i) { return gone.indexOf(v) === i; });
     /* re-creating a username lifts its tombstone at creation time (dsClearGone
        in addUser); a tombstone meeting the account STILL LISTED in an older
        cloud copy must WIN — that cloud simply has not seen the deletion yet */
     try { localStorage.setItem(DS_GONE_KEY, JSON.stringify(gone)); } catch (e) {}
     const cloudBy = {};
-    for (const u of obj.users) { if (u && u.username && gone.indexOf(u.username) < 0) cloudBy[u.username] = u; }
+    for (const u of obj.users) { if (u && u.username && gone.indexOf(String(u.username).toLowerCase()) < 0) cloudBy[u.username] = u; }
     const auth = getAuth();
     const localBy = {};
     for (const u of auth.users) localBy[u.username] = u;
     const byUn = (dir === 'install') ? Object.assign({}, localBy, cloudBy) : Object.assign({}, cloudBy, localBy);
-    for (const un of gone) delete byUn[un];
+    for (const un of gone) { for (const k of Object.keys(byUn)) { if (k.toLowerCase() === un) delete byUn[k]; } }
     const merged = Object.keys(byUn).sort().map(function (k) { return byUn[k]; });
     const changed = merged.length !== auth.users.length ||
       merged.some(function (u) { return acctSig(u) !== acctSig(localBy[u.username] || { username: u.username }); });
@@ -4099,7 +4103,7 @@
     for (const un of Object.keys(localBy)) {   /* a local-only account keeps its wrap through an install */
       if (byUn[un] === localBy[un] && !v2.wraps[un] && localV2 && localV2.wraps && localV2.wraps[un]) { v2.wraps[un] = localV2.wraps[un]; wrapChanged = true; }
     }
-    for (const un of gone) { if (v2.wraps[un]) { delete v2.wraps[un]; wrapChanged = true; } }
+    for (const un of gone) { for (const wk of Object.keys(v2.wraps)) { if (wk.toLowerCase() === un && v2.wraps[wk]) { delete v2.wraps[wk]; wrapChanged = true; } } }
     if (changed) { auth.users = merged; saveAuth(auth); }
     if (wrapChanged || baseV2 || changed) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} }   /* direct write: no scheduleSyncPush loop */
     return !!(changed || wrapChanged);
@@ -4402,8 +4406,10 @@
     catch (e) { throw new Error('cannot reach the cloud copy (' + e.message + ') — check your internet and try again'); }
     if (!row) throw new Error('this pairing has no cloud copy yet — sign in on your main device once so it can save one');
     const obj = await dsOpen(row);
-    const u = (obj.users || []).find(function (x) { return x.username === username; });
-    const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
+    /* case-insensitive: users type "mo"/"Mo"/"MO" — the account is stored once */
+    const u = (obj.users || []).find(function (x) { return String(x.username).toLowerCase() === String(username).toLowerCase(); });
+    if (!u) return false;
+    const vr = await verifyUserPw(u, password, obj.v2); if (!vr || !vr.ok) return false;
     try {
       dsMergeAccounts(obj, 'install', obj.v2);
       try { localStorage.removeItem(LS_KEY); } catch (e2) {}
@@ -4442,8 +4448,9 @@
       if (!dataRow || !dataRow.payload || dataRow.payload.dead) return null;
       const keyB64 = pt.key;
       const obj = await dsOpenWith(dataRow, keyB64);
-      const u = (obj.users || []).find(function (x) { return x.username === username; });
-      const vr = await verifyUserPw(u, password, obj.v2); if (!u || !vr || !vr.ok) return false;
+      const u = (obj.users || []).find(function (x) { return String(x.username).toLowerCase() === String(username).toLowerCase(); });
+      if (!u) return false;
+      const vr = await verifyUserPw(u, password, obj.v2); if (!vr || !vr.ok) return false;
       const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
       return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
     }
@@ -4657,7 +4664,8 @@
      migration time; there is no password-change UI, so this is all accounts */
   /* no seeded accounts — the first user on a device creates their own sign-in */
   async function doLoginFull(username, password) {
-    if (username === MASTER_KEY) return { error: 'Invalid username or password.' };
+    username = String(username || '').trim();
+    if (username.toLowerCase() === MASTER_KEY) return { error: 'Invalid username or password.' };
     /* fresh browser: quietly pull accounts + data from the cloud, then sign
        in normally. Unpaired browsers need nothing but the admin account —
        the channel is derived from the username and the key is password-wrapped.
@@ -4680,8 +4688,15 @@
       }
     }
     const auth = getAuth();
-    const user = auth.users.find((u) => u.username === username);
-    if (!user) return { error: 'Invalid username or password.' };
+    /* username matching is case-insensitive: the cloud channel already
+       lowercases (dsChan), and users type "mo"/"Mo"/"MO" interchangeably */
+    const user = auth.users.find((u) => String(u.username).toLowerCase() === username.toLowerCase());
+    if (!user) {
+      if (auth.users.length === 0) {
+        return { error: 'This device holds no accounts yet. If you use SPR on another device, tap "I use SPR on another device" below to pull your cloud copy — or set up this device fresh.' };
+      }
+      return { error: 'Invalid username or password.' };
+    }
     const vv2 = readV2();
     const vres = await verifyUserPw(user, password, vv2);
     if (!vres.ok) return { error: 'Invalid username or password.' };
@@ -4757,7 +4772,8 @@
   }
   async function addUser(username, password, name, role) {
     const auth = getAuth();
-    if (auth.users.some((u) => u.username === username)) return 'username taken';
+    username = String(username || '').trim();
+    if (auth.users.some((u) => String(u.username).toLowerCase() === username.toLowerCase())) return 'username taken';
     const pwErr = CS.pwOk(role || 'teacher', password);
     if (pwErr) return pwErr;
     dsClearGone(username);   /* re-creating a previously deleted name lifts its sync tombstone */
