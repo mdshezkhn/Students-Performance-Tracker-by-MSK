@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPR — Start over on this device</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Georgia, 'Times New Roman', serif; background: #f7f4ec; color: #23281f; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { max-width: 560px; width: 100%; background: #fffdf6; border: 1px solid #e2dcc9; border-radius: 14px; padding: 34px 34px 28px; box-shadow: 0 10px 34px rgba(46,52,36,.10); }
+  h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: .2px; }
+  p.sub { margin: 0 0 20px; color: #6b7161; font-family: system-ui, sans-serif; font-size: 14.5px; line-height: 1.55; }
+  ul { margin: 0 0 22px; padding-left: 20px; font-family: system-ui, sans-serif; font-size: 14.5px; line-height: 1.7; color: #3c4234; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button { font-family: system-ui, sans-serif; font-size: 15.5px; border-radius: 9px; border: 1px solid transparent; padding: 12px 20px; cursor: pointer; }
+  .ghost { background: #fff; border-color: #cfc9b4; color: #3c4234; }
+  .ghost:hover { background: #f4f0e2; }
+  .danger { background: #8f2f2b; color: #fff; }
+  .danger:hover { background: #7c2723; }
+  .danger.armed { background: #b3261e; outline: 3px solid #f3c7c4; }
+  #status { margin-top: 16px; font-family: system-ui, sans-serif; font-size: 14px; color: #6b7161; min-height: 20px; }
+  .fine { margin-top: 18px; font-family: system-ui, sans-serif; font-size: 12.5px; color: #8a8f80; line-height: 1.55; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Start over on this device</h1>
+  <p class="sub">This erases everything the SPR website has saved in <b>this browser, on this computer</b> — accounts, classes, scores and saved sign-ins — and returns the app to its very first screen.</p>
+  <ul>
+    <li>Your other computers are <b>not</b> touched.</li>
+    <li>After this, you set up the school again in a couple of minutes: create the admin account, load your class, done.</li>
+    <li>Other teachers will re-connect to the new class with a fresh key (Manage &amp; setup → Advanced → Key &amp; link).</li>
+  </ul>
+  <div class="row">
+    <button class="ghost" id="save">Save a raw copy first (optional)</button>
+    <button class="danger" id="wipe">Erase everything and restart</button>
+  </div>
+  <div id="status"></div>
+  <div class="fine">Tip: if you can still sign in on another computer where SPR works, you can first use <b>Manage &amp; setup → Advanced → Export everything</b> there, and after this reset use <b>Restore everything</b> here to bring your class data back.</div>
+</div>
+<script>
+(function () {
+  var status = document.getElementById('status');
+  function dump() {
+    var out = { madeAt: new Date().toISOString(), origin: location.origin, localStorage: {}, sessionStorage: {} };
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); out.localStorage[k] = localStorage.getItem(k); } } catch (e) {}
+    try { for (var j = 0; j < sessionStorage.length; j++) { var k2 = sessionStorage.key(j); out.sessionStorage[k2] = sessionStorage.getItem(k2); } } catch (e) {}
+    var blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'spr-raw-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    status.textContent = 'Raw copy saved to your Downloads folder.';
+  }
+  function clearAll() {
+    try { sessionStorage.clear(); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+  }
+  async function sweep() {
+    try { if (navigator.serviceWorker) { var rs = await navigator.serviceWorker.getRegistrations(); for (var i = 0; i < rs.length; i++) await rs[i].unregister(); } } catch (e) {}
+    try { if (window.caches) { var ks = await caches.keys(); for (var j = 0; j < ks.length; j++) await caches.delete(ks[j]); } } catch (e) {}
+  }
+  document.getElementById('save').addEventListener('click', function () { try { dump(); } catch (e) { status.textContent = 'Could not save a copy — you can still erase.'; } });
+  var btn = document.getElementById('wipe');
+  btn.addEventListener('click', async function () {
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed');
+      btn.textContent = 'Are you sure? Click again to erase';
+      status.textContent = 'This cannot be undone. Click again to erase everything saved by SPR in this browser.';
+      return;
+    }
+    btn.disabled = true;
+    status.textContent = 'Erasing…';
+    clearAll();
+    await sweep();
+    clearAll();   /* in case the SW revived anything between steps */
+    status.textContent = 'Done. Taking you to the sign-in screen…';
+    setTimeout(function () { location.href = '/app/'; }, 600);
+  });
+})();
+</script>
+</body>
+</html>
