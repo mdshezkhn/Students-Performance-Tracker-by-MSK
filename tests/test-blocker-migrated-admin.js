@@ -157,7 +157,8 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
   if (ob && !autoHonest && S.w.location.hash.indexOf('#/dashboard') !== 0) { click(S, ob); await sleep(900); }
   const dlg1 = dlgText(S);
   const honest1 = HONEST.test(dlg1);
-  ok(autoHonest || honest1, '(b) BLOCKER BROKEN: the dialog offers a REAL recovery (cloud copy / backup file) — no dead advice');
+  const autoOpened = S.w.location.hash.indexOf('#/dashboard') === 0;   /* good outcome: sign-in alone opened the class */
+  ok(autoOpened || autoHonest || honest1, '(b) BLOCKER BROKEN: either the class opened outright or the dialog offers a REAL recovery (cloud copy / backup file) — no dead advice');
   ok(!/Sign in once more|one more sign-in/i.test(dlg1 + ' ' + dlgAuto), '(b) the false "sign in once more" advice is gone');
   /* a second genuine sign-in changes nothing — and says nothing false */
   const lo = S.d.querySelector('[data-action="logout"]');
@@ -226,7 +227,7 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
         ok(S2.w.location.hash.indexOf('#/dashboard') === 0, '(3) after re-sign-in the class opens on its own (no recovery needed)');
       }
     }
-  } else ok(dash2, '(3) not needed — the device already opened the class (no one-time password involved)');
+  } else ok(dash2, '(3) not needed on this run — the device already opened the class on its own (no one-time password involved); the OTP path is exercised in the run where the wrap cannot be derived');
 
   /* ---- 3. THE REAL RECOVERY: the pre-migration backup restores end to end ---- */
   console.log('== Recovery: restore the pre-migration backup, re-migrate, open ==');
