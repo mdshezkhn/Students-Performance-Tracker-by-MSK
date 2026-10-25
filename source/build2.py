@@ -78,6 +78,8 @@ for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTI
 sw_version = hashlib.sha256(app_html.encode('utf-8')).hexdigest()[:10]
 sw = read(SRC / 'sw-template.js').replace('__SW_VERSION__', sw_version, 1)
 assert '__SW_VERSION__' not in sw
+app_html = app_html.replace('__SPR_BUILD__', sw_version, 1)
+assert '__SPR_BUILD__' not in app_html, 'build marker unreplaced'
 
 # ---------- landing ----------
 import base64, re

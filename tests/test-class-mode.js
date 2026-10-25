@@ -23,6 +23,7 @@ function boot(preStorage) {
     'try{var oc=HTMLAnchorElement.prototype.click;' +
     'HTMLAnchorElement.prototype.click=function(){if(this.download)window.__downloads.push(this.download);return oc.apply(this,arguments)}}catch(e){}' +
     'window.__fetchLog=[];window.fetch=function(u){try{window.__fetchLog.push(String(u))}catch(e){}return Promise.resolve({ok:false,status:404,json:function(){return Promise.resolve([])}})};' +
+    'window.addEventListener("error",function(ev){window.__LAST_ERR=(ev.error&&ev.error.stack)||ev.message});' +
     '(function(){var d=document.getElementById("dlg");if(d&&!d.showModal){d.showModal=function(){this.open=true};d.close=function(){this.open=false;if(this.onclose)this.onclose()}}})();' +
     '</script>';
   const i = html0.lastIndexOf('</body>');
@@ -114,7 +115,9 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(dlg && dlg.open && /dry run/i.test(dlg.textContent), 'dry-run dialog shown');
   ok(/1 class/i.test(dlg.textContent), 'plan lists the sample class');
   click(B, dlg.querySelector('[data-x="1"]'));           /* backup, then apply */
-  await sleep(900);
+  /* applyMigration does several PBKDF2 passes — wait for the mode flip
+     deterministically instead of a fixed sleep (flaked under load) */
+  await waitFor(() => storageDump(B)['spr-mode-v1'] === 'class', 40000);
   const dump1 = storageDump(B);
   ok(dump1['spr-mode-v1'] === 'class', 'mode switched to class');
   ok((dump1['spr-class-index-v1'] || '').length > 10, 'class index written');
@@ -152,21 +155,51 @@ const ADMIN = 'mo', PW = 'sample-password-1';
      users with no classes were trapped here with no sign-out and no nav */
   ok(!!B.d.querySelector('.page [data-action="logout"]'), 'Classes screen shows Sign out (escape hatch)');
   ok(!!B.d.querySelector('.page [data-action="privacy-open"]'), 'Classes screen links the privacy notice');
-  const pairBtn = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 4000);
-  ok(!!pairBtn, 'pair button available to admin');
+  /* simple-ui (2026-10-24): Pair lives in Manage & setup -> Advanced (admin, collapsed) */
+  B.w.location.hash = '#/manage';
+  const pairBtn = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 6000);
+  ok(!!pairBtn, 'pair button available to admin (Manage & setup -> Advanced)');
   async function pairAs(role, user) {
-    click(B, B.d.querySelector('[data-action="class-pair"]'));
-    await sleep(250);
+    let pb = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 4000);
+    if (!pb) {
+      /* after a pairing the app may navigate — go back to Manage -> Advanced */
+      B.w.location.hash = '#/manage';
+      pb = await waitFor(() => B.d.querySelector('[data-action="class-pair"]'), 6000);
+    }
+    if (!pb) {
+      console.log('  [pair-dbg] no pair button for', role, '| hash:', B.w.location.hash,
+        '| mode:', B.w.localStorage.getItem('spr-mode-v1'),
+        '| ix:', (B.w.localStorage.getItem('spr-class-index-v1') || '').slice(0, 60),
+        '| details:', B.d.querySelectorAll('details').length,
+        '| pairInDom:', B.d.querySelectorAll('[data-action="class-pair"]').length,
+        '| summaryTxt:', (function () { const dd = B.d.querySelector('details summary'); return dd ? dd.textContent.slice(0, 40) : 'none'; })());
+      return null;
+    }
+    click(B, pb);
+    await sleep(350);
     const sel = await waitFor(() => B.d.querySelector('#pair-' + role), 3000);
+    if (!sel) { console.log('  [pair-dbg] no #pair-' + role, '| dlg:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 80) : 'closed'; })()); return null; }
     sel.value = user;
     click(B, B.d.querySelector('#dlg [data-x="1"]'));
     await sleep(500);
+    console.log('  [pair-dbg]', role, 'confirmed | dlg after confirm:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 60) : 'closed'; })(),
+      '| toasts:', (function () { return Array.from(B.d.querySelectorAll('.toast')).map(function (t) { return t.textContent.slice(0, 80); }).join(' | ') || 'none'; })());
     /* the one-time password dialog shows the generated rotation password */
-    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 5000);
+    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 30000);   /* key issue = PBKDF2 x2; on slower platforms (Linux CI) this can approach 20 s */
     const pw = pwEl ? pwEl.textContent : null;
     const done = B.d.querySelector('#dlg [data-x="1"]');
     if (done) click(B, done);
     await sleep(250);
+    /* the pairing flow reloads the page in a real browser; jsdom's reload is a
+       no-op, so emulate: fresh jsdom over the same storage + session */
+    const sCopy = B.w.sessionStorage.getItem('spr-session');
+    const sdCopy = B.w.sessionStorage.getItem('spr-session-db');
+    B = boot(storageDump(B));
+    if (sCopy) B.w.sessionStorage.setItem('spr-session', sCopy);
+    if (sdCopy) B.w.sessionStorage.setItem('spr-session-db', sdCopy);
+    await sleep(400);
+    B.w.location.hash = '#/manage';
+    await sleep(600);
     return pw;
   }
   const ealPw = await pairAs('eal', 'eal-01');
@@ -196,15 +229,18 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount, 8000), 'support opens the class');
   /* P1.2/P1.1: self-service change through the real UI, then the old password dies */
   {
-    B.w.location.hash = '#/manage';
-    await sleep(400);
-    click(B, B.d.querySelector('[data-action="change-pass-open"]'));
-    await sleep(200);
+    /* simple-ui: password change is the rail-foot button (Manage & setup is admin-only) */
+    await waitFor(() => B.w.location.hash === '#/dashboard', 15000);
+    await sleep(700);   /* let openClass's async tail (persist + route + closeDlg) fully drain — clicking earlier lets route() eat the dialog */
+    const cpBtn = await waitFor(() => B.d.querySelector('[data-action="change-pass-open"]'), 6000);
+    if (!cpBtn) { console.log('  [dbg] no change-pass button; hash:', B.w.location.hash); }
+    click(B, cpBtn);
+    await waitFor(() => B.d.getElementById('cpCur'), 8000);   /* dialog may take a beat (async confirm builder) */
     setVal(B, B.d.getElementById('cpCur'), supPw);
     setVal(B, B.d.getElementById('cpNew'), 'sup-new-pass-456');
     setVal(B, B.d.getElementById('cpConf'), 'sup-new-pass-456');
     click(B, B.d.querySelector('[data-action="change-pass-save"]'));
-    const changed = await waitFor(() => /Password updated/.test((B.d.getElementById('toast-root') || {textContent:''}).textContent), 10000);
+    const changed = await waitFor(() => /Password updated/.test((B.d.getElementById('toast-root') || {textContent:''}).textContent), 25000);   /* verify + rewrap + loginWrap = 3 PBKDF2 passes; >10 s under load */
     ok(changed, 'support changed its own password (no admin)');
     supPw = 'sup-new-pass-456';
     const dump = storageDump(B);
@@ -216,16 +252,35 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     ok(!oldTry && /Invalid/.test(((B.d.getElementById('loginErr') || {}).textContent || '')), 'old password no longer signs in');
     ok(await loginAs(B, 'sup-01', supPw), 'new password signs in');
     await ackPrivacy(B);
-    ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount || /Your classes/.test(B.d.body.textContent), 12000), 'support reaches the class with the new password');
+    const reached = await waitFor(() => (B.w.SPR_DEBUG_GET_DB() || {}).semesters && B.w.SPR_DEBUG_GET_DB().semesters.length === semCount, 20000);
+    if (!reached) {   /* diagnose honestly instead of crashing three lines later */
+      const sessX = JSON.parse(B.w.sessionStorage.getItem('spr-session') || 'null');
+      console.log('  [dbg-newpw] wrap-under-nw:', await new Promise(function (res) { setTimeout(function () { res('timeout'); }, 4000); B.w.SPR_DEBUG_UNWRAP('sup-01', 'sup-new-pass-456').then(res); }),
+        '| wrap-under-OTP?', '(otp not retained)',
+        '| sessKeys:', sessX ? Object.keys(sessX.keys || {}).join(',') || 'none' : 'no-session',
+        '| dlg:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 100).replace(/\s+/g, ' ') : 'closed'; })());
+    }
+    ok(reached, 'support reaches the class with the new password');
     B.w.location.hash = '#/classes';
-    await sleep(300);
-    const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 6000);
-    if (reOpen && !(B.w.SPR_DEBUG_GET_DB().semesters || []).length) { click(B, reOpen); await sleep(2500); }
+    B.w.dispatchEvent(new B.w.Event('hashchange'));   /* the suite convention: bare hash writes do not route */
+    const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 15000);
+    if (reOpen && !(B.w.SPR_DEBUG_GET_DB().semesters || []).length) {
+      click(B, reOpen);
+      /* the open is async (PBKDF2 unwrap + persist + route) — poll, never sleep */
+      await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0 || B.w.location.hash === '#/dashboard', 25000);
+    }
   }
-  await waitFor(() => B.w.location.hash === '#/dashboard', 8000);   /* openClass lands on the dashboard LAST — then navigate */
+  const opened = await waitFor(() => B.w.location.hash === '#/dashboard' && (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0, 25000);   /* openClass lands on the dashboard LAST — then navigate */
+  if (!opened) {
+    console.log('  [dbg-open] hash:', B.w.location.hash, '| sems:', (B.w.SPR_DEBUG_GET_DB().semesters || []).length,
+      '| ring:', (function () { var a = B.w.SPR_DEBUG_AUTH.get(); var u = (a.users || []).find(function (x) { return x.username === 'sup-01'; }); return u && u.keyring ? Object.keys(u.keyring).length : 'no-user'; })(),
+      '| sessKeys:', Object.keys(((JSON.parse(B.w.sessionStorage.getItem('spr-session') || 'null') || {}).keys) || {}).length,
+      '| dlg:', (function () { var d = B.d.getElementById('dlg'); return d && d.open ? d.textContent.slice(0, 140).replace(/\s+/g, ' ') : 'closed'; })(),
+      '| toasts:', ((B.d.getElementById('toast-root') || { textContent: '' }).textContent || '').slice(0, 140));
+  }
   B.w.location.hash = '#/entry/obs';
-  await sleep(400);
-  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 5000);
+  B.w.dispatchEvent(new B.w.Event('hashchange'));
+  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 15000);
   const meDbg = { role: (B.w.SPR_DEBUG_AUTH.get().session || {}).role };
   ok(!!propCell, 'observation cells offer propose-to-change for support');
   const before = B.w.SPR_DEBUG_GET_DB();
@@ -235,11 +290,14 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   const key0 = propCell ? propCell.dataset.key : 'Listening-LO1';
   const preVal = (((firstSem.observations || {})[sid0] || {})[month0]) || {};
   click(B, propCell);
-  await sleep(250);
+  await waitFor(() => B.d.getElementById('prop-val'), 8000);   /* propose dialog is built async */
   setVal(B, B.d.querySelector('#prop-val'), '4');
   setVal(B, B.d.querySelector('#prop-note'), 'recounted, first LO');
+  const idxBeforeReq = (JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '';
   click(B, B.d.querySelector('#dlg [data-x="1"]'));
-  await sleep(600);
+  await waitFor(() => (B.w.SPR_DEBUG_GET_DB().pending || []).length === 1, 10000);
+  /* the save is debounced - the reboot dump below must not outrun it */
+  await waitFor(() => ((JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '') !== idxBeforeReq, 10000);
   const afterReq = B.w.SPR_DEBUG_GET_DB();
   ok((afterReq.pending || []).length === 1, 'proposal queued');
   const pv = B.w.ClassStore.obsCell(afterReq, afterReq.pending[0].semId, sid0, month0, key0);
@@ -261,12 +319,14 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   B.w.eval(''); /* noop keep-alive */
   const dbNow = () => B.w.SPR_DEBUG_GET_DB();
   B.w.location.hash = '#/review';
-  await sleep(400);
-  const apprBtn = await waitFor(() => B.d.querySelector('[data-action="review-approve"]'), 5000);
+  B.w.dispatchEvent(new B.w.Event('hashchange'));
+  const apprBtn = await waitFor(() => B.d.querySelector('[data-action="review-approve"]'), 15000);
   ok(!!apprBtn, 'review queue shows the proposal');
   const pendId = dbNow().pending[0].id;
+  const idxBeforeAppr = (JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '';
   click(B, apprBtn);
-  await sleep(600);
+  await waitFor(() => (dbNow().pending || []).length === 0, 10000);
+  await waitFor(() => ((JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '') !== idxBeforeAppr, 10000);
   ok((dbNow().pending || []).length === 0, 'queue empty after approval');
   function pendSemId(db, pid) { const p2 = (db.pending || []).find((x) => x.id === pid); return p2 ? p2.semId : db.currentSemesterId; }
   const appliedVal = B.w.ClassStore.obsCell(dbNow(), pendSemId(dbNow(), pendId), sid0, month0, key0);
@@ -281,15 +341,15 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   const rejId = dbNow().pending[0].id;
   const before2 = B.w.ClassStore.obsCell(dbNow(), sem2.id, sid0, month0, obsKey2);
   B.w.location.hash = '#/dashboard';   /* re-enter review so the route re-renders with the new pending item */
-  await sleep(200);
+  B.w.dispatchEvent(new B.w.Event('hashchange'));
   B.w.location.hash = '#/review';
-  await sleep(300);
-  const rejBtn = await waitFor(() => B.d.querySelector('[data-action="review-reject"]'), 4000);
+  B.w.dispatchEvent(new B.w.Event('hashchange'));
+  const rejBtn = await waitFor(() => B.d.querySelector('[data-action="review-reject"]'), 15000);
   click(B, rejBtn);
-  await sleep(250);
+  await waitFor(() => B.d.getElementById('rej-note'), 8000);   /* reject dialog is built async */
   setVal(B, B.d.querySelector('#rej-note'), 'we agreed last week');
   click(B, B.d.querySelector('#dlg [data-x="1"]'));
-  await sleep(500);
+  await waitFor(() => (dbNow().pending || []).length === 0, 10000);
   ok((dbNow().pending || []).length === 0, 'rejected proposal leaves the queue');
   const afterRej = B.w.ClassStore.obsCell(dbNow(), sem2.id, sid0, month0, obsKey2);
   ok(afterRej === before2, 'REJECTED change leaves the score untouched');

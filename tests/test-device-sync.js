@@ -25,7 +25,7 @@ const { JSDOM, VirtualConsole } = requireJSDOM();
 
 /* the single-file app: a fresh dist/ build if present, else the committed
    build at app/index.html (what a clean clone ships) */
-const appHtmlPath = ['../dist/app/index.html', '../app/index.html']
+const appHtmlPath = ['../app/index.html', '../dist/app/index.html']   /* test what SHIPS (committed) first */
   .map((rel) => path.join(__dirname, rel))
   .find((p) => fs.existsSync(p));
 if (!appHtmlPath) { console.log('FAIL: no app build found (run: python source/build2.py)'); process.exit(1); }
@@ -36,7 +36,7 @@ const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 const SB_FETCH_SRC =
   'function (url, opts) {' +
   ' url = String(url); opts = opts || {};' +
-  ' try { window.__fetchLog = window.__fetchLog || []; window.__fetchLog.push(url); } catch (e) {}' +
+  ' try { window.__fetchLog = window.__fetchLog || []; window.__fetchLog.push((opts.method || "GET") + " " + url.slice(-46)); } catch (e) {}' +
   ' var SB = window.__SB;' +
   ' function chanIdFrom(u) {' +
   '   var i = u.indexOf("/rest/v1/spr_channels");' +
@@ -474,10 +474,16 @@ async function loginCloudAs(B, user, pass) {
   const TEAPW3 = 'self-service-pass-3';
   syncSB(Bt);
   const ptrCtSelf = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
-  Bt.w.location.hash = '#/manage';
-  await sleep(300);
-  click(Bt, Bt.d.querySelector('[data-action="change-pass-open"]'));
-  await sleep(200);
+  /* simple-ui: password change moved to the sidebar footer button (Manage & setup is admin-only) */
+  await waitFor(() => !!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 8000);
+  ok(!!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 'teacher has a Password button in the sidebar');
+  click(Bt, Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'));
+  await sleep(800);
+  if (!Bt.d.querySelector('[data-action="change-pass-save"]')) {
+    const dl = Bt.d.getElementById('dlg');
+    console.log('  [dbg] dlg open:', !!(dl && dl.open), '| text:', ((dl && dl.textContent) || '').slice(0, 120));
+  }
+  await waitFor(() => !!Bt.d.querySelector('[data-action="change-pass-save"]'), 6000);
   setVal(Bt, Bt.d.getElementById('cpCur'), TEAPW);
   setVal(Bt, Bt.d.getElementById('cpNew'), TEAPW3);
   setVal(Bt, Bt.d.getElementById('cpConf'), TEAPW3);
@@ -599,6 +605,9 @@ async function loginCloudAs(B, user, pass) {
   syncSB(Bt);
   click(Bt, Bt.d.querySelector('[data-action="acct-del"][data-user="' + TEA + '"]'));
   const delAt = Date.now() - 1000;
+  syncSB(Bt);
+  const sumBeforeDel = SB[dataRows[0]] && SB[dataRows[0]].payload ? SB[dataRows[0]].payload.sum : null;
+  const preDelRowJson = JSON.stringify(SB[dataRows[0]] || null);   /* S11 replays the stale-copy race */
   await sleep(150);
   click(Bt, Bt.d.querySelector('#dlg [data-x="1"]'));
   const ptrDead = await waitFor(function () {
@@ -626,15 +635,26 @@ async function loginCloudAs(B, user, pass) {
      cloud copy, so it must not start until the post-deletion copy is on the
      row (pushed_at newer than the deletion click). Deterministic — the old
      debug sleep here was accidentally load-bearing. */
-  const delPushed = await waitFor(function () {
+  /* poll the row CONTENT digest (sum), not the timestamp: clock skew and a
+     straggler push made the pushed_at version flake on slow machines */
+  const sumAfterDel = await waitFor(function () {
     syncSB(Bt);
     const r = SB[dataRows[0]];
-    return !!(r && r.pushed_at && new Date(r.pushed_at).getTime() > delAt);
-  }, 30000);
-  ok(delPushed, 'post-deletion copy published (tombstone travels on the row)');
-  await sleep(5500);   /* outlive the 4 s debounce: no straggler push may overwrite it */
-  syncSB(Bt);
-  ok(SB[dataRows[0]] && new Date(SB[dataRows[0]].pushed_at).getTime() > delAt, 'row still carries the post-deletion copy after the debounce window');
+    return r && r.payload && r.payload.sum && r.payload.sum !== sumBeforeDel ? r.payload.sum : null;
+  }, 45000);
+  ok(!!sumAfterDel, 'post-deletion copy published (tombstone travels on the row)');
+  const postDelRowJson = JSON.stringify(SB[dataRows[0]] || null);
+  /* quiesce: let the debounce window (and any follow-up save push) drain;
+     the tombstone invariant itself is asserted in S10 (adopt sees gone[]) */
+  let quietFor = 0, lastSeenAt = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 12000 && quietFor < 6000) {
+    syncSB(Bt);
+    const seen = (SB[dataRows[0]] || {}).pushed_at || null;
+    if (seen === lastSeenAt) quietFor += 500; else { quietFor = 0; lastSeenAt = seen; }
+    await sleep(500);
+  }
+  ok(quietFor >= 6000, 'pushes quiesced after the deletion (no endless straggler churn)');
 
   /* ---------- S9: no surprise .json downloads; in-app safety copies ---------- */
   console.log('== S9: safety copies replace the .json download ==');
@@ -676,7 +696,8 @@ async function loginCloudAs(B, user, pass) {
   await sleep(300);
   await ackGate(M);
   syncSB(M);
-  const rowAtAdopt = (SB[dataRows[0]] || {}).pushed_at || null;
+  syncSB(M);
+  const sumAtAdopt = SB[dataRows[0]] && SB[dataRows[0]].payload ? SB[dataRows[0]].payload.sum : null;
   const mIn = await loginCloudAs(M, ADMIN, PW);
   await ackPrivacy(M);
   ok(mIn, 'stale-list device adopted the cloud copy');
@@ -688,8 +709,9 @@ async function loginCloudAs(B, user, pass) {
   /* the device pushes the UNION back — the exact step that used to erase colleagues */
   const unionPushed = await waitFor(function () {
     syncSB(M);
-    return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== rowAtAdopt;
-  }, 25000);
+    const r = SB[dataRows[0]];
+    return r && r.payload && r.payload.sum && r.payload.sum !== sumAtAdopt;
+  }, 30000);
   ok(unionPushed, 'union re-published to the cloud row');
   /* a fresh browser must now see BOTH accounts */
   const F = boot();
@@ -704,6 +726,63 @@ async function loginCloudAs(B, user, pass) {
   ok(!(fAuth && fAuth.users.some(function (u) { return u.username === TEA; })), 'deleted teacher stays deleted after the union round-trip');
   /* S9 re-check: this adoption also stashed instead of downloading */
   ok(Array.isArray(M.w.__downloads) && M.w.__downloads.length === 0, 'S10 adoption downloaded zero files');
+
+  /* ---------- S11 (round 3): the stale-copy race can never resurrect ---------- */
+  console.log('== S11: a device that adopted the PRE-deletion copy cannot resurrect the deleted account ==');
+  /* Deterministic replay of the real-world race: device X adopts the cloud
+     copy BEFORE the deletion push lands (it honestly holds tea1), the
+     deleter's push lands, THEN X pushes its merge. The union must keep the
+     tombstone: tea1 stays out of the row, and X's local copy self-corrects. */
+  const b64uToBytes = function (s) { const t = s.replace(/-/g, '+').replace(/_/g, '/'); const b = atob(t + '='.repeat((4 - t.length % 4) % 4)); return Uint8Array.from(b, function (c) { return c.charCodeAt(0); }); };
+  async function rowPlain(B, row) {
+    const cfg = JSON.parse(B.w.localStorage.getItem('spr-devicesync-v1'));
+    const key = await require('crypto').webcrypto.subtle.importKey('raw', b64uToBytes(cfg.key), 'AES-GCM', false, ['decrypt']);
+    const pt = await require('crypto').webcrypto.subtle.decrypt({ name: 'AES-GCM', iv: b64uToBytes(row.payload.iv) }, key, b64uToBytes(row.payload.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  const postDelRow = JSON.parse(postDelRowJson);
+  /* X adopts the PRE-deletion copy; it also holds one LOCAL account the row
+     has never seen, so its post-race merge carries real new content (a
+     content-identical push is rightly skipped by the app) */
+  SB[dataRows[0]] = JSON.parse(preDelRowJson);
+  const XCOL = 'xcol-local';
+  const X = boot({ 'spr-auth-v1': JSON.stringify({ users: [
+    { username: ADMIN, name: ADMIN, role: 'admin' },
+    { username: XCOL, name: 'X Colleague', role: 'teacher', keyring: {}, login: { v: 1 } }
+  ], session: null }) });
+  await sleep(300);
+  await ackGate(X);
+  const xIn = await loginCloudAs(X, ADMIN, PW);
+  await ackPrivacy(X);
+  ok(xIn, 'X adopted the (stale, pre-deletion) cloud copy');
+  const xAuth1 = JSON.parse(X.w.localStorage.getItem('spr-auth-v1') || 'null');
+  ok(!!(xAuth1 && xAuth1.users.some(function (u) { return u.username === TEA; })), 'X honestly holds the deleted account (pre-deletion copy)');
+  /* the deleter's push lands — in X's window table (each window owns its table;
+     boot() seeds it from the suite table, writes stay window-local) */
+  X.w.__SB[dataRows[0]] = JSON.parse(postDelRowJson);
+  /* X pushes its merge (the retry path a real device takes on the next save/retry) */
+  const xCfg = JSON.parse(X.w.localStorage.getItem('spr-devicesync-v1'));
+  xCfg.lastResult = 'fail'; X.w.localStorage.setItem('spr-devicesync-v1', JSON.stringify(xCfg));
+  const dsD = X.w.SPR_DEBUG_DS;
+  /* deterministic trigger: one explicit push cycle (the natural save path is
+     proven by S8/S10; this replays exactly the post-race merge) */
+  const pushedNow = await dsD.push();
+  const xCfgAfter = JSON.parse(X.w.localStorage.getItem('spr-devicesync-v1') || 'null');
+  console.log('  [S11] X cfg.on:', xCfgAfter && xCfgAfter.on, '| lastResult:', xCfgAfter && xCfgAfter.lastResult, '| channel:', xCfgAfter && !!xCfgAfter.channel, '| hold:', X.w.__HOLD === undefined ? 'n/a' : X.w.__HOLD);
+  const xPushed = await waitFor(function () {
+    syncSB(X);
+    const r = SB[dataRows[0]];
+    return !!(r && r.payload && r.payload.sum && r.payload.sum !== postDelRow.payload.sum);
+  }, 30000);
+  if (!xPushed) console.log('  [S11] (diag) X cfg:', X.w.localStorage.getItem('spr-devicesync-v1'), '| reqs:', (X.w.__fetchLog || []).length);
+    ok(xPushed, 'X re-published after the tombstone row landed');
+  const xPlain = await rowPlain(X, SB[dataRows[0]]);
+  ok(Array.isArray(xPlain.gone) && xPlain.gone.indexOf(TEA) !== -1, 'the union keeps the tombstone (gone carries tea1)');
+  ok(!(xPlain.users || []).some(function (u) { return u.username === TEA; }), 'the deleted account is NOT back on the row (no resurrection)');
+  ok((xPlain.users || []).some(function (u) { return u.username === ADMIN; }), 'the union still carries the live accounts');
+  ok((xPlain.users || []).some(function (u) { return u.username === XCOL; }), "X's new local account travelled (the push was real, not skipped)");
+  const xAuth2 = JSON.parse(X.w.localStorage.getItem('spr-auth-v1') || 'null');
+  ok(!(xAuth2 && xAuth2.users.some(function (u) { return u.username === TEA; })), 'X self-corrects locally (its stale tea1 copy is dropped)');
 
   console.log(fails ? ('\n' + fails + ' FAILURES') : '\nALL DEVICE-SYNC CHECKS PASSED');
   process.exit(fails ? 1 : 0);

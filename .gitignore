@@ -4,3 +4,6 @@ qa_*
 _*.txt
 *.xlsx
 node_modules/
+*.log
+tests/_*.py
+tests/_*.sh

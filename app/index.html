@@ -546,6 +546,8 @@ input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
 </head>
 <body>
 <div id="app"></div>
+<input type="file" id="file-restore-all" accept=".json,application/json" hidden>
+<script>window.SPR_BUILD="a9be984a2a";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -2902,23 +2904,121 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function classPendingCount() { return (DB && Array.isArray(DB.pending)) ? DB.pending.length : 0; }
   /* the class list / open-close cycle ------------------------------------------ */
+  /* recovery dialog for "the wrap exists but this password cannot open it":
+     the key was sealed under a one-time migration/setup password. Offers the
+     plain recoveries (cloud copy / backup file) AND — new — deriving the key
+     from that one-time password, then re-sealing it under the admin's own
+     password so plain sign-in works from then on. Resolves:
+       'open'    key recovered + in SESSION (caller falls through to open)
+       'pull'    user chose "check for a newer copy"
+       'restore' user chose "restore from a backup file"
+       null      dismissed */
+  function cannotUnlockDialog(meta, id, meRaw) {
+    return new Promise((resolve) => {
+      const primary = dsOn() ? 'Check for a newer copy' : 'Restore from a backup file';
+      openDlg(
+        '<h3>Cannot unlock ' + U.esc(meta.name) + ' on this device</h3>' +
+        '<p class="small">The saved copy needs its class key, and this device cannot derive it from your password. This happens when the class was set up while the sign-in had expired — the key was then saved under a one-time password that was shown only once.</p>' +
+        '<div class="dlg-actions" style="flex-wrap:wrap;gap:8px">' +
+        '<button class="btn" data-otp="1">I have the one-time password from setup</button>' +
+        '<button class="btn primary" data-x="1">' + primary + '</button>' +
+        '<button class="btn" data-x="0">Not now</button></div>');
+      const dlg = document.getElementById('dlg');
+      const done = (v) => { try { dlg.removeEventListener('click', h); } catch (e2) {} try { closeDlg(); } catch (e3) {} resolve(v); };
+      function h(e) {
+        const b = e.target.closest('[data-otp],[data-otp-apply],[data-x]');
+        if (!b) return;
+        if (b.hasAttribute('data-otp')) {
+          e.preventDefault(); e.stopPropagation();
+          openDlg(
+            '<h3>Enter the one-time password</h3>' +
+            '<p class="small">It was shown once when the class was set up (a slip like <code>abc12-def34-ghi56-jkl78</code>). It unlocks this class — SPR then saves the key under your own password again, so ordinary sign-in keeps working.</p>' +
+            '<input class="inp" id="otp-inp" autocomplete="off" spellcheck="false" placeholder="one-time password">' +
+            '<p class="small" id="otp-err" style="color:#c0392b;margin:6px 0 0"></p>' +
+            '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' +
+            '<button class="btn primary" data-otp-apply="1">Unlock with it</button></div>');
+          const inp = document.getElementById('otp-inp'); if (inp) inp.focus();
+          return;
+        }
+        if (b.hasAttribute('data-otp-apply')) {
+          e.preventDefault(); e.stopPropagation();
+          const val = ((document.getElementById('otp-inp') || {}).value || '').trim();
+          (async () => {
+            let k = null;
+            try { k = await CS.unwrapKey(meRaw.keyring[id], val); } catch (e2) { k = null; }
+            if (!k) { const er = document.getElementById('otp-err'); if (er) er.textContent = 'That password does not match the one shown at setup. Check the slip and try again.'; return; }
+            SESSION.keys[id] = k; classKeysToSession();
+            try {   /* re-seal under the admin's own password: plain sign-in works from now on */
+              const auth = getAuth();
+              const u = auth.users.find((x) => x.username === meRaw.username);
+              if (u && SESSION.pw) { u.keyring = u.keyring || {}; u.keyring[id] = await CS.wrapKey(k, SESSION.pw); saveAuth(auth); }
+            } catch (e3) {}
+            done('open');
+          })();
+          return;
+        }
+        done(b.getAttribute('data-x') === '1' ? (dsOn() ? 'pull' : 'restore') : null);
+      }
+      dlg.addEventListener('click', h);
+    });
+  }
+
   async function openClass(id) {
     const meta = classIndex().find((c) => c.id === id);
     if (!meta) { toast('That class no longer exists here', true); return; }
     const raw = localStorage.getItem(classBlobKey(id));
     let key = (SESSION.keys || {})[id];
     if (!raw || !key) {
-      /* a silent toast here reads as "the button did nothing" — say what is
-         wrong and offer the concrete way out (pull the newest cloud copy) */
+      /* the account holds a wrap for this class but the session does not hold
+         the unwrapped key. Three honest cases:
+           a) session restored (no password in memory) -> one real sign-in
+              derives it: say so;
+           b) password in memory -> derive RIGHT NOW, no re-sign-in theatre;
+           c) derive impossible (the wrap lives under a one-time migration
+              password this device never saw) -> say exactly that and offer
+              the real recoveries (cloud copy / backup file). Never advice
+              that cannot work. */
+      const me2 = myUser();
+      const meRaw = me2 && (getAuth().users || []).find(function (x) { return x.username === me2.username; });
+      if (raw && meRaw && meRaw.keyring && meRaw.keyring[id]) {   /* myUser() has no keyring — read the raw auth record */
+        if (!SESSION.pw) {
+          const okRe = await confirmDlg('One more sign-in needed',
+            'This device holds your key for <b>' + U.esc(meta.name) + '</b>, but this session was restored without it. Sign in once more and the class opens straight away.',
+            'Sign out now');
+          if (okRe) doLogout();
+          return;
+        }
+        try { key = await CS.unwrapKey(meRaw.keyring[id], SESSION.pw); } catch (e) { key = null; }
+        if (key) {
+          SESSION.keys[id] = key;
+          classKeysToSession();
+          /* fall through — the class opens below */
+        } else {
+          const res = await cannotUnlockDialog(meta, id, meRaw);
+          if (res === 'open') { key = SESSION.keys[id];   /* recovered from the one-time password — fall through, the class opens now */ }
+          else {
+            if (res === 'pull') dsPullCheck(true);
+            else if (res === 'restore') { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+            return;
+          }
+        }
+      } else {
+      /* never a dead end: one sentence + ONE primary button + Sign out is
+         always visible on the screen behind */
       const what = !raw
-        ? 'The workbook data for <b>' + U.esc(meta.name) + '</b> is not on this device.'
+        ? 'The data for <b>' + U.esc(meta.name) + '</b> is not on this device.'
         : 'This device does not hold the unlock key for <b>' + U.esc(meta.name) + '</b>.';
-      const how = dsOn()
-        ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.'
-        : 'Turn on device sync (Manage &rarr; Device sync) on the device that has this class, then pull the copy here — or restore a backup on this screen.';
-      const ok = await confirmDlg('Cannot open ' + meta.name + ' yet', what + '<br><br>' + how, dsOn() ? 'Check for a newer copy' : 'Understood');
-      if (ok && dsOn()) dsPullCheck(true);
+      const ok = await confirmDlg('Cannot open ' + meta.name + ' yet',
+        what + '<br><br>' + (dsOn()
+          ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
+          : 'Restore a backup file on this screen' + (myUser() && myUser().role !== 'admin' ? ', or ask your admin to set up device sync for you.' : '.')),
+        dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
+      if (ok) {
+        if (dsOn()) dsPullCheck(true);
+        else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+      }
       return;
+      }   /* else: no wrap at all — the generic recovery above */
     }
     try {
       const wb = normalizeDB(await CS.openClass(JSON.parse(raw), key));
@@ -2926,14 +3026,40 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       DB = wb;
       DB.sprClass = 1; DB.id = id;   /* DB IS the class workbook now */
       ui.classOpen = true;
+      /* self-heal: if the stored wrap cannot be derived from the user's real
+         password (e.g. it was sealed under a one-time migration password on
+         another device), re-seal it now while we hold the correct key —
+         after this, sign-in alone unlocks the class again on every device */
+      if (SESSION.pw) {
+        const meH = myUser();
+        const meRawH = meH && (getAuth().users || []).find(function (x) { return x.username === meH.username; });
+        if (meRawH) {
+          let wrapOk = false;
+          try { wrapOk = !!(meRawH.keyring && meRawH.keyring[id] && await CS.unwrapKey(meRawH.keyring[id], SESSION.pw)); } catch (e) {}
+          if (!wrapOk) {
+            try {
+              meRawH.keyring = meRawH.keyring || {};
+              meRawH.keyring[id] = await CS.wrapKey(key, SESSION.pw);
+              saveAuth(getAuth());
+              classKeysToSession();
+              toast('Class key repaired on this device');
+            } catch (e) {}
+          }
+        }
+      }
       try { localStorage.setItem('spr-last-class', id); } catch (e) {}
       buildShell(); location.hash = '#/dashboard'; route();
     } catch (e) {
       CLS = null; CLS_KEY = null;
       const ok = await confirmDlg('Could not open ' + meta.name,
-        'The saved copy on this device does not match your key (it may be older or newer than what this device holds).<br><br>' + (dsOn() ? 'Pull the newest copy from your cloud channel now? Your current data is kept as a safety copy.' : 'Restore a backup of this class on this screen, or pair this device again from the device that holds the class.'),
-        dsOn() ? 'Check for a newer copy' : 'Understood');
-      if (ok && dsOn()) dsPullCheck(true);
+        'The saved copy on this device does not match this device\u2019s key.<br><br>' + (dsOn()
+          ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
+          : 'Restore a backup file on this screen' + (myUser() && myUser().role !== 'admin' ? ', or ask your admin for help.' : '.')),
+        dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
+      if (ok) {
+        if (dsOn()) dsPullCheck(true);
+        else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+      }
     }
   }
   function closeClass() {
@@ -2944,12 +3070,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   async function classPersistNow(silent) {
     if (!CLS || !CLS_KEY) return;
+    try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}
     try {
       const blob = await CS.sealClass(DB, CLS_KEY);
       localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
       const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
       if (m) { m.updatedAt = Date.now(); m.pendingCount = classPendingCount(); setClassIndex(ix); }
       flashSaved(silent);
+      /* shared-database hook (later phase): a school Supabase table will
+         broadcast per-score changes so co-teachers' dashboards update live.
+         Today's device sync only copies the whole sealed workbook. */
       scheduleSyncPush();
     } catch (e) { toast('Could not save the class workbook — storage full?', true); }
   }
@@ -3042,19 +3172,29 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   /* ============================ shell & router ============================ */
-  const NAV = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['grading', 'Grading'], ['analysis', 'Analysis'], ['reports', 'Report Cards'], ['ranking', 'Ranking'], ['manage', 'Manage & setup']];
-  /* class mode adds a Classes home + (for reviewers) a Review queue entry */
+  /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
+     reachable from the dashboard buttons. Admin adds Users + Manage & setup;
+     Ranking keeps its current role rules (admin + management). */
+  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
-    const list = NAV.slice();
-    if (sprMode() === 'class') {
-      list.unshift(['classes', '‹ All classes']);
-      if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
-    }
+    const r = classRole((currentUser() || {}).role);
+    let list;
+    if (r === 'admin') list = NAV_T.concat([['ranking', 'Ranking'], ['users', 'Users'], ['manage', 'Manage & setup']]);
+    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking']]);
+    else list = NAV_T.slice();
+    if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
     return list;
   }
   /* roles: admin (Mo) sees & controls everything; management sees Ranking too;
      teacher = the everyday markbook tools, exactly as before */
-  function roleLabel(r) { r = classRole(r); return (CS && CS.roleLabel(r)) || (r === 'admin' ? 'Admin' : 'Teacher'); }
+  function roleLabel(r) {
+    /* display the STORED role faithfully — classRole() maps legacy 'teacher'
+       to 'eal' for permissions, but the Users tab must not re-label a plain
+       teacher as an EAL teacher (2026-10-24 review note) */
+    const raw = String(r || '');
+    const labels = { admin: 'Admin', manager: 'Manager', management: 'Manager', eal: 'EAL teacher', support: 'Supporting teacher', teacher: 'Teacher' };
+    return labels[raw] || labels[classRole(raw)] || (CS && CS.roleLabel(classRole(raw))) || raw;
+  }
   function isMgmt() { const r = classRole((currentUser() || {}).role); return r === 'admin' || r === 'manager'; }
   function buildShell() {
     const sem = cur();
@@ -3063,8 +3203,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<nav class="rail">' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
-          '<div class="nav">' + navList().filter((n) => n[0] !== 'ranking' || isMgmt()).map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
-          '<div class="rail-foot"><label for="semSelect">Semester</label>' +
+          '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
+          '<div class="rail-foot">' +
+          /* every role keeps self-service password change (Manage & setup is
+             admin-only since simple-ui) — plain button, same dialog as before */
+          '<button class="btn sm" data-action="change-pass-open" style="margin-bottom:8px">Password</button>' +
+          (function () {   /* small class switcher - only when this account holds more than one class */
+            if (sprMode() !== 'class') return '';
+            const ix = CS.classesFor(myUser() || {}, classIndex());
+            if (ix.length < 2) return '';
+            return '<label for="classSwitch">Class</label><select id="classSwitch">' +
+              ix.map((c) => '<option value="' + U.esc(c.id) + '"' + (CLS && CLS.id === c.id ? ' selected' : '') + '>' + U.esc(c.name) + '</option>').join('') + '</select>';
+          })() +
+          '<label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
             (function() { var u = currentUser(); if (!u) return '';
@@ -3105,15 +3256,31 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
        with no class open has an empty in-memory DB but must see its class list */
     if (sprMode() === 'class' && !document.body.classList.contains('auth-gate')) {
       const cv = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
-      if (!CLS && cv !== 'classes') { location.hash = '#/classes'; return; }
+      if (!CLS && cv !== 'classes' && !((cv === 'users' || cv === 'manage') && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
+      if (cv === 'users') { if (classRole((currentUser() || {}).role) === 'admin') { renderUsers(); window.scrollTo(0, 0); return; } location.hash = '#/classes'; return; }
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
-    }    if (!DB.semesters.length) { renderWelcome(); return; }
+      if (cv === 'manage') {
+        /* admin without a class open reaches the Advanced tools here (the
+           no-class renderManage branch draws a standalone page); with a class
+           open the shell may have been wiped by a self-contained page (Users)
+           — rebuild it before the full Manage body writes into #content */
+        if (classRole((currentUser() || {}).role) === 'admin') {
+          if (CLS && !$('#content')) buildShell();
+          renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
+        }
+        location.hash = '#/classes'; return;
+      }
+    }
+    if (!$('#content')) buildShell();   /* a self-contained page (Users/classes) may have wiped the shell — every switch view needs it back */
+    if (!DB.semesters.length) { renderWelcome(); return; }
     if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let view = parts[0] || 'dashboard';
     if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
+    if (view === 'users' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users is admin-only, URL included */
+    if (view === 'manage' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }  /* Manage & setup is admin-only too */
     const navView = view;
     switch (view) {
       case 'students': renderStudents(); break;
@@ -3125,6 +3292,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
       case 'ranking': renderRanking(); break;
       case 'manage': renderManage(); break;
+      case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
       default: renderDashboard();
     }
@@ -3149,9 +3317,6 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
-      (myUser() && myUser().role === 'admin' ?
-        '<button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair</button>' +
-        '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button>' : '') +
       '</div></div>';
   }
 
@@ -3161,43 +3326,56 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const mine = CS.classesFor(me, ix);
     const admin = me.role === 'admin';
     const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
+    /* simple-ui: this screen is a plain chooser. Everything technical lives in
+       the admin-only Advanced panel below; teachers see class name + Open. */
     $('#app').innerHTML =
       '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
-      /* way out — this screen has no nav rail, so sign-out lives here.
-         The sync check matters most HERE: a device that cannot open any class
-         can never reach Manage → Device sync, so this is its only path to the
-         newest cloud copy. */
+      /* way out + recovery - always a visible Sign out; the sync check lives
+         here because a device that cannot open a class reaches nowhere else */
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
-        '<button class="uc-out" data-action="start-fresh" style="font-size:11.5px;padding:5px 12px;color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
       '</div>' +
-      pageHead('Your classes',
+      pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
         (me.role === 'manager' ? ' — whole school, read-only' : me.role === 'support' ? ' — you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ' — you edit your class and approve observation changes from your support partner' : '')) +
-      (admin ? '<div class="flex mb" style="flex-wrap:wrap">' +
-        '<button class="btn primary" data-action="class-new-open">New class</button>' +
-        '<button class="btn" data-action="class-import-btn">Import class file</button>' +
-        '<button class="btn" data-action="class-roster-btn">Import roster (accounts CSV)</button>' +
-        '<button class="btn" data-action="export-all">Export everything</button>' +
-        '<button class="btn" data-action="restore-all-btn">Restore everything</button>' +
-        '</div>' : '') +
-      (legacySource ? '<div class="panel" style="margin:0 0 16px;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
-        '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
-        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       (me.role === 'manager' ? '<p class="small muted" style="margin:0 0 14px">Manager view: every class, read-only. Printing and on-screen review are open; editing stays with each class&rsquo;s teachers.</p>' : '') +
       (mine.length ? '<div class="class-grid">' + mine.map(classCard).join('') + '</div>'
-        : '<div class="empty" style="padding:44px 24px"><div class="big">No classes yet</div>' +
-          '<p class="small">' + (admin ? 'Create a class, import a class file, or migrate the old single markbook.' : 'Your administrator will pair you with a class — it appears here the moment they do.') + '</p>' +
-          (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button><button class="btn" data-action="class-import-btn">Import class file</button></div>' : '') +
+        : '<div class="empty" style="padding:44px 24px"><div class="big">' + (admin ? 'No classes yet' : 'No class yet — ask your admin') + '</div>' +
+          '<p class="small">' + (admin ? 'Create a class to get started.' : 'Your administrator sets up your class — it appears here the moment they do.') + '</p>' +
+          (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button></div>' : '') +
           '</div>') +
-      '<p class="small muted" style="margin-top:22px">Each class is a separate encrypted workbook; only colleagues holding that class&rsquo;s key can open it. This is an <b>agreed-rule control between colleagues</b> — anyone holding a class key can read and change its data, so hand keys only to your own class team. <a href="#" data-action="privacy-open">Privacy &amp; data notice</a>.</p>' +
+
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
-      '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>' +
       '</main></div>';
+  }
+  /* admin-only Advanced panel - every technical action, one plain description,
+     collapsed by default; nothing here is reachable by teachers */
+  function renderClassesAdvanced(ix, legacySource) {
+    return '<details style="margin-top:26px;border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:10px 14px;background:rgba(127,127,127,.04)">' +
+      '<summary style="cursor:pointer"><b>Advanced</b> <span class="small muted">(admin) — setup, pairing and recovery tools</span></summary>' +
+      '<div style="margin-top:12px">' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="class-import-btn">Import class file</button><span class="small muted">Add a class from a file another device exported.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="class-roster-btn">Import roster (accounts CSV)</button><span class="small muted">Create several sign-ins at once from a CSV list.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="export-all">Export everything</button><span class="small muted">Download a full safety copy of all data.</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><button class="btn" data-action="restore-all-btn">Restore everything</button><span class="small muted">Load such a safety copy back in.</span></div>' +
+      '</div>' +
+      (legacySource ? '<div class="panel" style="margin:12px 0 0;border-color:#c9973b"><b>Split the single markbook into per-class workbooks</b>' +
+        '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key — a dry run and a backup come first.</p>' +
+        '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
+      (ix.length ? '<h4 style="margin:16px 0 8px">Pairing &amp; share links</h4><table class="tbl"><tbody>' +
+        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</td>' +
+          '<td><button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair…</button> ' +
+          '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button></td></tr>').join('') +
+        '</tbody></table>' +
+        '<p class="small muted" style="margin:8px 0 0">Each class is a separate encrypted workbook; only colleagues holding that class&rsquo;s key can open it — an <b>agreed-rule control between colleagues</b>, so hand keys only to your own class team.</p>' : '') +
+      '<div style="margin-top:14px;border-top:1px solid rgba(127,127,127,.25);padding-top:10px">' +
+        '<button class="uc-out" data-action="start-fresh" style="color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
+        '<span class="small muted" style="margin-left:8px">Wipes SPR from this browser and starts over — a backup download is offered first.</span></div>' +
+      '</details>';
   }
 
   /* ---- support teacher proposes an observation change ---- */
@@ -3579,6 +3757,28 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     fr.onload = async () => {
       let data = null;
       try { data = JSON.parse(fr.result); } catch (e) { toast('Not a valid export file', true); return; }
+      /* the pre-migration backup is the raw legacy markbook (what the migration
+         wizard downloads) — accept it and put the device back the way it was
+         BEFORE the split, so migration can simply be run again */
+      if (data && data.spr !== 1 && Array.isArray(data.semesters)) {
+        try { validateDB(data); } catch (e) { toast('Not a restorable backup: ' + e.message, true); return; }
+        const okGo = await confirmDlg('Restore this backup?',
+          'This puts back the single markbook from before the class split (' + data.semesters.length + ' semester(s)). Class workbooks already on this device are kept untouched. After the restore you can run <b>Review migration</b> again.', 'Restore');
+        if (!okGo) return;
+        stashSafetyBackup('before restoring the pre-migration backup');
+        try {
+          DB = normalizeDB(data);
+          CLS = null; CLS_KEY = null; ui.classOpen = false;
+          try { localStorage.removeItem(MODE_KEY); } catch (e2) {}
+          try { localStorage.removeItem('spr-last-class'); } catch (e2) {}
+          const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
+          v2.fmt = 2; v2.data = await sealDB(DB, SESSION.dk); v2.ts = Date.now();
+          writeV2(v2);
+          toast('Backup restored — your markbook is back. Review migration to split it again.');
+          location.hash = '#/manage'; location.reload();
+        } catch (e) { toast('Restore failed: ' + e.message + ' — nothing was changed', true); }
+        return;
+      }
       if (!data || data.spr !== 1 || data.type !== 'spr-export-all' || !Array.isArray(data.classes)) { toast('This is not an "Export everything" file', true); return; }
       const okGo = await confirmDlg('Restore everything',
         'This replaces all class workbooks on this device with the ' + data.classes.length + ' class(es) from the file. A safety copy of the current state is kept first. Class keys are re-issued: you (admin) get keys now; teachers are re-paired afterwards.', 'Restore');
@@ -3643,6 +3843,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       });
   }
   async function migrateApply(src, plan, pairings) {
+    if (!SESSION.pw) {
+      /* SESSION.pw is memory-only and dies with a reload; without it the admin's
+         class-key wrap would be sealed under a RANDOM password (shown once and
+         effectively unknowable). Refuse instead — one clean sign-in fixes it. */
+      toast('One more sign-in is needed before migrating — sign in and start the migration again.', true);
+      return;
+    }
     try {
       const auth = getAuth();
       const users = auth.users.map((u) => ({ username: u.username, role: classRole(u.role) }));
@@ -3899,9 +4106,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="chart-box" style="height:' + Math.max(220, Math.min(gAll.filter(gateOk).length, 30) * 20) + 'px"><canvas id="ch-byStu" role="img" aria-label="Final score by student bar chart"></canvas></div></div>';
     }
 
-    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students',
+    let upd = '';
+    try {
+      const at = Number(localStorage.getItem('spr-last-save-at') || 0);
+      if (at) {
+        const d = new Date(at), mins = Math.round((Date.now() - at) / 60000);
+        upd = ' \u00b7 Updated ' + (mins < 1 ? 'just now' : ('at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')));
+      }
+    } catch (e0) {}
+    $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students' + upd,
       '<a class="btn primary no-print" href="#/entry/sp">Enter scores</a>' +
       '<a class="btn no-print" href="#/grading">Grading</a>' +
+      '<a class="btn no-print" href="#/analysis/class">Analysis</a>' +
       '<button class="btn no-print" data-action="export-xlsx">Export SPR Excel</button>') +
 
       '<section class="cover">' +
@@ -4751,9 +4967,77 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     });
   }
 
+  /* simple-ui admin Users tab: every account this device knows, plain words,
+     no secrets (never render hashes, keyrings or wraps) */
+  function usersClassInfo(un, role) {
+    const r = classRole(role);
+    if (r === 'admin' || r === 'manager') return { classes: 'All classes', partner: '' };
+    const ix = classIndex();
+    const mine = ix.filter((c) => c.eal === un || c.support === un);
+    if (!mine.length) return { classes: 'Not paired yet', partner: '' };
+    const partner = mine.map((c) => (c.eal === un ? c.support : c.eal) || '').filter(Boolean).join(', ');
+    return { classes: mine.map((c) => c.name).join(', '), partner: partner };
+  }
+  function renderUsers() {
+    const f = ui.usersView || (ui.usersView = { q: '', role: 'all' });
+    const all = getAuth().users;
+    const q = f.q.trim().toLowerCase();
+    const rows = all.filter((u) => (f.role === 'all' || classRole(u.role) === f.role) &&
+      (!q || (u.username + ' ' + (u.name || '')).toLowerCase().includes(q)));
+    const cell = (v) => U.esc(v || '\u2014');
+    /* self-contained: reachable both from the shell (class open) and straight
+       from the chooser screen (no class open) — so draw the whole page */
+    $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
+      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
+      pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
+      '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
+      '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
+        '<label>Search <input class="inp" id="usersQ" placeholder="Name or username\u2026" value="' + U.esc(f.q) + '"></label>' +
+        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'EAL teacher'], ['support', 'Supporting teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        '<button class="btn" data-action="users-csv">Download list (CSV)</button>' +
+        '<button class="btn" data-action="acct-add-open">Add account</button>' +
+        '<button class="btn" data-action="class-roster-btn">Import roster CSV</button>' +
+      '</div></div>' +
+      (rows.length ? '<table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
+        rows.map((u) => {
+          const ci = usersClassInfo(u.username, u.role);
+          const selfNow = u.username === SESSION.user;
+          return '<tr><td>' + U.esc(u.name || u.username) + '</td>' +
+            '<td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
+            '<td>' + roleLabel(u.role) + '</td>' +
+            '<td>' + cell(ci.classes) + '</td>' +
+            '<td>' + cell(ci.partner) + '</td>' +
+            '<td>' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
+            '<td>' + (selfNow ? '' :
+              '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
+              '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+        : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+      '</main></div>';
+  }
+
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
+    if (sprMode() === 'class' && !CLS) {
+      /* no class open on this device: no shell exists yet, so draw the whole
+         page (like renderUsers) with just the admin Advanced panel — a stuck
+         admin still reaches Start fresh / restore / pull tools here */
+      $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
+        '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+          (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
+          '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+          '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+        '</div>' +
+        pageHead('Manage & setup', 'setup, pairing and recovery tools') +
+        renderClassesAdvanced(classIndex(), false) +
+        '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+        '</main></div>';
+      window.scrollTo(0, 0);
+      return;
+    }
     $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
@@ -4907,7 +5191,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<button class="btn danger" data-action="wipe">Erase everything</button>' +
       '</div>' +
       '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
-      '<input type="file" id="file-json" accept=".json" hidden>';
+      '<input type="file" id="file-json" accept=".json" hidden>' +
+      ((classRole((currentUser() || {}).role) === 'admin')
+        ? renderClassesAdvanced(classIndex(), sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length) +
+          '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
+          '<input type="file" id="file-restore-all" accept=".json,application/json" hidden>'
+        : '');
   }
   function rosterAdd() {
     const sem = cur();
@@ -5624,7 +5913,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
         dsAddGone(un);   /* stay deleted: without the tombstone the additive account merge would resurrect it from the cloud row */
         await dsKillPointer(un);
-        if (dsCanPush()) scheduleSyncPush();   /* the removed account must leave the data row too */
+        if (dsCanPush()) {
+          /* push NOW, not on the 4 s debounce: in that window another device
+             pushing (it adopted the pre-deletion copy) would put the account
+             back on the row. If the immediate push cannot run (hold/read
+             failure), the debounce retry still applies. */
+          const pushedNow = await dsPushNow(false);
+          if (!pushedNow) scheduleSyncPush();
+        }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
@@ -5650,6 +5946,33 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       list.splice(i, 1);
       try { localStorage.setItem(SAFETY_KEY, JSON.stringify(list)); } catch (e) {}
       if (location.hash === '#/manage') renderManage();
+      return;
+    }
+    if (a === 'users-csv') {
+      const head = 'username,display_name,role,class_or_grade,paired_with,status';
+      const lines = getAuth().users.map((u) => {
+        const ci = usersClassInfo(u.username, u.role);
+        const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+        return [u.username, u.name || u.username, roleLabel(u.role), ci.classes, ci.partner, u.disabled ? 'Disabled' : 'Active'].map(esc).join(',');
+      });
+      const blob = new Blob([head + '\n' + lines.join('\n')], { type: 'text/csv' });
+      const a2 = document.createElement('a');
+      a2.href = URL.createObjectURL(blob);
+      a2.download = 'spr-accounts.csv';
+      document.body.appendChild(a2); a2.click(); a2.remove();
+      return;
+    }
+    if (a === 'user-toggle') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
+      const un = el.dataset.user;
+      const auth = getAuth();
+      const u = auth.users.find((x) => x.username === un);
+      if (!u || un === SESSION.user) return;
+      u.disabled = !u.disabled;
+      saveAuth(auth);
+      if (dsCanPush()) scheduleSyncPush();
+      toast(un + (u.disabled ? ' disabled' : ' enabled') + ' \u2014 they cannot sign in while disabled');
+      renderUsers();
       return;
     }
     if (a === 'acct-add-open') {
@@ -5699,6 +6022,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
         if (location.hash === '#/manage') renderManage();
+        else if (location.hash === '#/users') renderUsers();   /* the new row appears immediately on the Users tab */
       })();
       return;
     }
@@ -5728,7 +6052,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
         u.login = await CS.loginWrap(nw);
         delete u.hash;
-        if (u.keyring) { for (const cid of Object.keys(u.keyring)) { try { u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw); } catch (e) {} } }
+        /* re-seal the class keys under the new password. The old password is
+           only available when the holder themselves changes it (rpOld) or the
+           session holds it. If neither is true (admin reset from a restored
+           session), the re-wrap CANNOT succeed — fail loudly, and clear the
+           stale wrap so the next Pair re-issues a fresh key instead of the
+           account silently keeping a key nobody can unwrap (owner lockout). */
+        let rewrapFail = '';
+        if (u.keyring) {
+          for (const cid of Object.keys(u.keyring)) {
+            try {
+              u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw);
+            } catch (e) {
+              delete u.keyring[cid];
+              rewrapFail = ' The class key could not be re-keyed on this device (the current password was not available here) — use Pair to issue this account a fresh key.';
+            }
+          }
+        }
         saveAuth(auth);
         const v2 = readV2();
         if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
@@ -5741,9 +6081,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const ptr = await dsWritePointer(un, nw);
         if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
         closeDlg();
-        toast(ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
+        toast((ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
-             : 'Password updated for ' + un);
+             : 'Password updated for ' + un) + rewrapFail, !!rewrapFail);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -5866,8 +6206,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         try {
           const res = await doLoginFull(u, p);
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
-          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route(); toast('Welcome back, ' + res.user.name); maybeJoin();
+          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+          /* single-class auto-open then takes the landing: on success it points
+             #/dashboard itself; on failure its honest dialog shows over the
+             working chooser (never a blank screen, never a dead end) */
           if (SPR_LOGIN_AUTO_CLASS) { const cid0 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid0); }
+          toast('Welcome back, ' + res.user.name); maybeJoin();
         } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
         finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
       })();
@@ -5900,14 +6244,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         stashSafetyBackup('before password change');
         try {
           if (SESSION.dk && v2 && v2.wraps && v2.wraps[me.username]) v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);
-          if (v2) writeV2(v2);
           if (me.keyring) { for (const cid of Object.keys(me.keyring)) me.keyring[cid] = await CS.rewrapKey(me.keyring[cid], cur, nw); }
           me.login = await CS.loginWrap(nw);
           delete me.hash;
-          saveAuth(auth);
           if (SESSION.pw !== null || SESSION.pw !== undefined) SESSION.pw = nw;
           for (const cid of Object.keys(SESSION.keys || {})) { try { SESSION.keys[cid] = await CS.unwrapKey(me.keyring[cid], nw); } catch (e) {} }
           classKeysToSession();
+          /* persist LAST: either the whole change lands (and the toast shows),
+             or nothing does (error, old password still valid) — a half-applied
+             change (hash flipped but wraps stale) must be impossible. */
+          saveAuth(auth);
+          if (v2) writeV2(v2);
         } catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
         /* P1.2: also re-seal this account's cloud POINTER row, so sign-in on a
            fresh browser with the NEW password still finds the data (the pointer
@@ -6145,6 +6492,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (t.classList && t.classList.contains('cell')) { onGridInput(t); return; }
     if (t.id === 'stuSearch') { ui.q = t.value; const el = $('#stuList'); if (el && cur()) el.innerHTML = stuCards(cur()); return; }
     if (t.id === 'dashSearch') { (ui.dash = ui.dash || {}).q = t.value; const el = $('#dashEvBody'); if (el && cur()) el.innerHTML = dashEvidenceRows(cur()); return; }
+    if (t.id === 'usersQ') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).q = t.value; renderUsers(); return; }
+    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).role = t.value; renderUsers(); return; }
     if (t.dataset && t.dataset.rn) {
       const semRn = cur(); if (!semRn) return;
       semRn.reportNotes = semRn.reportNotes || {};
@@ -6184,6 +6533,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (t.id === 'dashSkill') { (ui.dash = ui.dash || {}).skill = t.value; renderDashboard(); return; }
     if (t.id === 'dashRag') { (ui.dash = ui.dash || {}).rag = t.value; renderDashboard(); return; }
     if (t.id === 'scatMode') { ui.scat = t.value; renderDashboard(); return; }
+    if (t.id === 'classSwitch') { if (t.value && (!CLS || CLS.id !== t.value)) openClass(t.value); return; }
     if (t.id === 'semSelect') { DB.currentSemesterId = t.value; saveDB(true); buildShell(); route(); return; }
     if (t.id === 'file-xlsx') { if (t.files && t.files.length) importXlsxFiles(Array.from(t.files)); t.value = ''; return; }
     if (t.id === 'file-class') { if (t.files && t.files.length) importClassFileGo(t.files[0]); t.value = ''; return; }
@@ -6610,7 +6960,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* a legacy pre-account pairing (random channel, no adoptedAcct flag) keeps
      admin-only pushes until an admin's fresh sign-in migrates the channel to
      the account home — a teacher must never fork a second cloud island */
-  function dsCanPush() { return dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
+  /* P1.3: device sync OFF must mean ZERO cloud requests — the on-flag is
+     checked again here so no path can push without an explicitly-enabled cfg */
+  function dsCanPush() { return dsOn() && dsSyncActive() && (dsAdminActive() || (dsCfg() || {}).adoptedAcct === true); }
   function dsDeviceName() {
     const c = dsCfg(); if (c && c.device) return c.device;
     const ua = navigator.userAgent || '';
@@ -6667,7 +7019,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
      unlocking (login wrap, keyring) but NEVER a password hash. The content
      digest uses the SAME projection so the sum stays meaningful. */
   function syncUsers() {
-    return getAuth().users.map(function (u) {
+    /* never export a tombstoned account: a device that adopted the
+       pre-deletion copy still holds the user in auth.users — the tombstone
+       must win (dsClearGone lifts it when the username is re-created) */
+    const gone = dsGone().map(function (v) { return String(v).toLowerCase(); });
+    return getAuth().users.filter(function (u) {
+      return u.username && gone.indexOf(String(u.username).toLowerCase()) < 0;
+    }).map(function (u) {
       const c = { username: u.username, name: u.name, role: u.role, keyring: u.keyring || {} };
       if (u.login) c.login = u.login;
       return c;
@@ -6874,6 +7232,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
+          try { console.warn('row ownership check failed — adopting instead of overwriting (channel mismatch after adoption?)'); } catch (e5) {}
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
           if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage → Device sync first.', true);
           return false;
@@ -6897,6 +7256,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (location.hash === '#/manage') renderManage();
       return true;
     } catch (e) {
+      try { console.warn('cloud save failed:', (e && e.message) || e); } catch (e4) {}   /* silent failures here cost days to diagnose */
       const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud save failed — it will retry on your next change', true);
       /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
@@ -7337,6 +7697,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     /* username matching is case-insensitive: the cloud channel already
        lowercases (dsChan), and users type "mo"/"Mo"/"MO" interchangeably */
     const user = auth.users.find((u) => String(u.username).toLowerCase() === username.toLowerCase());
+    if (user && user.disabled) return { error: 'This account is disabled \u2014 ask your administrator.' };
     if (!user) {
       if (auth.users.length === 0) {
         return { error: 'This device holds no accounts yet. If you use SPR on another device, tap "I use SPR on another device" below to pull your cloud copy — or set up this device fresh.' };
@@ -7396,7 +7757,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const ix = classIndex();
       const lastId = localStorage.getItem('spr-last-class');
       const openable = function (c) { return SESSION.keys[c.id] && localStorage.getItem(classBlobKey(c.id)); };
-      const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0];
+      const hasBlob = function (c) { return !!localStorage.getItem(classBlobKey(c.id)); };
+      /* key in hand -> open right away; otherwise a single class with data on
+         this device is STILL auto-opened: openClass either derives the key
+         from the just-typed password or shows one honest recovery screen —
+         never the bare chooser (the 2026-10-24 owner's case) */
+      const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0]
+        || ((ix.filter(hasBlob).length === 1 && SESSION.pw) ? ix.filter(hasBlob)[0] : null);
       if (meta) SPR_LOGIN_AUTO_CLASS = meta.id;   /* opened after the gate drops */
     }
     await persistNow(true);
@@ -7605,21 +7972,30 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           for (const k of Object.keys(sess.keys || {})) { try { SESSION.keys[k] = bytesFromB64u(sess.keys[k]); } catch (e2) {} }
           if (sprMode() === 'class') {
             /* open the last-used class this account still holds a key for */
+            try { window.__SPR_RESTORE_STEP = 'entered sess=' + !!sess + ' keys=' + Object.keys(SESSION.keys || {}).join(','); } catch (e9) {}
             const lastId = localStorage.getItem('spr-last-class');
             const ix = classIndex(); const meta = ix.find((c) => c.id === lastId) || ix.filter((c) => SESSION.keys[c.id])[0];
+            try { window.__SPR_RESTORE_STEP += ' meta=' + (meta ? meta.id : 'MISSING') + ' hasKey=' + !!(meta && SESSION.keys[meta.id]); } catch (e9) {}
             if (meta && SESSION.keys[meta.id]) {
               try {
                 const raw = localStorage.getItem(classBlobKey(meta.id));
                 if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; }
-              } catch (e3) { CLS = null; CLS_KEY = null; }
+              } catch (e3) { try { window.__SPR_RESTORE_ERR = (e3 && e3.message) || 'unknown restore error'; } catch (e4) {} console.warn('[spr] the saved class copy could not be opened on restore:', e3 && e3.message); CLS = null; CLS_KEY = null; }
             }
             if (!CLS) DB = emptyDB();
             else {
               /* the early route() bounced a class-mode #/dashboard to #/classes
-                 while CLS was still null — now that the class is open, go back */
+                 while CLS was still null — now that the class is open, go back.
+                 history.replaceState, NOT location.hash: jsdom (and some real
+                 embedding contexts) apply hash writes asynchronously, so an
+                 immediate route() still sees the old #/classes with CLS set
+                 and closeClass() throws the freshly restored class away. */
               ui.classOpen = true;
-              if (location.hash.indexOf('#/dashboard') !== 0) location.hash = '#/dashboard';
+              try { window.__SPR_RESTORE_STEP += ' opened'; } catch (e9) {}
+              try { history.replaceState(null, '', '#/dashboard'); } catch (e6) { location.hash = '#/dashboard'; }
+              try { window.__SPR_RESTORE_STEP += ' pointed hash=' + location.hash; } catch (e9) {}
               buildShell(); route();
+              try { window.__SPR_RESTORE_STEP += ' routed hash=' + location.hash; } catch (e9) {}
             }
           } else {
             DB = normalizeDB(await unsealDB(v2.data, SESSION.dk));
@@ -7631,6 +8007,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             saveAuth(auth);
           }
           ready = true;
+          try { window.__SPR_SESSION_RESTORED = sess.user; } catch (e5) {}
         }
       } catch (e) { try { sessionStorage.removeItem('spr-session'); } catch (e2) {} }
       if (!ready) {
@@ -7673,9 +8050,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
+  window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
   window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
+  /* support/test hook for the sync engine (no secrets — the cfg already sits
+     in this browser's localStorage): lets diagnostics and tests force one
+     push/pull cycle deterministically instead of waiting on timers */
+  window.SPR_DEBUG_DS = { cfg: dsCfg, canPush: dsCanPush, hold: function () { return dsHoldPush; }, push: dsPushNow };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
