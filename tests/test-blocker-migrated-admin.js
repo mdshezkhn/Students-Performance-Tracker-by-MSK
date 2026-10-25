@@ -149,12 +149,16 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
   let loginPw = null;
   for (const pw of [PW, rotated[ADMIN]]) { if (!pw) continue; if (await signIn(S, ADMIN, pw)) { loginPw = pw; break; } await sleep(300); }
   ok(!!loginPw, 'SIMPLE: signed in as ' + ADMIN + ' with the original password');
-  await sleep(1000);
+  /* the honest outcome lands on #/dashboard (auto-open) — poll for either the
+     dashboard or a dialog; a bare #/classes with an Open button is the chooser,
+     so exercise its Open (this is where the honest dialog appears) */
+  const settled = await waitFor(() =>
+    S.w.location.hash.indexOf('#/dashboard') === 0 || /Cannot unlock|Restore from a backup file|Check for a newer copy/.test(dlgText(S)), 25000);
   const dlgAuto = dlgText(S);
   const autoHonest = HONEST.test(dlgAuto);
   console.log('  [i] right after sign-in:', (dlgAuto.slice(0, 80).replace(/\s+/g, ' ')) || ('hash=' + S.w.location.hash));
   const ob = S.d.querySelector('[data-action="class-open"]');
-  if (ob && !autoHonest && S.w.location.hash.indexOf('#/dashboard') !== 0) { click(S, ob); await sleep(900); }
+  if (ob && !autoHonest && S.w.location.hash.indexOf('#/dashboard') !== 0) { click(S, ob); await waitFor(() => dlgText(S) || S.w.location.hash.indexOf('#/dashboard') === 0, 15000); }
   const dlg1 = dlgText(S);
   const honest1 = HONEST.test(dlg1);
   const autoOpened = S.w.location.hash.indexOf('#/dashboard') === 0;   /* good outcome: sign-in alone opened the class */
@@ -176,13 +180,15 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
     await sleep(400);
   }
   ok(signed2, 'second sign-in completes (test sanity)');
-  await sleep(1000);
+  /* poll: either the auto-open lands the dashboard or the honest dialog shows */
+  const settled2 = await waitFor(() =>
+    S2.w.location.hash.indexOf('#/dashboard') === 0 || /Cannot unlock|Restore from a backup file|Check for a newer copy/.test(dlgText(S2)), 25000);
   const dlgAuto2 = dlgText(S2);
   const ob2 = S2.d.querySelector('[data-action="class-open"]');
-  if (ob2 && !dlgAuto2 && S2.w.location.hash.indexOf('#/dashboard') !== 0) { click(S2, ob2); await sleep(900); }
+  if (ob2 && !dlgAuto2 && S2.w.location.hash.indexOf('#/dashboard') !== 0) { click(S2, ob2); await waitFor(() => dlgText(S2) || S2.w.location.hash.indexOf('#/dashboard') === 0, 15000); }
   const honest2 = HONEST.test(dlgText(S2)) || HONEST.test(dlgAuto2);
   const dash2 = S2.w.location.hash.indexOf('#/dashboard') === 0;
-  ok(honest2 || dash2, '(b) after another sign-in the screen is still honest (recovery, not a false promise)');
+  ok(settled2 && (honest2 || dash2), '(b) after another sign-in the screen is still honest (recovery, not a false promise)');
 
   /* ---- 2c. THE ONE-TIME-PASSWORD recovery: derive the key from the slip,
           re-seal it under the admin's own password, open the class ---- */
