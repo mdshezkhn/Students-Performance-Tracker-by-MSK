@@ -455,9 +455,17 @@ with sync_playwright() as p:
     except Exception:
         pass
     print('  [F] one-time password captured:', bool(_rot2))
-    dismiss_dlg(p3); p3.wait_for_timeout(2500)
+    dismiss_dlg(p3)
     # after a non-rotating migration the app lands INSIDE the class (dashboard);
-    # otherwise the chooser offers the class — both prove the class + data exist
+    # otherwise the chooser offers the class — both prove the class + data exist.
+    # POLL: the migration tail (persist + route) is PBKDF2-paced; a fixed sleep
+    # raced it under system load and read the chooser before the card rendered.
+    try:
+        p3.wait_for_function(
+            "() => document.querySelectorAll('[data-action=\"class-open\"]').length >= 1 || location.hash.indexOf('#/dashboard') === 0",
+            timeout=30000)
+    except Exception:
+        pass
     main_ok = p3.locator('[data-action="class-open"]').count() >= 1 or '#/dashboard' in p3.url
     check('F: main build created the class + sample data', main_ok,
           'open-btns=' + str(p3.locator('[data-action="class-open"]').count()) + ' url=' + p3.url.split('/')[-1])
