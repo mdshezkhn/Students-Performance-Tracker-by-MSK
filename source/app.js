@@ -616,8 +616,7 @@
     /* while the sign-in gate owns the screen, routing must do NOTHING — an
        async hashchange from an earlier redirect would otherwise closeDlg()
        the login card right after it opened */
-    if (document.body.classList.contains('auth-gate')) { try { console.warn('[dbg-route] gated, hash=', location.hash); } catch (e9) {} return; }
-    try { console.warn('[dbg-route] hash=', location.hash, 'CLS=', CLS && CLS.id); } catch (e9) {}
+    if (document.body.classList.contains('auth-gate')) return;
     killCharts(); closeDlg();
     /* class mode gates run BEFORE the empty-DB welcome check: a class device
        with no class open has an empty in-memory DB but must see its class list */
