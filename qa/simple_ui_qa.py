@@ -76,8 +76,19 @@ def sign_in(page, u, pw):
     page.fill('#loginUser', u); page.fill('#loginPass', pw)
     page.locator('[data-action="do-login"]').first.click()
     try:
-        page.wait_for_selector('body:not(.auth-gate)', timeout=25000); return True
-    except Exception: return False
+        page.wait_for_selector('body:not(.auth-gate)', timeout=25000)
+    except Exception:
+        return False
+    # the login tail auto-opens a single class ASYNC (two PBKDF2 passes; slow on
+    # a cold context). Let that continuation finish before the next section
+    # navigates, or it yanks the view mid-test (history.replaceState #/dashboard).
+    try:
+        page.wait_for_function(
+            "() => location.hash.indexOf('#/dashboard') === 0 || location.hash.indexOf('#/classes') === 0 || location.hash.indexOf('#/manage') === 0",
+            timeout=30000)
+    except Exception:
+        pass   # multi-class / no-class flows may sit on other routes; sections handle their own waits
+    return True
 
 def capture_pw_once(page):
     try:
