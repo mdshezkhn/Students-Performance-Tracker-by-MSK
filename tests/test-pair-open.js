@@ -197,7 +197,7 @@ async function ackPrivacy(B) { const d = B.d.getElementById('dlg'); if (d && d.o
             '| gate:', C.d.body.className,
             '| restoreErr:', C.w.__SPR_RESTORE_ERR || 'none',
             '| step:', JSON.stringify(C.w.__SPR_RESTORE_STEP || 'never-entered'),
-            '| spr-flags:', Object.keys(C.w).filter(function (k) { return k.indexOf('__SPR') === 0; }).join(','),
+            '| oc:', JSON.stringify(C.w.__SPR_OC || 'never-called'), '| spr-flags:', Object.keys(C.w).filter(function (k) { return k.indexOf('__SPR') === 0; }).join(','),
             '| content-head:', (function () { const c = C.d.getElementById('content'); return c ? c.innerHTML.slice(0, 120).replace(/\s+/g, ' ') : 'NO-CONTENT'; })(),
             '| pagehead:', (function () { const p = C.d.querySelector('.page-head'); return p ? p.textContent.slice(0, 80).replace(/\s+/g, ' ') : 'none'; })(),
             '| mode-raw:', JSON.stringify(C.w.localStorage.getItem('spr-mode-v1')),

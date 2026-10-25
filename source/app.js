@@ -330,8 +330,9 @@
   }
 
   async function openClass(id) {
+    try { window.__SPR_OC = 'entered ' + id; } catch (e9) {}
     const meta = classIndex().find((c) => c.id === id);
-    if (!meta) { toast('That class no longer exists here', true); return; }
+    if (!meta) { try { window.__SPR_OC += ' | no-meta'; } catch (e9) {} toast('That class no longer exists here', true); return; }
     const raw = localStorage.getItem(classBlobKey(id));
     let key = (SESSION.keys || {})[id];
     if (!raw || !key) {
@@ -414,6 +415,7 @@
         }
       }
       try { localStorage.setItem('spr-last-class', id); } catch (e) {}
+      try { window.__SPR_OC += ' | success-tail'; } catch (e9) {}
       buildShell(); location.hash = '#/dashboard'; route();
     } catch (e) {
       CLS = null; CLS_KEY = null;
@@ -429,6 +431,7 @@
     }
   }
   function closeClass() {
+    if (RESTORING) return;   /* never discard a class that is being restored right now */
     try { if (saveTimer) { clearTimeout(saveTimer); persistNow(true); } } catch (e) {}
     CLS = null; CLS_KEY = null; ui.classOpen = false;
     DB = emptyDB();
@@ -5205,6 +5208,7 @@
   }
 
   let SPR_LOGIN_AUTO_CLASS = null;   /* class to open right after sign-in completes */
+  let RESTORING = false;   /* a restored session is mid-way opening its class — closeClass()/route() must not tear it down during the await (the queued hashchange race ate restores on slow environments) */
   let loginSetupMode = false;   /* fresh browsers open on the sign-in card — signing in with an existing account pulls its data from the cloud; setup is an explicit choice */
   /* ---- explicit "I use SPR on another device": the ONLY sign-in-time cloud
      contact, and only because the user asked for it ---- */
@@ -5343,11 +5347,14 @@
             const ix = classIndex(); const meta = ix.find((c) => c.id === lastId) || ix.filter((c) => SESSION.keys[c.id])[0];
             try { window.__SPR_RESTORE_STEP += ' meta=' + (meta ? meta.id : 'MISSING') + ' hasKey=' + !!(meta && SESSION.keys[meta.id]); } catch (e9) {}
             if (meta && SESSION.keys[meta.id]) {
+              RESTORING = true;
               try {
                 const raw = localStorage.getItem(classBlobKey(meta.id));
-                if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; }
+                try { window.__SPR_RESTORE_STEP += ' raw=' + (raw ? raw.length : 'null'); } catch (e9) {}
+                if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; try { window.__SPR_RESTORE_STEP += ' decrypted'; } catch (e9) {} }
               } catch (e3) { try { window.__SPR_RESTORE_ERR = (e3 && e3.message) || 'unknown restore error'; } catch (e4) {} console.warn('[spr] the saved class copy could not be opened on restore:', e3 && e3.message); CLS = null; CLS_KEY = null; }
             }
+            RESTORING = false;
             if (!CLS) DB = emptyDB();
             else {
               /* the early route() bounced a class-mode #/dashboard to #/classes
