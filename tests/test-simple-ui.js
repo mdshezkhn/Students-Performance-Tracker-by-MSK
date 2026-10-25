@@ -87,8 +87,13 @@ function boot(pre, hash) {
     }
   });
   const w = dom.window, d = w.document;
+  /* keep only the last few windows alive: jsdom windows that pile up stall
+     timer/event delivery (hashchange) for the ones created later */
+  __alive.push(dom);
+  while (__alive.length > 2) { try { __alive[0].window.close(); } catch (e) {} __alive.shift(); }
   return { w, d };
 }
+const __alive = [];
 function click(B, el) { if (!el) throw new Error('click target missing'); el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true })); }
 function setVal(B, el, v) { if (!el) return; el.value = v; el.dispatchEvent(new B.w.Event('input', { bubbles: true })); }
 const dlgText = (B) => (((B.d.getElementById('dlg') || {}).textContent || ''));
@@ -222,9 +227,12 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   await waitFor(() => M.w.__SEED_DONE || M.w.__SEED_ERR, 15000);
   await sleep(300);
   await loginAs(M, 'Mo', PW);
-  await sleep(700);
+  /* the login tail auto-opens the single class ASYNC — wait for it to finish
+     before navigating, or its completion re-routes over the navigation */
+  await waitFor(() => M.w.location.hash.indexOf('#/dashboard') === 0, 25000);   /* auto-open settles first */
   M.w.location.hash = '#/manage';
-  await sleep(900);
+  M.w.dispatchEvent(new M.w.Event('hashchange'));   /* same convention the W-section uses */
+  await waitFor(() => ((M.d.getElementById('content') || {}).innerHTML || '').indexOf('Advanced') !== -1, 20000);
   const Mhtml = (M.d.getElementById('content') || {}).innerHTML || '';
   check(Mhtml.indexOf('class-migrate-open') !== -1 || Mhtml.indexOf('class-pair') !== -1, 'Manage & setup hosts the Advanced panel (admin)');
   check(Mhtml.indexOf('start-fresh') !== -1, 'Start fresh is under Manage & setup Advanced');
@@ -232,16 +240,18 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   const Ch = boot(richSeed(), '');
   await waitFor(() => Ch.w.__SEED_DONE || Ch.w.__SEED_ERR, 15000);
   await sleep(300);
-  await loginAs(Ch, 'Mo', PW);
-  await sleep(700);
+  await loginAs(Ch, 'Mo', PW);                 /* the session is what makes the chooser a real logged-in screen */
+  await waitFor(() => Ch.w.location.hash.indexOf('#/dashboard') === 0, 25000);   /* auto-open settles first */
   Ch.w.localStorage.removeItem('spr-class-P4C4');   /* blob gone -> chooser on next navigation */
   Ch.w.location.hash = '#/classes';
-  await sleep(500);
+  Ch.w.dispatchEvent(new Ch.w.Event('hashchange'));
+  await waitFor(() => (Ch.d.getElementById('app').innerHTML || '').indexOf('class-open') !== -1, 20000);
   const Chtml = Ch.d.getElementById('app').innerHTML;
   check(Chtml.indexOf('class-migrate-open') === -1 && Chtml.indexOf('data-action="class-pair"') === -1 && Chtml.indexOf('start-fresh') === -1, 'chooser screen carries no technical buttons (admin)');
   check(!!Ch.d.querySelector('[data-action="logout"]'), 'chooser still shows Sign out');
   Ch.w.location.hash = '#/manage';
-  await sleep(500);
+  Ch.w.dispatchEvent(new Ch.w.Event('hashchange'));
+  await waitFor(() => Ch.w.location.hash === '#/manage', 8000);
   check(Ch.w.location.hash === '#/manage', 'admin CAN reach #/manage');
 
   console.log(bad ? '\nSIMPLE-UI FAILURES: ' + bad : '\nSIMPLE-UI PASSED (' + ok + ')');

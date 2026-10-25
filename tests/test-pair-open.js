@@ -92,8 +92,13 @@ function boot(pre, hash) {
   w.__CRYPTO_OK = true;
   if (!w.TextEncoder) w.TextEncoder = TextEncoder;
   if (!w.TextDecoder) w.TextDecoder = TextDecoder;
+  /* keep only the last few windows alive (stale jsdom timers stall
+     hashchange delivery for later windows) */
+  __alive.push(dom);
+  while (__alive.length > 2) { try { __alive[0].window.close(); } catch (e) {} __alive.shift(); }
   return { w, d };
 }
+const __alive = [];
 
 let ok = 0, bad = 0;
 function check(cond, label) { if (cond) { ok++; console.log('  ok: ' + label); } else { bad++; console.log('  FAIL: ' + label); } }
@@ -102,7 +107,7 @@ async function waitFor(cond, ms) { const t0 = Date.now(); while (Date.now() - t0
 function click(B, el) { if (!el) throw new Error('click target missing'); el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true })); }
 function setVal(B, el, v) { if (!el) return; el.value = v; el.dispatchEvent(new B.w.Event('input', { bubbles: true })); }
 function saveLS(B) { const o = {}; for (let i = 0; i < B.w.localStorage.length; i++) { const k = B.w.localStorage.key(i); o[k] = B.w.localStorage.getItem(k); } const s = {}; for (let i = 0; i < B.w.sessionStorage.length; i++) { const k = B.w.sessionStorage.key(i); s[k] = B.w.sessionStorage.getItem(k); } return { ls: o, ss: s }; }
-function reboot(B) { const st = saveLS(B); const ls = JSON.stringify(st.ls); const ss = JSON.stringify(st.ss); return boot('try{var _L=' + ls + ';for(var k in _L)localStorage.setItem(k,_L[k]);var _S=' + ss + ';for(var k in _S)sessionStorage.setItem(k,_S[k]);}catch(e){}' + freshPre()); }
+function restartPage(B) { const st = saveLS(B); const ls = JSON.stringify(st.ls); const ss = JSON.stringify(st.ss); return boot('try{var _L=' + ls + ';for(var k in _L)localStorage.setItem(k,_L[k]);var _S=' + ss + ';for(var k in _S)sessionStorage.setItem(k,_S[k]);}catch(e){}' + freshPre()); }
 async function ackGate(B) { const b = B.d.querySelector('[data-action="privacy-gate-ack"]'); if (b && B.d.getElementById('dlg') && B.d.getElementById('dlg').open) { click(B, b); await sleep(300); } }
 async function ackPrivacy(B) { const d = B.d.getElementById('dlg'); if (d && d.open && B.d.querySelector('[data-action="privacy-ack"]')) { click(B, B.d.querySelector('[data-action="privacy-ack"]')); await sleep(300); } }
 
@@ -176,10 +181,11 @@ async function ackPrivacy(B) { const d = B.d.getElementById('dlg'); if (d && d.o
     }
       /* reload persistence: rebooting must auto-open the class directly */
       if (B.w.location.hash.indexOf('#/dashboard') === 0) {
-        const C = reboot(B, B.w.location.hash);   /* a real refresh keeps the URL */
-        await waitFor(() => C.w.__appReady !== undefined || C.d.body.className.length > 0, 5000);
-        await sleep(1500);
-        check(C.w.location.hash.indexOf('#/dashboard') === 0, 'after reload the class auto-opens: ' + C.w.location.hash);
+        const C = restartPage(B);   /* a real refresh keeps the URL */
+        /* poll for the auto-open: the restore path decrypts + re-points the
+           hash (PBKDF2-paced, slower on some platforms than any fixed sleep) */
+        const opened = await waitFor(() => C.w.location.hash.indexOf('#/dashboard') === 0, 20000);
+        check(opened, 'after reload the class auto-opens: ' + C.w.location.hash);
       }
   }
 
