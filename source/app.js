@@ -5338,13 +5338,15 @@
           for (const k of Object.keys(sess.keys || {})) { try { SESSION.keys[k] = bytesFromB64u(sess.keys[k]); } catch (e2) {} }
           if (sprMode() === 'class') {
             /* open the last-used class this account still holds a key for */
+            try { window.__SPR_RESTORE_STEP = 'entered sess=' + !!sess + ' keys=' + Object.keys(SESSION.keys || {}).join(','); } catch (e9) {}
             const lastId = localStorage.getItem('spr-last-class');
             const ix = classIndex(); const meta = ix.find((c) => c.id === lastId) || ix.filter((c) => SESSION.keys[c.id])[0];
+            try { window.__SPR_RESTORE_STEP += ' meta=' + (meta ? meta.id : 'MISSING') + ' hasKey=' + !!(meta && SESSION.keys[meta.id]); } catch (e9) {}
             if (meta && SESSION.keys[meta.id]) {
               try {
                 const raw = localStorage.getItem(classBlobKey(meta.id));
                 if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; }
-              } catch (e3) { CLS = null; CLS_KEY = null; }
+              } catch (e3) { try { window.__SPR_RESTORE_ERR = (e3 && e3.message) || 'unknown restore error'; } catch (e4) {} console.warn('[spr] the saved class copy could not be opened on restore:', e3 && e3.message); CLS = null; CLS_KEY = null; }
             }
             if (!CLS) DB = emptyDB();
             else {
@@ -5355,8 +5357,11 @@
                  immediate route() still sees the old #/classes with CLS set
                  and closeClass() throws the freshly restored class away. */
               ui.classOpen = true;
+              try { window.__SPR_RESTORE_STEP += ' opened'; } catch (e9) {}
               try { history.replaceState(null, '', '#/dashboard'); } catch (e6) { location.hash = '#/dashboard'; }
+              try { window.__SPR_RESTORE_STEP += ' pointed hash=' + location.hash; } catch (e9) {}
               buildShell(); route();
+              try { window.__SPR_RESTORE_STEP += ' routed hash=' + location.hash; } catch (e9) {}
             }
           } else {
             DB = normalizeDB(await unsealDB(v2.data, SESSION.dk));

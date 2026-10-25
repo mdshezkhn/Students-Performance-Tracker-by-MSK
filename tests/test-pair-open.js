@@ -185,6 +185,24 @@ async function ackPrivacy(B) { const d = B.d.getElementById('dlg'); if (d && d.o
         /* poll for the auto-open: the restore path decrypts + re-points the
            hash (PBKDF2-paced, slower on some platforms than any fixed sleep) */
         const opened = await waitFor(() => C.w.location.hash.indexOf('#/dashboard') === 0, 20000);
+        if (!opened) {
+          const cs = JSON.parse(C.w.sessionStorage.getItem('spr-session') || 'null');
+          const ix = JSON.parse(C.w.localStorage.getItem('spr-class-index-v1') || '[]');
+          const blob = ix[0] ? C.w.localStorage.getItem('spr-class-' + ix[0].id) : null;
+          console.log('  [dbg-restore] restored:', C.w.__SPR_SESSION_RESTORED || 'NO',
+            '| sessKeys:', cs ? (Object.keys(cs.keys || {}).join(',') || 'empty') : 'no-session',
+            '| ix:', ix.map(function (c) { return String(c.id).slice(0, 8); }).join(','),
+            '| blob:', blob ? ('len' + blob.length) : 'MISSING',
+            '| lastClass:', C.w.localStorage.getItem('spr-last-class'),
+            '| gate:', C.d.body.className,
+            '| restoreErr:', C.w.__SPR_RESTORE_ERR || 'none',
+            '| step:', JSON.stringify(C.w.__SPR_RESTORE_STEP || 'never-entered'),
+            '| spr-flags:', Object.keys(C.w).filter(function (k) { return k.indexOf('__SPR') === 0; }).join(','),
+            '| content-head:', (function () { const c = C.d.getElementById('content'); return c ? c.innerHTML.slice(0, 120).replace(/\s+/g, ' ') : 'NO-CONTENT'; })(),
+            '| pagehead:', (function () { const p = C.d.querySelector('.page-head'); return p ? p.textContent.slice(0, 80).replace(/\s+/g, ' ') : 'none'; })(),
+            '| mode-raw:', JSON.stringify(C.w.localStorage.getItem('spr-mode-v1')),
+            '| v2present:', !!C.w.localStorage.getItem('spr-v2'));
+        }
         check(opened, 'after reload the class auto-opens: ' + C.w.location.hash);
       }
   }
