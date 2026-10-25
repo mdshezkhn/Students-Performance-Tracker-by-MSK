@@ -19,7 +19,11 @@ const ok = (c, m) => { if (c) { oks++; console.log('  ok:', m); } else { bad++; 
 
 let REF_MISSING = false;
 function pickBuild(ref) {
-  if (ref === 'HEAD') return fs.readFileSync(path.join(__dirname, '../dist/app/index.html'), 'utf8');
+  if (ref === 'HEAD') {
+    const committed = path.join(__dirname, '../app/index.html');   /* test what SHIPS first */
+    if (fs.existsSync(committed)) return fs.readFileSync(committed, 'utf8');
+    return fs.readFileSync(path.join(__dirname, '../dist/app/index.html'), 'utf8');
+  }
   try {
     return execSync('git show ' + ref + ':app/index.html', { cwd: path.join(__dirname, '..'), maxBuffer: 1 << 26 }).toString();
   } catch (e) {
@@ -161,7 +165,7 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
   /* doLogout reloads the page in a real browser; jsdom's reload is a no-op,
      so emulate it: fresh jsdom over the same storage, NO session carried */
   html0 = pickBuild('HEAD');
-  const S2 = boot(dumpStorage(S));
+  S2 = boot(dumpStorage(S));   /* same device, fresh page (real browsers reload) */
   await sleep(500); await waitAck(S2);
   let signed2 = false;
   for (const pw of [PW, rotated[ADMIN]]) {
@@ -178,6 +182,51 @@ const HONEST = /Cannot unlock|Check for a newer copy|Restore from a backup file|
   const honest2 = HONEST.test(dlgText(S2)) || HONEST.test(dlgAuto2);
   const dash2 = S2.w.location.hash.indexOf('#/dashboard') === 0;
   ok(honest2 || dash2, '(b) after another sign-in the screen is still honest (recovery, not a false promise)');
+
+  /* ---- 2c. THE ONE-TIME-PASSWORD recovery: derive the key from the slip,
+          re-seal it under the admin's own password, open the class ---- */
+  console.log('== (3) one-time-password recovery ==');
+  if (!dash2 && HONEST.test(dlgText(S2))) {
+    /* wrong slip first: the dialog must say so and stay open */
+    const otpBtn = S2.d.querySelector('#dlg [data-otp]');
+    ok(!!otpBtn, '(3) the dialog offers "I have the one-time password from setup"');
+    if (otpBtn) {
+      click(S2, otpBtn); await sleep(400);
+      const inp = S2.d.getElementById('otp-inp');
+      ok(!!inp, '(3) one-time password input shown');
+      if (inp) {
+        setVal(S2, inp, 'wrong-slip-0000');
+        const apply = S2.d.querySelector('#dlg [data-otp-apply]');
+        click(S2, apply);
+        await waitFor(() => { const er = S2.d.getElementById('otp-err'); return !!(er && er.textContent); }, 10000);
+        const err = S2.d.getElementById('otp-err');
+        ok(!!(err && err.textContent), '(3) a wrong slip is rejected with a plain message, dialog stays open');
+        setVal(S2, inp, rotated[ADMIN] || '');
+        click(S2, S2.d.querySelector('#dlg [data-otp-apply]'));
+        await waitFor(() => S2.w.location.hash.indexOf('#/dashboard') === 0, 20000);
+        const opened = S2.w.location.hash.indexOf('#/dashboard') === 0;
+        ok(opened, '(3) the RIGHT slip opens the class: ' + S2.w.location.hash);
+        /* the key was re-sealed under the admin's own password: sign out, sign
+           in with the ORIGINAL password — the class must open again */
+        await sleep(800);
+        const authNow = JSON.parse(S2.w.localStorage.getItem('spr-auth-v1') || 'null');
+        const meNow = authNow && authNow.users.find(function (u) { return u.username === ADMIN; });
+        ok(!!(meNow && meNow.keyring), '(3) the keyring is present after the re-seal');
+        const lo3 = S2.d.querySelector('[data-action="logout"]');
+        ok(!!lo3, '(3) Sign out is reachable with the class open');
+        if (lo3) { click(S2, lo3); await sleep(600); }
+        /* doLogout reloads the page in a real browser; jsdom's reload is a
+           no-op, so emulate it: fresh jsdom over the same storage */
+        S2 = boot(dumpStorage(S2));
+        await sleep(500); await waitAck(S2);
+        let back = false;
+        for (const pw of [PW]) { if (await signIn(S2, ADMIN, pw)) { back = true; break; } }
+        ok(back, '(3) ordinary sign-in still works after the re-seal');
+        await waitFor(() => S2.w.location.hash.indexOf('#/dashboard') === 0, 15000);
+        ok(S2.w.location.hash.indexOf('#/dashboard') === 0, '(3) after re-sign-in the class opens on its own (no recovery needed)');
+      }
+    }
+  } else ok(dash2, '(3) not needed — the device already opened the class (no one-time password involved)');
 
   /* ---- 3. THE REAL RECOVERY: the pre-migration backup restores end to end ---- */
   console.log('== Recovery: restore the pre-migration backup, re-migrate, open ==');

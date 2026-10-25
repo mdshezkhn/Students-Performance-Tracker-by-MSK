@@ -270,6 +270,65 @@
   }
   function classPendingCount() { return (DB && Array.isArray(DB.pending)) ? DB.pending.length : 0; }
   /* the class list / open-close cycle ------------------------------------------ */
+  /* recovery dialog for "the wrap exists but this password cannot open it":
+     the key was sealed under a one-time migration/setup password. Offers the
+     plain recoveries (cloud copy / backup file) AND — new — deriving the key
+     from that one-time password, then re-sealing it under the admin's own
+     password so plain sign-in works from then on. Resolves:
+       'open'    key recovered + in SESSION (caller falls through to open)
+       'pull'    user chose "check for a newer copy"
+       'restore' user chose "restore from a backup file"
+       null      dismissed */
+  function cannotUnlockDialog(meta, id, meRaw) {
+    return new Promise((resolve) => {
+      const primary = dsOn() ? 'Check for a newer copy' : 'Restore from a backup file';
+      openDlg(
+        '<h3>Cannot unlock ' + U.esc(meta.name) + ' on this device</h3>' +
+        '<p class="small">The saved copy needs its class key, and this device cannot derive it from your password. This happens when the class was set up while the sign-in had expired — the key was then saved under a one-time password that was shown only once.</p>' +
+        '<div class="dlg-actions" style="flex-wrap:wrap;gap:8px">' +
+        '<button class="btn" data-otp="1">I have the one-time password from setup</button>' +
+        '<button class="btn primary" data-x="1">' + primary + '</button>' +
+        '<button class="btn" data-x="0">Not now</button></div>');
+      const dlg = document.getElementById('dlg');
+      const done = (v) => { try { dlg.removeEventListener('click', h); } catch (e2) {} try { closeDlg(); } catch (e3) {} resolve(v); };
+      function h(e) {
+        const b = e.target.closest('[data-otp],[data-otp-apply],[data-x]');
+        if (!b) return;
+        if (b.hasAttribute('data-otp')) {
+          e.preventDefault(); e.stopPropagation();
+          openDlg(
+            '<h3>Enter the one-time password</h3>' +
+            '<p class="small">It was shown once when the class was set up (a slip like <code>abc12-def34-ghi56-jkl78</code>). It unlocks this class — SPR then saves the key under your own password again, so ordinary sign-in keeps working.</p>' +
+            '<input class="inp" id="otp-inp" autocomplete="off" spellcheck="false" placeholder="one-time password">' +
+            '<p class="small" id="otp-err" style="color:#c0392b;margin:6px 0 0"></p>' +
+            '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' +
+            '<button class="btn primary" data-otp-apply="1">Unlock with it</button></div>');
+          const inp = document.getElementById('otp-inp'); if (inp) inp.focus();
+          return;
+        }
+        if (b.hasAttribute('data-otp-apply')) {
+          e.preventDefault(); e.stopPropagation();
+          const val = ((document.getElementById('otp-inp') || {}).value || '').trim();
+          (async () => {
+            let k = null;
+            try { k = await CS.unwrapKey(meRaw.keyring[id], val); } catch (e2) { k = null; }
+            if (!k) { const er = document.getElementById('otp-err'); if (er) er.textContent = 'That password does not match the one shown at setup. Check the slip and try again.'; return; }
+            SESSION.keys[id] = k; classKeysToSession();
+            try {   /* re-seal under the admin's own password: plain sign-in works from now on */
+              const auth = getAuth();
+              const u = auth.users.find((x) => x.username === meRaw.username);
+              if (u && SESSION.pw) { u.keyring = u.keyring || {}; u.keyring[id] = await CS.wrapKey(k, SESSION.pw); saveAuth(auth); }
+            } catch (e3) {}
+            done('open');
+          })();
+          return;
+        }
+        done(b.getAttribute('data-x') === '1' ? (dsOn() ? 'pull' : 'restore') : null);
+      }
+      dlg.addEventListener('click', h);
+    });
+  }
+
   async function openClass(id) {
     const meta = classIndex().find((c) => c.id === id);
     if (!meta) { toast('That class no longer exists here', true); return; }
@@ -301,17 +360,13 @@
           classKeysToSession();
           /* fall through — the class opens below */
         } else {
-          const ok = await confirmDlg('Cannot unlock ' + meta.name + ' on this device',
-            'The saved copy needs its class key, and this device cannot derive it from your password. This happens when the class was set up while the sign-in had expired — the key was then saved under a one-time password that was shown only once.<br><br>' +
-            (dsOn()
-              ? 'Pull the newest copy from the cloud now? Your current data is kept as a safety copy.'
-              : 'Restore the backup file you downloaded when the class was set up (or ask your admin for a fresh key).'),
-            dsOn() ? 'Check for a newer copy' : 'Restore from a backup file');
-          if (ok) {
-            if (dsOn()) dsPullCheck(true);
-            else { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+          const res = await cannotUnlockDialog(meta, id, meRaw);
+          if (res === 'open') { key = SESSION.keys[id];   /* recovered from the one-time password — fall through, the class opens now */ }
+          else {
+            if (res === 'pull') dsPullCheck(true);
+            else if (res === 'restore') { const f = document.getElementById('file-restore-all'); if (f) f.click(); }
+            return;
           }
-          return;
         }
       } else {
       /* never a dead end: one sentence + ONE primary button + Sign out is
@@ -3224,7 +3279,14 @@
         if (v2 && v2.wraps && v2.wraps[un]) { delete v2.wraps[un]; writeV2(v2); }
         dsAddGone(un);   /* stay deleted: without the tombstone the additive account merge would resurrect it from the cloud row */
         await dsKillPointer(un);
-        if (dsCanPush()) scheduleSyncPush();   /* the removed account must leave the data row too */
+        if (dsCanPush()) {
+          /* push NOW, not on the 4 s debounce: in that window another device
+             pushing (it adopted the pre-deletion copy) would put the account
+             back on the row. If the immediate push cannot run (hold/read
+             failure), the debounce retry still applies. */
+          const pushedNow = await dsPushNow(false);
+          if (!pushedNow) scheduleSyncPush();
+        }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
       })();
@@ -4304,7 +4366,13 @@
      unlocking (login wrap, keyring) but NEVER a password hash. The content
      digest uses the SAME projection so the sum stays meaningful. */
   function syncUsers() {
-    return getAuth().users.map(function (u) {
+    /* never export a tombstoned account: a device that adopted the
+       pre-deletion copy still holds the user in auth.users — the tombstone
+       must win (dsClearGone lifts it when the username is re-created) */
+    const gone = dsGone().map(function (v) { return String(v).toLowerCase(); });
+    return getAuth().users.filter(function (u) {
+      return u.username && gone.indexOf(String(u.username).toLowerCase()) < 0;
+    }).map(function (u) {
       const c = { username: u.username, name: u.name, role: u.role, keyring: u.keyring || {} };
       if (u.login) c.login = u.login;
       return c;
@@ -4511,6 +4579,7 @@
         try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
+          try { console.warn('row ownership check failed — adopting instead of overwriting (channel mismatch after adoption?)'); } catch (e5) {}
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
           if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup — open it from Manage → Device sync first.', true);
           return false;
@@ -4534,6 +4603,7 @@
       if (location.hash === '#/manage') renderManage();
       return true;
     } catch (e) {
+      try { console.warn('cloud save failed:', (e && e.message) || e); } catch (e4) {}   /* silent failures here cost days to diagnose */
       const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud save failed — it will retry on your next change', true);
       /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
@@ -5321,6 +5391,10 @@
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
   window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
+  /* support/test hook for the sync engine (no secrets — the cfg already sits
+     in this browser's localStorage): lets diagnostics and tests force one
+     push/pull cycle deterministically instead of waiting on timers */
+  window.SPR_DEBUG_DS = { cfg: dsCfg, canPush: dsCanPush, hold: function () { return dsHoldPush; }, push: dsPushNow };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

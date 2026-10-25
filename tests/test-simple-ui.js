@@ -10,7 +10,7 @@ const path = require('path');
 const webcrypto = require('crypto').webcrypto;
 const { JSDOM, VirtualConsole } = require('jsdom');
 
-const appHtmlPath = ['../dist/app/index.html', '../app/index.html']
+const appHtmlPath = ['../app/index.html', '../dist/app/index.html']   /* test what SHIPS (committed) first */
   .map((rel) => path.join(__dirname, rel)).find((p) => fs.existsSync(p));
 if (!appHtmlPath) { console.log('FAIL: no app build (run python source/build2.py)'); process.exit(1); }
 const html0 = fs.readFileSync(appHtmlPath, 'utf8');
