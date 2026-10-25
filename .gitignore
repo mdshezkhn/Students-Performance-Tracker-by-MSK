@@ -7,3 +7,6 @@ node_modules/
 *.log
 tests/_*.py
 tests/_*.sh
+
+*.bundle
+__pycache__/
