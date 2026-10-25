@@ -182,9 +182,10 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     sel.value = user;
     click(B, B.d.querySelector('#dlg [data-x="1"]'));
     await sleep(500);
-    console.log('  [pair-dbg]', role, 'confirmed | dlg after confirm:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 60) : 'closed'; })());
+    console.log('  [pair-dbg]', role, 'confirmed | dlg after confirm:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 60) : 'closed'; })(),
+      '| toasts:', (function () { return Array.from(B.d.querySelectorAll('.toast')).map(function (t) { return t.textContent.slice(0, 80); }).join(' | ') || 'none'; })());
     /* the one-time password dialog shows the generated rotation password */
-    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 15000);   /* key issue = PBKDF2; can exceed 5 s under load */
+    const pwEl = await waitFor(() => { const dl = B.d.getElementById('dlg'); return dl && dl.open && dl.querySelector('code') ? dl.querySelector('code') : null; }, 30000);   /* key issue = PBKDF2 x2; on slower platforms (Linux CI) this can approach 20 s */
     const pw = pwEl ? pwEl.textContent : null;
     const done = B.d.querySelector('#dlg [data-x="1"]');
     if (done) click(B, done);
@@ -239,7 +240,7 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     setVal(B, B.d.getElementById('cpNew'), 'sup-new-pass-456');
     setVal(B, B.d.getElementById('cpConf'), 'sup-new-pass-456');
     click(B, B.d.querySelector('[data-action="change-pass-save"]'));
-    const changed = await waitFor(() => /Password updated/.test((B.d.getElementById('toast-root') || {textContent:''}).textContent), 10000);
+    const changed = await waitFor(() => /Password updated/.test((B.d.getElementById('toast-root') || {textContent:''}).textContent), 25000);   /* verify + rewrap + loginWrap = 3 PBKDF2 passes; >10 s under load */
     ok(changed, 'support changed its own password (no admin)');
     supPw = 'sup-new-pass-456';
     const dump = storageDump(B);
@@ -251,7 +252,15 @@ const ADMIN = 'mo', PW = 'sample-password-1';
     ok(!oldTry && /Invalid/.test(((B.d.getElementById('loginErr') || {}).textContent || '')), 'old password no longer signs in');
     ok(await loginAs(B, 'sup-01', supPw), 'new password signs in');
     await ackPrivacy(B);
-    ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount || /Your classes/.test(B.d.body.textContent), 12000), 'support reaches the class with the new password');
+    const reached = await waitFor(() => (B.w.SPR_DEBUG_GET_DB() || {}).semesters && B.w.SPR_DEBUG_GET_DB().semesters.length === semCount, 20000);
+    if (!reached) {   /* diagnose honestly instead of crashing three lines later */
+      const sessX = JSON.parse(B.w.sessionStorage.getItem('spr-session') || 'null');
+      console.log('  [dbg-newpw] wrap-under-nw:', await new Promise(function (res) { setTimeout(function () { res('timeout'); }, 4000); B.w.SPR_DEBUG_UNWRAP('sup-01', 'sup-new-pass-456').then(res); }),
+        '| wrap-under-OTP?', '(otp not retained)',
+        '| sessKeys:', sessX ? Object.keys(sessX.keys || {}).join(',') || 'none' : 'no-session',
+        '| dlg:', (function () { const dl = B.d.getElementById('dlg'); return dl && dl.open ? dl.textContent.slice(0, 100).replace(/\s+/g, ' ') : 'closed'; })());
+    }
+    ok(reached, 'support reaches the class with the new password');
     B.w.location.hash = '#/classes';
     B.w.dispatchEvent(new B.w.Event('hashchange'));   /* the suite convention: bare hash writes do not route */
     const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 15000);

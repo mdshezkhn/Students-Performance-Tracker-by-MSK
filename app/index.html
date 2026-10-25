@@ -547,7 +547,7 @@ input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="4ffa64473e";</script>
+<script>window.SPR_BUILD="8577642feb";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -6052,7 +6052,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (nw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
         u.login = await CS.loginWrap(nw);
         delete u.hash;
-        if (u.keyring) { for (const cid of Object.keys(u.keyring)) { try { u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw); } catch (e) {} } }
+        /* re-seal the class keys under the new password. The old password is
+           only available when the holder themselves changes it (rpOld) or the
+           session holds it. If neither is true (admin reset from a restored
+           session), the re-wrap CANNOT succeed — fail loudly, and clear the
+           stale wrap so the next Pair re-issues a fresh key instead of the
+           account silently keeping a key nobody can unwrap (owner lockout). */
+        let rewrapFail = '';
+        if (u.keyring) {
+          for (const cid of Object.keys(u.keyring)) {
+            try {
+              u.keyring[cid] = await CS.rewrapKey(u.keyring[cid], ($('#rpOld') ? $('#rpOld').value : '') || SESSION.pw || '', nw);
+            } catch (e) {
+              delete u.keyring[cid];
+              rewrapFail = ' The class key could not be re-keyed on this device (the current password was not available here) — use Pair to issue this account a fresh key.';
+            }
+          }
+        }
         saveAuth(auth);
         const v2 = readV2();
         if (SESSION.dk && v2 && v2.wraps && v2.wraps[un]) {
@@ -6065,9 +6081,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const ptr = await dsWritePointer(un, nw);
         if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
         closeDlg();
-        toast(ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
+        toast((ptr === 'ok' ? 'Password updated for ' + un + ' — sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
-             : 'Password updated for ' + un);
+             : 'Password updated for ' + un) + rewrapFail, !!rewrapFail);
         if (location.hash === '#/manage') renderManage();
       })();
       return;
@@ -6228,14 +6244,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         stashSafetyBackup('before password change');
         try {
           if (SESSION.dk && v2 && v2.wraps && v2.wraps[me.username]) v2.wraps[me.username] = await makeWrap(SESSION.dk, nw);
-          if (v2) writeV2(v2);
           if (me.keyring) { for (const cid of Object.keys(me.keyring)) me.keyring[cid] = await CS.rewrapKey(me.keyring[cid], cur, nw); }
           me.login = await CS.loginWrap(nw);
           delete me.hash;
-          saveAuth(auth);
           if (SESSION.pw !== null || SESSION.pw !== undefined) SESSION.pw = nw;
           for (const cid of Object.keys(SESSION.keys || {})) { try { SESSION.keys[cid] = await CS.unwrapKey(me.keyring[cid], nw); } catch (e) {} }
           classKeysToSession();
+          /* persist LAST: either the whole change lands (and the toast shows),
+             or nothing does (error, old password still valid) — a half-applied
+             change (hash flipped but wraps stale) must be impossible. */
+          saveAuth(auth);
+          if (v2) writeV2(v2);
         } catch (e) { if (err) err.textContent = 'Re-keying failed: ' + e.message; return; }
         /* P1.2: also re-seal this account's cloud POINTER row, so sign-in on a
            fresh browser with the NEW password still finds the data (the pointer
@@ -7964,9 +7983,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             if (!CLS) DB = emptyDB();
             else {
               /* the early route() bounced a class-mode #/dashboard to #/classes
-                 while CLS was still null — now that the class is open, go back */
+                 while CLS was still null — now that the class is open, go back.
+                 history.replaceState, NOT location.hash: jsdom (and some real
+                 embedding contexts) apply hash writes asynchronously, so an
+                 immediate route() still sees the old #/classes with CLS set
+                 and closeClass() throws the freshly restored class away. */
               ui.classOpen = true;
-              if (location.hash.indexOf('#/dashboard') !== 0) location.hash = '#/dashboard';
+              try { history.replaceState(null, '', '#/dashboard'); } catch (e6) { location.hash = '#/dashboard'; }
               buildShell(); route();
             }
           } else {
@@ -8022,6 +8045,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
+  window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
   window.SPR_DEBUG_MAYBE_JOIN = function () { maybeJoin(); };
