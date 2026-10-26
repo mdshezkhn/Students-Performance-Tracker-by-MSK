@@ -547,7 +547,7 @@ input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="4a557d2df6";</script>
+<script>window.SPR_BUILD="0a53e3d63e";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -1968,36 +1968,83 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   };
 
   function reportSections(sem, sid) {
+    /* 2026-10-25 (owner request): practical, positive, score-driven comments.
+       Uses the SAME component values the Skill-overview table shows
+       (Calc.gradeStudent -> parts), grades via Calc.letter. Never claims
+       "not enough assessed work" while real scores exist. */
     const g = Calc.gradeStudent(sem, sid);
-    const nAssessed = Calc.assessedCount(g);
-    const evidence = COMPONENTS.map((k) => ({ k: k, pct: g.parts[k], ev: componentEvents(sem, sid, k) }))
+    const L = Calc.letter;
+    const ev = {};
+    for (const k of COMPONENTS) ev[k] = componentEvents(sem, sid, k);
+    const evidence = COMPONENTS
+      .map((k) => ({ k: k, pct: g.parts[k], ev: ev[k] }))
       .filter((x) => x.pct !== null && x.ev >= 1);
-    const evidenceRich = evidence.filter((x) => x.ev >= 2);
     const empty = {
       strengths: [], steps: [], support: '', home: '', overall: '',
-      inProgress: true, note: 'Assessment is still in progress — ' + nAssessed + ' of 9 components assessed.',
+      inProgress: true, note: 'Assessment is still in progress — no scores recorded yet.',
     };
-    if (nAssessed < Calc.FINAL_MIN_ASSESSED || evidenceRich.length < 2) return empty;
-    /* strengths: strong + at least two recorded events; never reused as a step */
-    const strengths = evidenceRich.filter((x) => x.pct >= 80).sort((a, b) => b.pct - a.pct).slice(0, 3)
-      .map((x) => ({ k: x.k, text: STRENGTH_TXT[x.k], evidence: f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks') }));
-    if (!strengths.length && evidenceRich.length) {
-      const best = evidenceRich.slice().sort((a, b) => b.pct - a.pct)[0];
-      strengths.push({ k: best.k, text: STRENGTH_TXT[best.k], evidence: f1(best.pct) + '% across ' + best.ev + ' recorded ' + (best.ev === 1 ? 'task' : 'tasks') });
-    }
-    const used = strengths.map((x) => x.k);
-    const steps = evidence.filter((x) => used.indexOf(x.k) < 0 && x.pct < 70).sort((a, b) => a.pct - b.pct).slice(0, 2)
-      .map((x) => ({ k: x.k, text: STEP_TXT[x.k], evidence: f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks') }));
+    if (!evidence.length) return empty;
+    const desc = evidence.slice().sort((a, b) => b.pct - a.pct);
+    const bandWord = (pct) => {
+      const l = L(pct);
+      if (l === 'A*') return 'outstanding';
+      if (l === 'A') return 'strong';
+      if (l === 'B') return 'good, steady';
+      if (l === 'C') return 'developing';
+      if (l === 'D') return 'early';
+      return 'emerging';
+    };
+    const gradeBit = (x) => 'grade ' + L(x.pct) + ' · ' + f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks');
+    /* strengths: the child's genuinely best areas, worded by how strong */
+    const strengths = desc.slice(0, Math.min(3, Math.max(2, desc.length)))
+      .map((x) => ({ k: x.k, pct: x.pct, ev: x.ev,
+        text: STRENGTH_TXT[x.k] + ' ' + NAME_CAP[x.k] + ' is ' + (bandWord(x.pct) === 'outstanding' ? 'an outstanding' : 'a ' + bandWord(x.pct)) + ' area for ' + possName(sem, sid) + '.',
+        evidence: gradeBit(x) }));
+    /* steps: real focus areas = the lowest scores; practical, never empty
+       while data exists. Below C the wording gets concrete; otherwise the
+       lowest area becomes an extension challenge. */
+    const inS = (x) => strengths.some((s2) => s2.k === x.k);
+    let weak = desc.filter((x) => x.pct < 70 && !inS(x)).sort((a, b) => a.pct - b.pct).slice(0, 2);
+    if (!weak.length) { const rest = desc.filter((x) => !inS(x)); weak = [rest.length ? rest[rest.length - 1] : desc[desc.length - 1]]; }
+    const steps = weak
+      .map((x) => ({ k: x.k, pct: x.pct, ev: x.ev,
+        text: (x.pct < 50 ? 'Priority: ' : 'Next focus: ') + STEP_TXT[x.k],
+        evidence: gradeBit(x) }));
     const first = steps[0] || strengths[0];
+    const support = first ? SUPPORT_TXT[first.k] : 'The teacher will keep monitoring progress and provide support as needed.';
+    const home = first ? HOME_TXT[first.k] : 'Keep encouraging regular short English practice at home.';
     return {
       inProgress: false,
       strengths: strengths,
       steps: steps,
-      support: first ? SUPPORT_TXT[first.k] : 'The teacher will keep monitoring progress and provide support as needed.',
-      home: first ? HOME_TXT[first.k] : 'Keep encouraging regular short English practice at home.',
-      overall: '',
+      support: support,
+      home: home,
+      overall: overallText(sem, sid, g, strengths, steps),
       note: '',
     };
+  }
+
+  function possName(sem, sid) {
+    const stu = sem.students.find((x) => x.id === sid);
+    return stu ? (stu.nameEn || stu.nameCn || 'this student') : 'this student';
+  }
+  const NAME_CAP = { 'Listening': 'Listening', 'Speaking': 'Speaking', 'Writing': 'Writing', 'Reading': 'Reading',
+    'Spelling': 'Spelling', 'Daily Assignments': 'Daily work', 'Mid-Term': 'Mid-Term work', 'Oral': 'Oral work', 'Written': 'Written work' };
+  function overallText(sem, sid, g, strengths, steps) {
+    const name = possName(sem, sid);
+    const pct = g.final === null ? null : Math.round(g.final * 10) / 10;
+    const L = g.letter || (pct === null ? null : Calc.letter(pct));
+    const bandOpen = L === 'A*' || L === 'A' ? name + ' has had an excellent term in English'
+      : L === 'B' ? name + ' has had a good term in English'
+      : L === 'C' ? name + ' is making steady progress in English'
+      : L === 'D' ? name + ' is building the foundations of English'
+      : name + ' has worked on the basics of English this term';
+    const strongBit = strengths.length ? ', with ' + strengths[0].k.toLowerCase() + ' the strongest area (grade ' + Calc.letter(strengths[0].pct) + ')' : '';
+    const stepBit = steps.length ? ' The next step is ' + steps[0].k.toLowerCase() + ': ' + steps[0].text.replace(/^(Priority|Next focus): /, '').replace(/\.$/, '').toLowerCase() + '.' : ' Keep up the regular practice.';
+    const close = !L || L === 'U' || L === 'D' ? ' With short, regular practice at home and in class, ' + name + ' will see this improve next term.'
+      : L === 'C' ? ' Continued regular practice will turn this solid base into real confidence next term.'
+      : ' Keep it up — ' + name + ' should be proud of this term’s work.';
+    return bandOpen + ' (grade ' + (L || '–') + (pct === null ? '' : ', ' + f1(pct) + '%') + ')' + strongBit + '.' + stepBit + close;
   }
 
   /* ---------------- class-level series ---------------- */
@@ -5529,7 +5576,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       ['Mid-Term', g.midterm], ['Oral', g.oral], ['Written', g.written],
     ].map(([name, val]) => {
       const ev = A.componentEvents(sem, sid, name);
-      return '<tr><td>' + name + '</td><td class="num">' + (val === null ? '<span class="muted">Not yet assessed</span>' : fmt(val, 1) + '%') + '</td>' +
+      /* 2026-10-25 (owner request): letter grade primary, exact % small beside */
+      return '<tr><td>' + name + '</td><td class="num">' + (val === null ? '<span class="muted">Not yet assessed</span>' : '<b>' + U.esc(C.letter(val)) + '</b> <span class="muted small">' + fmt(val, 1) + '%</span>') + '</td>' +
         '<td class="small muted">' + (val === null || !ev ? '' : ev + ' recorded ' + (ev === 1 ? 'task' : 'tasks')) + '</td></tr>';
     }).join('');
 
@@ -5569,11 +5617,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '</div>' +
         '<div class="rc-scores">' +
           '<h3 style="margin:8px 0 4px">Skill overview</h3>' +
-          '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Score</th><th scope="col" class="num">Evidence</th></tr></thead>' +
+          '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Grade</th><th scope="col" class="num">Evidence</th></tr></thead>' +
           '<tbody>' + componentRows +
           (ok
             ? '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
-              '<td class="num"><b>' + fmt(g.final, 1) + '%</b> \u00b7 ' + U.esc(g.letter) + '</td><td class="small muted">' + n9 + ' of 9 components</td></tr>'
+              '<td class="num"><b>' + U.esc(g.letter) + '</b> <span class="muted small">' + fmt(g.final, 1) + '%</span></td>' + '<td class="small muted">' + n9 + ' of 9 components</td></tr>'
             : '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
           '</tbody></table>' +
         '</div>' +

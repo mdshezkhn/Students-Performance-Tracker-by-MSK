@@ -2894,7 +2894,8 @@
       ['Mid-Term', g.midterm], ['Oral', g.oral], ['Written', g.written],
     ].map(([name, val]) => {
       const ev = A.componentEvents(sem, sid, name);
-      return '<tr><td>' + name + '</td><td class="num">' + (val === null ? '<span class="muted">Not yet assessed</span>' : fmt(val, 1) + '%') + '</td>' +
+      /* 2026-10-25 (owner request): letter grade primary, exact % small beside */
+      return '<tr><td>' + name + '</td><td class="num">' + (val === null ? '<span class="muted">Not yet assessed</span>' : '<b>' + U.esc(C.letter(val)) + '</b> <span class="muted small">' + fmt(val, 1) + '%</span>') + '</td>' +
         '<td class="small muted">' + (val === null || !ev ? '' : ev + ' recorded ' + (ev === 1 ? 'task' : 'tasks')) + '</td></tr>';
     }).join('');
 
@@ -2934,11 +2935,11 @@
         '</div>' +
         '<div class="rc-scores">' +
           '<h3 style="margin:8px 0 4px">Skill overview</h3>' +
-          '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Score</th><th scope="col" class="num">Evidence</th></tr></thead>' +
+          '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Grade</th><th scope="col" class="num">Evidence</th></tr></thead>' +
           '<tbody>' + componentRows +
           (ok
             ? '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
-              '<td class="num"><b>' + fmt(g.final, 1) + '%</b> \u00b7 ' + U.esc(g.letter) + '</td><td class="small muted">' + n9 + ' of 9 components</td></tr>'
+              '<td class="num"><b>' + U.esc(g.letter) + '</b> <span class="muted small">' + fmt(g.final, 1) + '%</span></td>' + '<td class="small muted">' + n9 + ' of 9 components</td></tr>'
             : '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
           '</tbody></table>' +
         '</div>' +
