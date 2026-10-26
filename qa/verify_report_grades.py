@@ -60,7 +60,9 @@ with sync_playwright() as p:
     print('  [i] rc-scores:', scores_txt.replace(chr(10),' | ')[:300])
     grades = re.findall(r'(?:^|\s)(A\*|[ABCDU])(?=\s)', scores_txt)
     check(len(grades) >= 5, 'skill overview shows letter grades (' + ','.join(grades[:8]) + ')')
-    check('%' in page.evaluate("(document.querySelector('.rc-scores')||{}).innerText || ''"), 'exact % still visible small beside grades')
+    st = page.evaluate("(document.querySelector('.rc-scores')||{}).innerText || ''")
+    check('%' not in st, 'no percentages in the skill overview (grades only)')
+    check('Evidence' not in st and 'recorded task' not in st, 'no Evidence column in the skill overview')
     # comments: practical + no false "not enough assessed work"
     rc = page.evaluate("(document.querySelector('.rc-swot')||{}).innerText || ''")
     check('Not enough assessed work yet to identify a reliable area' not in rc, 'no misleading empty-steps message')
