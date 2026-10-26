@@ -598,7 +598,7 @@
         '</nav>' +
         '<main class="page"><div id="content"></div></main>' +
       '</div>' +
-      '<div class="print-credit print-only">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>';
+      '';;
   }
   function syncRailMeta() {
     const sem = cur();
@@ -2937,16 +2937,16 @@
           '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Grade</th></tr></thead>' +
           '<tbody>' + componentRows +
           (ok
-            ? '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
+            ? '<tr class="rc-overall-row" style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
               '<td class="num"><b>' + U.esc(g.letter) + '</b></td></tr>'
-            : '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
+            : '<tr class="rc-overall-row" style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
           '</tbody></table>' +
         '</div>' +
         '<div class="rc-swot">' +
-          '<h3>Strengths</h3><div id="rc-sec-strengths">' + secList(sections.strengths) + '</div>' +
-          '<h3>Next learning steps</h3><div id="rc-sec-steps">' + secList(sections.steps) + '</div>' +
-          '<h3>Teacher support</h3><div id="rc-sec-support">' + (sections.support ? '<p>' + U.esc(sections.support) + '</p>' : '<p class="muted small">To be added once assessment is complete.</p>') + '</div>' +
-          '<h3>How home can help</h3><div id="rc-sec-home">' + (sections.home ? '<p>' + U.esc(sections.home) + '</p>' : '<p class="muted small">Optional \u2014 added by the teacher.</p>') + '</div>' +
+          '<div class="rc-sec"><h3>Strengths</h3><div id="rc-sec-strengths">' + secList(sections.strengths) + '</div></div>' +
+          '<div class="rc-sec"><h3>Next learning steps</h3><div id="rc-sec-steps">' + secList(sections.steps) + '</div></div>' +
+          '<div class="rc-sec"><h3>Teacher support</h3><div id="rc-sec-support">' + (sections.support ? '<p>' + U.esc(sections.support) + '</p>' : '<p class="muted small">To be added once assessment is complete.</p>') + '</div></div>' +
+          '<div class="rc-sec"><h3>How home can help</h3><div id="rc-sec-home">' + (sections.home ? '<p>' + U.esc(sections.home) + '</p>' : '<p class="muted small">Optional \u2014 added by the teacher.</p>') + '</div></div>' +
         '</div>' +
         '<div class="rc-remark"><h3>Overall comment</h3><div id="rc-sec-overall">' + (sections.overall ? '<div class="remark-box">' + U.esc(sections.overall) + '</div>' : (sections.inProgress ? '<div class="remark-box">' + U.esc(sections.note) + '</div>' : '')) + '</div></div>' +
         '<div class="rc-sign">' +

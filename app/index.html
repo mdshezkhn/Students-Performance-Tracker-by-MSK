@@ -392,8 +392,9 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
 
 /* ---------- print ---------- */
 @media print {
-  body { background: #fff; font-size: 11.5px; }
-  .rail, .tabs, .sheet-toolbar, .actions, #toast-root, .no-print, .legend { display: none !important; }
+  @page { size: A4; margin: 12mm 13mm 12mm; }
+  body { background: #fff; font-size: 11px; }
+  .rail, .tabs, .sheet-toolbar, .actions, .page-head, .print-credit, #toast-root, .no-print, .legend { display: none !important; }
   .app { display: block; }
   .page { padding: 0; }
   .panel, .sheet, .kpi-strip, .profile-head { box-shadow: none; border-color: #bbb; }
@@ -436,35 +437,61 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
 .report-card {
   background: var(--surface); border: 1px solid var(--rule-strong);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 32px 36px; max-width: 780px; margin: 0 auto;
+  padding: 30px 36px 24px; max-width: 860px; margin: 0 auto;
 }
-.rc-header { text-align: center; margin-bottom: 24px; }
+.rc-header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid var(--board); }
 .rc-school { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--board); }
-.rc-title { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink); margin: 6px 0; }
-.rc-meta { font-size: 13px; color: var(--ink-60); }
-.rc-stu { margin-bottom: 20px; }
-.rc-stu th { text-align: right; font-weight: 600; font-size: 12px; color: var(--ink-60); padding: 6px 12px 6px 0; white-space: nowrap; }
-.rc-stu td { font-weight: 600; font-size: 13px; }
-.rc-scores { margin-bottom: 20px; }
-.rc-rag { margin-bottom: 20px; }
-.rc-rag th { text-align: right; font-weight: 600; font-size: 12px; color: var(--ink-60); padding: 6px 12px 6px 0; }
-.rc-rag td { font-weight: 600; }
-.rc-swot { margin-bottom: 20px; }
-.rc-swot h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--ink); }
-.rc-remark { margin-bottom: 24px; }
-.rc-remark h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
-.rc-sign { display: flex; justify-content: space-between; gap: 20px; margin: 32px 0 16px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-60); font-weight: 500; }
-.rc-credit { text-align: center; font-size: 11px; color: var(--ink-40); font-style: italic; margin-top: 16px; }
+.rc-title { font-size: 13px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink); margin: 5px 0; }
+.rc-meta { font-size: 12.5px; color: var(--ink-60); }
+.rc-stu { margin-bottom: 14px; }
+.rc-stu .tbl th { width: 130px; }
+.rc-stu .tbl td { font-weight: 600; }
+/* grades table: centred grade column, quiet zebra, emphasised overall row */
+.rc-scores { margin-bottom: 18px; }
+.rc-scores .tbl th { text-transform: uppercase; letter-spacing: 0.07em; font-size: 10.5px; }
+.rc-scores .tbl th.num, .rc-scores .tbl td.num { text-align: center; width: 32%; }
+.rc-scores td { font-size: 13px; }
+.rc-scores td.num { font-weight: 700; font-size: 13.5px; letter-spacing: 0.04em; }
+.rc-scores tbody tr:nth-child(odd) td { background: #fbfaf5; }
+.rc-scores tr.rc-overall-row td { background: #fdf7e7; }
+.rc-scores tr.rc-overall-row td.num { font-size: 15px; color: var(--board); }
+/* the four comment blocks sit as a 2x2 grid (screen and print) */
+.rc-swot { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 30px; margin-bottom: 16px; }
+.rc-sec h3, .rc-remark h3 { margin: 0 0 5px; text-transform: uppercase; letter-spacing: 0.07em; font-size: 11px; font-weight: 700; color: var(--ink-60); }
+.rc-sec ul { margin: 0; padding-left: 17px; font-size: 12.5px; line-height: 1.55; }
+.rc-sec p { margin: 0; font-size: 12.5px; line-height: 1.55; }
+.rc-remark { margin-bottom: 14px; }
+.remark-box { border: 1px solid var(--rule-strong); border-left: 4px solid var(--board); background: #fff; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; line-height: 1.6; }
+.rc-sign { display: flex; justify-content: space-between; gap: 20px; margin: 22px 0 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-60); font-weight: 500; }
+.rc-credit { text-align: center; font-size: 11px; color: var(--ink-40); font-style: italic; margin-top: 10px; }
+@media (max-width: 700px) { .rc-swot { grid-template-columns: 1fr; } }
 
 @media print {
-  .swot-cell { break-inside: avoid; }
-  .report-card { box-shadow: none; border: none; padding: 0; max-width: 100%; }
-  .print-only { display: block !important; }
-  .print-credit {
-    position: fixed; bottom: 12px; left: 0; right: 0;
-    text-align: center; font-size: 10px; color: #64748b;
-    font-style: italic; border-top: 1px solid #e5e7eb; padding-top: 6px;
-  }
+  /* ONE-PAGE A4 report card — tuned so even long teacher comments keep the
+     card on a single sheet (target: content <= 80% of the page height) */
+  .report-card { box-shadow: none; border: none; padding: 0; max-width: 100%; border-radius: 0; }
+  .rc-header { margin-bottom: 7px; padding-bottom: 5px; border-bottom-width: 2px; }
+  .rc-school { font-size: 17px; }
+  .rc-title { font-size: 10px; margin: 2px 0; letter-spacing: 0.18em; }
+  .rc-meta { font-size: 9.5px; }
+  .rc-stu { margin-bottom: 7px; }
+  .rc-stu .tbl th { width: 110px; }
+  .tbl th { padding: 3px 9px; font-size: 8.6px; letter-spacing: 0.07em; }
+  .tbl td { padding: 2.6px 9px; font-size: 10.4px; }
+  .rc-scores { margin-bottom: 8px; }
+  .rc-scores .tbl th.num, .rc-scores .tbl td.num { width: 32%; }
+  .rc-scores td.num { font-size: 11px; }
+  .rc-scores tr.rc-overall-row td.num { font-size: 12.5px; }
+  .report-card h3 { font-size: 8.8px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-60); margin: 0 0 3px; }
+  .rc-swot { gap: 7px 22px; margin-bottom: 8px; }
+  .rc-sec, .rc-scores, .rc-remark, .rc-sign, .rc-stu { break-inside: avoid; }
+  .report-card h3, .rc-scores h3 { break-after: avoid; }
+  .rc-sec ul, .rc-sec p { font-size: 9.6px; line-height: 1.45; }
+  .rc-sec li { margin: 0 0 2px; }
+  .rc-remark { margin-bottom: 5px; }
+  .remark-box { padding: 6px 11px; font-size: 9.6px; line-height: 1.5; }
+  .rc-sign { margin: 11px 0 0; padding-top: 8px; font-size: 10px; }
+  .rc-credit { margin-top: 6px; font-size: 8.4px; }
 }
 .print-only { display: none; }
 /* =========================================================================
@@ -524,8 +551,7 @@ body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none
 /* ---------- Brief 2: dashboard views / report editor ---------- */
 .sheet-toolbar .inp { font-size: 12.5px; padding: 5px 8px; }
 #progSel .btn.sm { padding: 3px 10px; font-size: 12px; }
-.report-card h3 { font-family: var(--font-display); font-size: 14px; margin: 14px 0 6px; }
-.report-card .rc-swot h3 { color: var(--ink-60); letter-spacing: 0.05em; text-transform: uppercase; font-size: 11.5px; }
+.report-card h3 { font-family: var(--font-display); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-60); margin: 0 0 5px; }
 #sw-update .btn.sm, .btn.sm { cursor: pointer; }
 @media print { .tabs, .sheet-toolbar { display: none !important; } }
 
@@ -542,12 +568,47 @@ body.auth-gate .app { filter: blur(7px); pointer-events: none; user-select: none
 input[data-propose] { background:#fffdf5; border-color:#c9973b; cursor:pointer; }
 input[data-propose]:hover { box-shadow:0 0 0 2px rgba(201,151,59,.25); }
 input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
+/* =========================================================================
+   PROFESSIONAL POLISH PASS (2026-10-25) — consistency only: alignment,
+   spacing, focus states, typography. No layout/behaviour changes.
+   ========================================================================= */
+/* tables: quiet uppercase headers everywhere (markbook register) */
+table.tbl > thead th, table.tbl > tbody th[scope="col"] {
+  text-transform: uppercase; letter-spacing: 0.055em; font-size: 10.5px;
+}
+table.tbl > tbody > tr { transition: background-color 0.1s ease; }
+table.tbl > tbody > tr:hover > td { background-color: #f6f4ea; }
+/* buttons: consistent micro-interactions */
+.btn { transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease; }
+.btn:active { transform: translateY(0.5px); }
+.btn.primary { box-shadow: 0 1px 2px rgba(20, 42, 36, 0.28); }
+.btn.primary:hover { box-shadow: 0 2px 5px rgba(20, 42, 36, 0.3); }
+/* inputs: calm, visible focus (board-green ring instead of loud blue) */
+select.inp:focus, input.inp:focus, textarea.inp:focus {
+  outline: none; border-color: var(--board);
+  box-shadow: 0 0 0 3px rgba(30, 59, 50, 0.14);
+}
+/* panels & cards: one consistent elevation */
+.panel, .sheet { border: 1px solid var(--rule); }
+/* page titles: slightly tighter rhythm under the header */
+.page-head { margin-bottom: 18px; }
+.page-head h1 { letter-spacing: 0.015em; }
+/* empty states: centred, quiet */
+.empty { text-align: center; padding: 34px 16px; }
+.empty .big { color: var(--ink-60); }
+/* student cards: consistent hover affordance */
+.stu-card { transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease; }
+.stu-card:hover { box-shadow: 0 3px 10px rgba(20, 42, 36, 0.08); }
+/* login card: calmer focus to match the app */
+.login-card input.inp:focus { border-color: var(--board); box-shadow: 0 0 0 3px rgba(30, 59, 50, 0.14); }
+/* users/manage tables inherit the same quiet header via .tbl above */
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="a29c005eb4";</script>
+<script>window.SPR_BUILD="d2236b6f67";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -3280,7 +3341,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '</nav>' +
         '<main class="page"><div id="content"></div></main>' +
       '</div>' +
-      '<div class="print-credit print-only">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>';
+      '';;
   }
   function syncRailMeta() {
     const sem = cur();
@@ -5619,16 +5680,16 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<table class="tbl"><thead><tr><th scope="col">Component</th><th scope="col" class="num">Grade</th></tr></thead>' +
           '<tbody>' + componentRows +
           (ok
-            ? '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
+            ? '<tr class="rc-overall-row" style="border-top:2px solid var(--rule-strong)"><td><b>Overall' + (full ? '' : ' (provisional)') + '</b></td>' +
               '<td class="num"><b>' + U.esc(g.letter) + '</b></td></tr>'
-            : '<tr style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
+            : '<tr class="rc-overall-row" style="border-top:2px solid var(--rule-strong)"><td><b>Overall</b></td><td colspan="2" class="muted">Not yet assessed \u2014 grades appear when at least 6 of 9 components are assessed</td></tr>') +
           '</tbody></table>' +
         '</div>' +
         '<div class="rc-swot">' +
-          '<h3>Strengths</h3><div id="rc-sec-strengths">' + secList(sections.strengths) + '</div>' +
-          '<h3>Next learning steps</h3><div id="rc-sec-steps">' + secList(sections.steps) + '</div>' +
-          '<h3>Teacher support</h3><div id="rc-sec-support">' + (sections.support ? '<p>' + U.esc(sections.support) + '</p>' : '<p class="muted small">To be added once assessment is complete.</p>') + '</div>' +
-          '<h3>How home can help</h3><div id="rc-sec-home">' + (sections.home ? '<p>' + U.esc(sections.home) + '</p>' : '<p class="muted small">Optional \u2014 added by the teacher.</p>') + '</div>' +
+          '<div class="rc-sec"><h3>Strengths</h3><div id="rc-sec-strengths">' + secList(sections.strengths) + '</div></div>' +
+          '<div class="rc-sec"><h3>Next learning steps</h3><div id="rc-sec-steps">' + secList(sections.steps) + '</div></div>' +
+          '<div class="rc-sec"><h3>Teacher support</h3><div id="rc-sec-support">' + (sections.support ? '<p>' + U.esc(sections.support) + '</p>' : '<p class="muted small">To be added once assessment is complete.</p>') + '</div></div>' +
+          '<div class="rc-sec"><h3>How home can help</h3><div id="rc-sec-home">' + (sections.home ? '<p>' + U.esc(sections.home) + '</p>' : '<p class="muted small">Optional \u2014 added by the teacher.</p>') + '</div></div>' +
         '</div>' +
         '<div class="rc-remark"><h3>Overall comment</h3><div id="rc-sec-overall">' + (sections.overall ? '<div class="remark-box">' + U.esc(sections.overall) + '</div>' : (sections.inProgress ? '<div class="remark-box">' + U.esc(sections.note) + '</div>' : '')) + '</div></div>' +
         '<div class="rc-sign">' +
