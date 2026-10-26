@@ -237,10 +237,10 @@ eq(CS.normalizeRole('principal'), null, 'unknown role rejected');
     ok(seen.size === 40, 'genPassword draws are unique');
     ok(CS.genPasswordBits() >= 80, 'generator entropy is at least 80 bits (100 claimed)');
 
-    ok(CS.pwOk('admin', 'short') !== null && CS.pwOk('manager', 'a'.repeat(13)) !== null, 'admin/manager need 14+ characters');
-    ok(CS.pwOk('admin', 'fourteen-chars!') === null, '14 characters accepted for admin');
-    ok(CS.pwOk('eal', 'a'.repeat(11)) !== null && CS.pwOk('support', 'a'.repeat(12)) === null, 'teacher floor is 12 characters (11 rejected, 12 accepted)');
-    ok(CS.pwOk('admin', '') !== null, 'empty password rejected');
+    /* 2026-10-25 (owner request): length minimums removed — any non-empty
+       password is accepted for every role; only the empty string rejects */
+    ok(CS.pwOk('admin', 'short') === null && CS.pwOk('manager', 'a') === null, 'no length minimum: short passwords accepted for every role');
+    ok(CS.pwOk('eal', 'x') === null && CS.pwOk('support', '') !== null, 'empty password rejected, 1-char accepted');
 
     const key = CS.genKey();
     const wrap = await CS.wrapKey(key, 'pw-one');

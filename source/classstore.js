@@ -96,11 +96,12 @@
   }
 
   /* ---------------- password policy + generator ---------------- */
-  const PW_MIN = { admin: 14, manager: 14, teacher: 12, eal: 12, support: 12 };
+  /* 2026-10-25 (owner request): no length restrictions — any non-empty
+     password is accepted everywhere (setup, add account, reset, change).
+     Generated one-time passwords stay long (98 bits) — that is a feature,
+     not a policy. */
   function pwOk(role, pw) {
-    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 12;
     if (!pw || typeof pw !== 'string') return 'Enter a password.';
-    if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
     return null;   /* ok */
   }
   /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:

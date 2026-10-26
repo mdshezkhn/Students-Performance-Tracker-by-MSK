@@ -474,10 +474,17 @@ async function loginCloudAs(B, user, pass) {
   const TEAPW3 = 'self-service-pass-3';
   syncSB(Bt);
   const ptrCtSelf = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
-  /* simple-ui: password change moved to the sidebar footer button (Manage & setup is admin-only) */
-  await waitFor(() => !!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 8000);
-  ok(!!Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'), 'teacher has a Password button in the sidebar');
-  click(Bt, Bt.d.querySelector('.rail-foot [data-action="change-pass-open"]'));
+  /* 2026-10-25: password self-service lives in Manage & setup for every role
+     (the separate sidebar button is gone). Class-mode teachers get the
+     password card; legacy-mode (this device) gets the full manage page with
+     the button in the account block. */
+  await sleep(6000);   /* let the teacher sign-in tail (auto-open/settle) fully drain: it re-points the hash and would revert #/manage */
+  const mgmtLink = Bt.d.querySelector('.nav a[data-nav="manage"]');
+  if (mgmtLink) click(Bt, mgmtLink); else Bt.w.location.hash = '#/manage';
+  await sleep(600);
+  const cpFound = await waitFor(() => !!Bt.d.querySelector('[data-action="change-pass-open"]'), 8000);
+  ok(cpFound, 'teacher has a Change-my-password control in Manage & setup');
+  click(Bt, Bt.d.querySelector('[data-action="change-pass-open"]'));
   await sleep(800);
   if (!Bt.d.querySelector('[data-action="change-pass-save"]')) {
     const dl = Bt.d.getElementById('dlg');

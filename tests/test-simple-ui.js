@@ -215,7 +215,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   await sleep(400);
   await loginAs(E, 'anna', PW);
   await sleep(700);
-  check(navIds(E).length === 0 || navIds(E).join(',') === 'dashboard,students,entry,reports', 'teacher sidebar = Dashboard, Students, Enter scores, Report Cards (or chooser, no key)');
+  check(navIds(E).length === 0 || navIds(E).join(',') === 'dashboard,students,entry,reports,manage', 'teacher sidebar = four tools + Manage (or chooser, no key)');
   check(E.w.location.hash !== '#/users', 'teacher opening #/users is redirected away');
 
   /* ---- X: Advanced lives on Manage & setup, never on the chooser (2026-10-24) ---- */

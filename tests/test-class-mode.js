@@ -70,26 +70,23 @@ async function loginAs(B, user, pass) {
   return waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000);
 }
 
-const ADMIN = 'mo', PW = 'sample-password-1';
+const ADMIN = 'mo';
+  let PW = 'tiny-pw';   /* 2026-10-25: no length floor - the suite's admin uses a short password */
 
 (async function main() {
   /* ---- S1: admin first-run + legacy sample data ---- */
   let B = boot();
   await sleep(400); await ackGate(B);
-  /* P1.2: policy enforced at setup (admin needs 14+) - probe with a tiny one first */
+  /* 2026-10-25 (owner request): length minimums REMOVED - a short password
+     now signs straight in; only the empty string is rejected */
   click(B, B.d.querySelector('[data-action="show-setup"]'));
   await sleep(150);
   setVal(B, B.d.querySelector('#suUser'), ADMIN);
   setVal(B, B.d.querySelector('#suPass'), 'tiny-pw');
   setVal(B, B.d.querySelector('#suConf'), 'tiny-pw');
   click(B, B.d.querySelector('[data-action="first-run"]'));
-  ok(await waitFor(() => /14 characters/.test(((B.d.querySelector('#suErr') || {}).textContent || '')), 5000), 'under-length admin password rejected at setup');
-  ok(B.d.body.classList.contains('auth-gate'), 'setup with an under-length password did not sign in');
-  /* now the real setup */
-  setVal(B, B.d.querySelector('#suPass'), PW);
-  setVal(B, B.d.querySelector('#suConf'), PW);
-  click(B, B.d.querySelector('[data-action="first-run"]'));
-  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000), 'admin signed in with a compliant password');
+  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 20000), 'a short admin password is ACCEPTED at setup (no length floor)');
+  /* the admin is now signed in with the short password; later sections re-login with ADMIN/PW */
   await ackPrivacy(B);
   const sample = B.d.querySelector('[data-action="load-sample"]');
   if (sample) { click(B, sample); await sleep(600); const yes = B.d.querySelector('#dlg [data-x="1"]'); if (yes) { click(B, yes); await sleep(500); } }
@@ -143,8 +140,8 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(await waitFor(() => /Dashboard/i.test(B.d.body.textContent), 5000), 'dashboard renders inside the class');
 
   /* ---- S4: provision + pair eal-01 / sup-01 ---- */
-  /* P1.2: teacher passwords need 12+ characters */
-  ok(typeof await B.w.SPR_DEBUG_AUTH.provision('short-eal', 'a'.repeat(11), 'Short EAL', 'eal') === 'string', '11-character teacher password rejected');
+  /* 2026-10-25: no length floor - an 11-character teacher password is accepted */
+  ok(await B.w.SPR_DEBUG_AUTH.provision('short-eal', 'a'.repeat(11), 'Short EAL', 'eal') === null, '11-character teacher password accepted (no floor)');
   ok(await B.w.SPR_DEBUG_AUTH.provision('eal-01', 'eal-pass-123', 'EAL One', 'eal') === null, '12-character teacher password accepted');
   ok(await B.w.SPR_DEBUG_AUTH.provision('sup-01', 'sup-pass-123', 'Support One', 'support') === null, 'support account provisioned');
   B.w.location.hash = '#/classes';
@@ -229,9 +226,11 @@ const ADMIN = 'mo', PW = 'sample-password-1';
   ok(await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length === semCount, 8000), 'support opens the class');
   /* P1.2/P1.1: self-service change through the real UI, then the old password dies */
   {
-    /* simple-ui: password change is the rail-foot button (Manage & setup is admin-only) */
+    /* 2026-10-25: password self-service lives in Manage & setup for every role */
     await waitFor(() => B.w.location.hash === '#/dashboard', 15000);
     await sleep(700);   /* let openClass's async tail (persist + route + closeDlg) fully drain — clicking earlier lets route() eat the dialog */
+    B.w.location.hash = '#/manage';
+    await sleep(500);
     const cpBtn = await waitFor(() => B.d.querySelector('[data-action="change-pass-open"]'), 6000);
     if (!cpBtn) { console.log('  [dbg] no change-pass button; hash:', B.w.location.hash); }
     click(B, cpBtn);

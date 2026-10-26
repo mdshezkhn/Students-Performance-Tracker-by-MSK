@@ -547,7 +547,7 @@ input.cell[readonly] { background:#f4f6f4; color:#6a756e; }
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="9e0ceacd78";</script>
+<script>window.SPR_BUILD="4a557d2df6";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -2296,11 +2296,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   /* ---------------- password policy + generator ---------------- */
-  const PW_MIN = { admin: 14, manager: 14, teacher: 12, eal: 12, support: 12 };
+  /* 2026-10-25 (owner request): no length restrictions — any non-empty
+     password is accepted everywhere (setup, add account, reset, change).
+     Generated one-time passwords stay long (98 bits) — that is a feature,
+     not a policy. */
   function pwOk(role, pw) {
-    const min = PW_MIN[role === 'admin' || role === 'manager' ? role : 'teacher'] || 12;
     if (!pw || typeof pw !== 'string') return 'Enter a password.';
-    if (pw.length < min) return 'Passwords for this role need at least ' + min + ' characters.';
     return null;   /* ok */
   }
   /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:
@@ -3183,8 +3184,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const r = classRole((currentUser() || {}).role);
     let list;
     if (r === 'admin') list = NAV_T.concat([['ranking', 'Ranking'], ['users', 'Users'], ['manage', 'Manage & setup']]);
-    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking']]);
-    else list = NAV_T.slice();
+    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking'], ['manage', 'Manage & setup']]);
+    else list = NAV_T.concat([['manage', 'Manage & setup']]);   /* non-admin Manage = password card only (2026-10-25) */
     if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
     return list;
   }
@@ -3208,9 +3209,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
           '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
           '<div class="rail-foot">' +
-          /* every role keeps self-service password change (Manage & setup is
-             admin-only since simple-ui) — plain button, same dialog as before */
-          '<button class="btn sm" data-action="change-pass-open" style="margin-bottom:8px">Password</button>' +
+          /* password self-service moved to Manage & setup (2026-10-25, owner
+             request) — Manage is now visible to every role; non-admins get
+             the password card there only */
           (function () {   /* small class switcher - only when this account holds more than one class */
             if (sprMode() !== 'class') return '';
             const ix = CS.classesFor(myUser() || {}, classIndex());
@@ -3263,15 +3264,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (cv === 'users') { if (classRole((currentUser() || {}).role) === 'admin') { renderUsers(); window.scrollTo(0, 0); return; } location.hash = '#/classes'; return; }
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
       if (cv === 'manage') {
-        /* admin without a class open reaches the Advanced tools here (the
-           no-class renderManage branch draws a standalone page); with a class
-           open the shell may have been wiped by a self-contained page (Users)
-           — rebuild it before the full Manage body writes into #content */
-        if (classRole((currentUser() || {}).role) === 'admin') {
-          if (CLS && !$('#content')) buildShell();
-          renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
-        }
-        location.hash = '#/classes'; return;
+        /* every role may open Manage now (2026-10-25): admins get the full
+           setup page, non-admins get the password card (renderManage branches
+           by role). With a class open the shell may have been wiped by a
+           self-contained page (Users) — rebuild it before writing #content. */
+        if (CLS && !$('#content')) buildShell();
+        renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
       }
     }
     if (!$('#content')) buildShell();   /* a self-contained page (Users/classes) may have wiped the shell — every switch view needs it back */
@@ -3282,8 +3280,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
-    if (view === 'users' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users is admin-only, URL included */
-    if (view === 'manage' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }  /* Manage & setup is admin-only too */
+    if (view === 'users' && sprMode() === 'class' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users: class-mode admin-only (legacy mode has no class roles) */
+    /* Manage & setup: every role (2026-10-25) - non-admins get the password card only (renderManage branches by role) */
     const navView = view;
     switch (view) {
       case 'students': renderStudents(); break;
@@ -4236,8 +4234,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const q = ui.q.trim().toLowerCase();
     const list = sem.students.filter((s) => !q || (s.nameEn + ' ' + s.nameCn + ' ' + s.id).toLowerCase().includes(q));
     if (!list.length) return '<div class="empty" style="grid-column:1/-1"><div class="big">' +
-      (sem.students.length ? 'No students match your search.' : 'No students yet.') + '</div>' +
-      (sem.students.length ? '' : '<p><a href="#/manage" class="stu-link">Add students in Manage & setup</a></p>') + '</div>';
+      (sem.students.length ? 'No students match your search.' : 'No students yet — add them below.') + '</div></div>';
     return list.map((s) => {
       const g = C.gradeStudent(sem, s.id);
       return '<a class="stu-card" href="#/student/' + U.esc(s.id) + '">' +
@@ -4249,9 +4246,36 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function renderStudents() {
     const sem = cur();
+    const canEdit = canDo('edit.roster');
     $('#content').innerHTML = pageHead('Students', 'click a student for the full performance profile',
       '<input class="inp" id="stuSearch" placeholder="Search name or ID…" value="' + U.esc(ui.q) + '">') +
-      '<div class="stu-grid" id="stuList">' + stuCards(sem) + '</div>';
+      '<div class="stu-grid" id="stuList">' + stuCards(sem) + '</div>' +
+      /* roster editing lives HERE since 2026-10-25 (owner request) — teachers
+         manage their class list on the Students tab, not in Manage & setup.
+         Who may edit follows the class permission matrix (edit.roster:
+         admin + this class's EAL teacher); support sees the read-only note. */
+      (canEdit ?
+        '<h3 style="font-family:var(--font-display);margin:26px 0 12px">Add or edit students</h3>' +
+        '<div class="sheet" style="max-height:420px;overflow:auto"><table class="tbl"><tbody>' +
+        sem.students.map((s, i) => '<tr><td>' + (i + 1) + '</td>' +
+          '<td><input class="inp" style="width:120px" data-stufield="id" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.id) + '"></td>' +
+          '<td><input class="inp" style="width:100px" data-stufield="nameCn" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.nameCn) + '"></td>' +
+          '<td><input class="inp" style="width:120px" data-stufield="nameEn" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.nameEn) + '"></td>' +
+          '<td><select class="inp" data-stufield="gender" data-sid="' + U.esc(s.id) + '">' +
+            ['M', 'F', ''].map((g) => '<option value="' + g + '"' + (s.gender === g ? ' selected' : '') + '>' + (g || '–') + '</option>').join('') + '</select></td>' +
+          '<td><button class="btn sm danger" data-action="stu-del" data-sid="' + U.esc(s.id) + '">Remove</button></td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<div class="flex mt">' +
+          '<input class="inp" id="ro-id" placeholder="ID (auto)" style="width:120px">' +
+          '<input class="inp" id="ro-cn" placeholder="Chinese name" style="width:110px">' +
+          '<input class="inp" id="ro-en" placeholder="English name" style="width:130px">' +
+          '<select class="inp" id="ro-g"><option>M</option><option>F</option></select>' +
+          '<button class="btn primary" data-action="roster-add">Add student</button>' +
+        '</div>' +
+        '<details class="mt"><summary class="small" style="cursor:pointer;color:#2d5fa8">Paste many students</summary>' +
+          '<textarea id="ro-paste" class="inp" rows="4" style="width:100%;max-width:640px;margin-top:8px" placeholder="One per line: ID, Chinese name, English name, Gender&#10;STU-001, 王小明, Demo, F"></textarea>' +
+          '<div class="mt"><button class="btn" data-action="roster-paste">Add list</button></div></details>'
+      : '<p class="small muted" style="margin-top:20px">Read-only: students of this class are managed by its EAL teacher.</p>');
   }
 
   /* ============================= student profile ============================= */
@@ -4992,6 +5016,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
        from the chooser screen (no class open) — so draw the whole page */
     $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<a class="btn" href="' + (CLS || sprMode() !== 'class' ? '#/dashboard' : '#/classes') + '" style="font-size:11.5px;padding:5px 12px">&larr; Back to the app</a>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
       pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
       '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
@@ -5041,6 +5066,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       window.scrollTo(0, 0);
       return;
     }
+    /* non-admin (class mode): Manage holds ONE thing — the password card
+       (2026-10-25). Setup/pairing/admin tools stay out of teachers' reach;
+       students live on the Students tab now. */
+    if (sprMode() === 'class' && classRole((currentUser() || {}).role) !== 'admin') {
+      $('#content').innerHTML = pageHead('Manage & setup', 'your account') +
+        '<div class="panel" style="max-width:620px">' +
+        '<h3 style="font-family:var(--font-display);margin:0 0 8px">Your account</h3>' +
+        '<p class="small muted" style="margin:0 0 12px">Change your own sign-in password. Everything else here is for the admin; students are managed on the Students tab.</p>' +
+        '<button class="btn primary" data-action="change-pass-open">Change my password</button></div>';
+      window.scrollTo(0, 0);
+      return;
+    }
     $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
@@ -5065,27 +5102,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '</div>' : '') +
       '<h3 style="font-family:var(--font-display);margin:6px 0 12px">Semesters</h3>' +
       DB.semesters.map(semCard).join('') +
-      '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Students — ' + U.esc(sem.name) + '</h3>' +
-      (canDo('edit.roster') ? '' : '<p class="small muted" style="margin:-6px 0 12px">Read-only: students are managed by this class&rsquo;s EAL teacher.</p>') +
-      (canDo('edit.roster') ? "" +
-      sem.students.map((s, i) => '<tr><td>' + (i + 1) + '</td>' +
-        '<td><input class="inp" style="width:120px" data-stufield="id" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.id) + '"></td>' +
-        '<td><input class="inp" style="width:100px" data-stufield="nameCn" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.nameCn) + '"></td>' +
-        '<td><input class="inp" style="width:120px" data-stufield="nameEn" data-sid="' + U.esc(s.id) + '" value="' + U.esc(s.nameEn) + '"></td>' +
-        '<td><select class="inp" data-stufield="gender" data-sid="' + U.esc(s.id) + '">' +
-          ['M', 'F', ''].map((g) => '<option value="' + g + '"' + (s.gender === g ? ' selected' : '') + '>' + (g || '–') + '</option>').join('') + '</select></td>' +
-        '<td><button class="btn sm danger" data-action="stu-del" data-sid="' + U.esc(s.id) + '">Remove</button></td></tr>').join('') +
-      '</tbody></table></div>' : '') +
-      '<div class="flex mt">' + (canDo('edit.roster') ?
-        '<input class="inp" id="ro-id" placeholder="ID (auto)" style="width:120px">' +
-        '<input class="inp" id="ro-cn" placeholder="Chinese name" style="width:110px">' +
-        '<input class="inp" id="ro-en" placeholder="English name" style="width:130px">' +
-        '<select class="inp" id="ro-g"><option>M</option><option>F</option></select>' +
-        '<button class="btn primary" data-action="roster-add">Add student</button>' : '') +
-      '</div>' +
-      (canDo('edit.roster') ? '<details class="mt"><summary class="small" style="cursor:pointer;color:#2d5fa8">Paste many students</summary>' +
-        '<textarea id="ro-paste" class="inp" rows="4" style="width:100%;max-width:640px;margin-top:8px" placeholder="One per line: ID, Chinese name, English name, Gender&#10;STU-001, 王小明, Demo, F"></textarea>' +
-        '<div class="mt"><button class="btn" data-action="roster-paste">Add list</button></div></details>' : '') +
+      /* students moved to the Students tab (2026-10-25, owner request) */
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Settings</h3>' +
       '<div class="panel"><div class="flex">' +
         '<label><input type="checkbox" data-setf="autoTotal"' + (st.autoTotal ? ' checked' : '') + (canDo('edit.roster') ? '' : ' disabled') + '> auto-fill totals when entering a score</label>' +
@@ -6005,7 +6022,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (!un || /[^A-Za-z0-9_.-]/.test(un)) { if (err) err.textContent = 'Username: letters, numbers, dot, dash or underscore.'; return; }
         if (un === MASTER_KEY) { if (err) err.textContent = 'That username is reserved.'; return; }
         if (getAuth().users.some((u) => u.username.toLowerCase() === un.toLowerCase())) { if (err) err.textContent = 'That username is already on this device.'; return; }
-        if (pw.length < 8) { if (err) err.textContent = 'Password must be at least 8 characters.'; return; }
+        if (!pw) { if (err) err.textContent = 'Enter a password.'; return; }
         if (pw !== cf) { if (err) err.textContent = 'Passwords do not match.'; return; }
         const addErr = await addUser(un, pw, name || un, role);
         if (addErr) { if (err) err.textContent = addErr; return; }
@@ -6098,7 +6115,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       openDlg('<h3>Reset the admin password</h3>' +
         '<p class="small">Use the <b>master password</b> to set a new password for the admin account on this device. All data and all other sign-ins stay untouched. Nothing works without the master password — keep it on paper.</p>' +
         '<label>Master password <input class="inp" type="password" id="mrMaster" autocomplete="off"></label>' +
-        '<label>New admin password (8+ characters) <input class="inp" type="password" id="mrPass" autocomplete="new-password"></label>' +
+        '<label>New admin password <input class="inp" type="password" id="mrPass" autocomplete="new-password"></label>' +
         '<label>Repeat new password <input class="inp" type="password" id="mrConf" autocomplete="new-password"></label>' +
         '<div class="login-err" id="mrErr" aria-live="assertive"></div>' +
         '<div class="dlg-actions"><button class="btn" data-action="master-recover-cancel">Back to sign-in</button>' +
@@ -6141,7 +6158,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Set master password</h3>' +
         '<p class="small">A recovery key for this device: if the admin password is ever forgotten, the master password can reset it from the sign-in screen. <b>Write it on paper</b> — SPR cannot show it to you again.</p>' +
-        '<label>Master password (8+ characters) <input class="inp" type="password" id="msPass" autocomplete="new-password"></label>' +
+        '<label>Master password <input class="inp" type="password" id="msPass" autocomplete="new-password"></label>' +
         '<label>Repeat master password <input class="inp" type="password" id="msConf" autocomplete="new-password"></label>' +
         '<div class="login-err" id="msErr" aria-live="assertive"></div>' +
         '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
@@ -6155,7 +6172,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         if (!cryptoOK() || !SESSION.dk) { if (err) err.textContent = 'Needs the online (https) version.'; return; }
         const pw = ($('#msPass') ? $('#msPass').value : '') || '';
         const cf = ($('#msConf') ? $('#msConf').value : '') || '';
-        if (pw.length < 8) { if (err) err.textContent = 'Master password must be at least 8 characters.'; return; }
+        if (!pw) { if (err) err.textContent = 'Enter a master password.'; return; }
         if (pw !== cf) { if (err) err.textContent = 'Master passwords do not match.'; return; }
         const v2 = readV2();
         if (!v2 || !v2.wraps) { if (err) err.textContent = 'No encrypted storage found — sign out and in once first.'; return; }
@@ -6302,13 +6319,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'change-pass-open') {
       if (!SESSION.user) return;
-      const me = myUser() || {};
-      const min = (me.role === 'admin' || me.role === 'manager') ? 14 : 8;
       openDlg(
         '<h3>Change my password</h3>' +
         '<p class="small">Works for every role. Your current password is verified by unlocking your keys — nothing is compared against a stored hash. Everything wrapped under the old password (your data key and class keys) is re-wrapped under the new one.</p>' +
         '<div class="login-field"><label>Current password</label><input type="password" id="cpCur" autocomplete="current-password"></div>' +
-        '<div class="login-field"><label>New password (' + min + '+ characters)</label><input type="password" id="cpNew" autocomplete="new-password"></div>' +
+        '<div class="login-field"><label>New password</label><input type="password" id="cpNew" autocomplete="new-password"></div>' +
         '<div class="login-field"><label>Repeat new password</label><input type="password" id="cpConf" autocomplete="new-password"></div>' +
         '<div class="login-err" id="cpErr" aria-live="assertive"></div>' +
         '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-action="change-pass-save">Save new password</button></div>');
@@ -7895,7 +7910,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<h2>Set up this browser</h2>' +
           '<p>Starting fresh? Create the sign-in that locks and unlocks this browser\u2019s student data — SPR has no server accounts, and this password never leaves this device.</p>' +
           '<div class="login-field"><label for="suUser">Username</label><input type="text" id="suUser" autocomplete="username"></div>' +
-          '<div class="login-field"><label for="suPass">Password (14+ characters — this sign-in is the admin)</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
+          '<div class="login-field"><label for="suPass">Password — this sign-in is the admin</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
