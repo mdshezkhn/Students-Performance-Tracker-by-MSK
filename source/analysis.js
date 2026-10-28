@@ -1,5 +1,5 @@
 /* =========================================================================
-   Student's Performance Report — comparative analysis engine (pure, no DOM)
+   Student's Performance Report: comparative analysis engine (pure, no DOM)
    Cross-semester class/student progress, RAG classification, SWOT remarks.
    Requires Calc (gradeStudent/gradeAll) and Util.
    RAG thresholds:  Green ≥ 75 (secure A/A*) · Amber 55–74.9 (B/C) · Red < 55 (D/U)
@@ -174,7 +174,7 @@
     const focus = ready.slice(0, 2);
     return {
       list: rows, focus: focus,
-      text: focus.map((r) => 'Whole-class focus: ' + r.k + ' — ' + f1(r.avg) + '% across ' + r.n + ' assessed pupils.').join(' '),
+      text: focus.map((r) => 'Whole-class focus: ' + r.k + ': ' + f1(r.avg) + '% across ' + r.n + ' assessed pupils.').join(' '),
     };
   }
 
@@ -238,7 +238,7 @@
       .filter((x) => x.pct !== null && x.ev >= 1);
     const empty = {
       strengths: [], steps: [], support: '', home: '', overall: '',
-      inProgress: true, note: 'Assessment is still in progress — no scores recorded yet.',
+      inProgress: true, note: 'Assessment is still in progress: no scores recorded yet.',
     };
     if (!evidence.length) return empty;
     const desc = evidence.slice().sort((a, b) => b.pct - a.pct);
@@ -253,10 +253,20 @@
     };
     const gradeBit = (x) => 'grade ' + L(x.pct) + ' · ' + f1(x.pct) + '% across ' + x.ev + ' recorded ' + (x.ev === 1 ? 'task' : 'tasks');
     /* strengths: the child's genuinely best areas, worded by how strong */
+    const nm = possName(sem, sid);
     const strengths = desc.slice(0, Math.min(3, Math.max(2, desc.length)))
-      .map((x) => ({ k: x.k, pct: x.pct, ev: x.ev,
-        text: STRENGTH_TXT[x.k] + ' ' + NAME_CAP[x.k] + ' is ' + (bandWord(x.pct) === 'outstanding' ? 'an outstanding' : 'a ' + bandWord(x.pct)) + ' area for ' + possName(sem, sid) + '.',
-        evidence: gradeBit(x) }));
+      .map((x) => {
+        const band = bandWord(x.pct);
+        const art = band === 'outstanding' ? 'an outstanding' : 'a ' + band;
+        const variants = [
+          STRENGTH_TXT[x.k] + ' ' + NAME_CAP[x.k] + ' is ' + art + ' area for ' + nm + '.',
+          nm + ' does ' + band + ' work in ' + lowerFirst(NAME_CAP[x.k]) + '.',
+        ];
+        if (band === 'outstanding' || band === 'strong') variants.push(nm + '\u2019s ' + lowerFirst(NAME_CAP[x.k]) + ' is a clear strength this term.');
+        return { k: x.k, pct: x.pct, ev: x.ev,
+          text: pickVariant(variants, nm + '|' + x.k + '|' + Math.round(x.pct)),
+          evidence: gradeBit(x) };
+      });
     /* steps: real focus areas = the lowest scores; practical, never empty
        while data exists. Below C the wording gets concrete; otherwise the
        lowest area becomes an extension challenge. */
@@ -264,9 +274,17 @@
     let weak = desc.filter((x) => x.pct < 70 && !inS(x)).sort((a, b) => a.pct - b.pct).slice(0, 2);
     if (!weak.length) { const rest = desc.filter((x) => !inS(x)); weak = [rest.length ? rest[rest.length - 1] : desc[desc.length - 1]]; }
     const steps = weak
-      .map((x) => ({ k: x.k, pct: x.pct, ev: x.ev,
-        text: (x.pct < 50 ? 'Priority: ' : 'Next focus: ') + STEP_TXT[x.k],
-        evidence: gradeBit(x) }));
+      .map((x) => {
+        const lead = x.pct < 50 ? 'Priority: ' : 'Next focus: ';
+        const variants = [
+          lead + STEP_TXT[x.k],
+          lowerFirst(NAME_CAP[x.k]) + ' is the next focus: ' + lowerFirst(STEP_TXT[x.k]),
+          'More practice with ' + lowerFirst(NAME_CAP[x.k]) + ' will help: ' + lowerFirst(STEP_TXT[x.k]),
+        ];
+        return { k: x.k, pct: x.pct, ev: x.ev,
+          text: pickVariant(variants, possName(sem, sid) + '|step|' + x.k + '|' + Math.round(x.pct)),
+          evidence: gradeBit(x) };
+      });
     const first = steps[0] || strengths[0];
     const support = first ? SUPPORT_TXT[first.k] : 'The teacher will keep monitoring progress and provide support as needed.';
     const home = first ? HOME_TXT[first.k] : 'Keep encouraging regular short English practice at home.';
@@ -281,6 +299,18 @@
     };
   }
 
+  /* B3 (2026-10-28): 2-3 phrasings per slot so two students with the same
+     grade band do not read identically. The pick is deterministic (a hash of
+     the student's name and the component), so a given student always gets the
+     same wording on reprints. */
+  function pickVariant(variants, seed) {
+    let h = 2166136261;
+    const str = String(seed);
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return variants[h % variants.length];
+  }
+  const lowerFirst = (t) => t.charAt(0).toLowerCase() + t.slice(1);
+
   function possName(sem, sid) {
     const stu = sem.students.find((x) => x.id === sid);
     return stu ? (stu.nameEn || stu.nameCn || 'this student') : 'this student';
@@ -291,16 +321,21 @@
     const name = possName(sem, sid);
     const pct = g.final === null ? null : Math.round(g.final * 10) / 10;
     const L = g.letter || (pct === null ? null : Calc.letter(pct));
-    const bandOpen = L === 'A*' || L === 'A' ? name + ' has had an excellent term in English'
-      : L === 'B' ? name + ' has had a good term in English'
-      : L === 'C' ? name + ' is making steady progress in English'
-      : L === 'D' ? name + ' is building the foundations of English'
-      : name + ' has worked on the basics of English this term';
-    const strongBit = strengths.length ? ', with ' + strengths[0].k.toLowerCase() + ' the strongest area (grade ' + Calc.letter(strengths[0].pct) + ')' : '';
-    const stepBit = steps.length ? ' The next step is ' + steps[0].k.toLowerCase() + ': ' + steps[0].text.replace(/^(Priority|Next focus): /, '').replace(/\.$/, '').toLowerCase() + '.' : ' Keep up the regular practice.';
+    const bandOpen = pickVariant((L === 'A*' || L === 'A')
+      ? [name + ' has had an excellent term in English', name + ' has done very good work in English this term', name + ' ends the term with a strong result in English']
+      : L === 'B'
+      ? [name + ' has had a good term in English', name + ' has made solid progress in English this term']
+      : L === 'C'
+      ? [name + ' is making steady progress in English', name + ' is moving forward steadily in English']
+      : [name + ' is building the foundations of English', name + ' has worked on the basics of English this term'], name + '|open|' + (L || ''));
+    const strongBit = strengths.length ? pickVariant([', with ' + strengths[0].k.toLowerCase() + ' the strongest area (grade ' + Calc.letter(strengths[0].pct) + ')', ', strongest in ' + strengths[0].k.toLowerCase() + ' (grade ' + Calc.letter(strengths[0].pct) + ')'], name + '|strong|' + (strengths[0] ? strengths[0].k : '')) : '';
+    const stepBit = steps.length ? pickVariant([
+      ' The next step is ' + steps[0].k.toLowerCase() + ': ' + steps[0].text.replace(/^(Priority|Next focus): /, '').replace(/\.$/, '').toLowerCase() + '.',
+      ' Looking ahead, ' + steps[0].k.toLowerCase() + ' is where practice will pay off most.',
+    ], name + '|step0|' + (steps[0] ? steps[0].k : '')) : ' Keep up the regular practice.';
     const close = !L || L === 'U' || L === 'D' ? ' With short, regular practice at home and in class, ' + name + ' will see this improve next term.'
       : L === 'C' ? ' Continued regular practice will turn this solid base into real confidence next term.'
-      : ' Keep it up — ' + name + ' should be proud of this term’s work.';
+      : ' Keep it up: ' + name + ' should be proud of this term’s work.';
     return bandOpen + ' (grade ' + (L || '–') + (pct === null ? '' : ', ' + f1(pct) + '%') + ')' + strongBit + '.' + stepBit + close;
   }
 
@@ -409,7 +444,7 @@
         sid: sid, name: nm, last: last, prev: prev, delta: null, overallRag: null, ragName: null,
         provisionalStub: true,
         strengths: [], weaknesses: [], opportunities: [], threats: [],
-        remark: 'Not enough assessed work yet to report on ' + nm + ' — ' + last.assessed + ' of 9 components assessed.',
+        remark: 'Not enough assessed work yet to report on ' + nm + ': ' + last.assessed + ' of 9 components assessed.',
       };
     }
     const provisional = last.assessed < Calc.COMPONENTS_ALL.length;
@@ -447,14 +482,14 @@
     const delta = prev && prev.final !== null && last.final !== null ? last.final - prev.final : null;
     const overallRag = ragOverall({ final: last.final }, delta);
 
-    const bullet = (x) => x.k + ' — ' + f1(x.v) + '%' + (x.d !== null && x.d !== undefined && x.k.indexOf('Ungraded') !== 0 ? ' (' + (x.d >= 0 ? '+' : '') + f1(x.d) + ' vs class)' : '');
+    const bullet = (x) => x.k + ': ' + f1(x.v) + '%' + (x.d !== null && x.d !== undefined && x.k.indexOf('Ungraded') !== 0 ? ' (' + (x.d >= 0 ? '+' : '') + f1(x.d) + ' vs class)' : '');
 
     let remark = name + ' finishes ' + last.semName + ' with a weighted final of ' + f1(last.final) + '% (' + (last.letter || '–') + ')';
     remark += clsFinal !== null ? ', ' + (last.final >= clsFinal ? 'above' : 'below') + ' the class average of ' + f1(clsFinal) + '%.' : '.';
     if (best && worst && best.k !== worst.k) remark += ' Strongest area: ' + best.k + ' (' + f1(best.v) + '%); most in need of support: ' + worst.k + ' (' + f1(worst.v) + '%).';
     if (prev) {
       if (delta === null) remark += ' No comparable final for ' + prev.semName + '.';
-      else if (delta > 1) remark += ' Since ' + prev.semName + ', the overall score has improved by ' + f1(delta) + ' points — well done.';
+      else if (delta > 1) remark += ' Since ' + prev.semName + ', the overall score has improved by ' + f1(delta) + ' points: well done.';
       else if (delta < -1) remark += ' Since ' + prev.semName + ', the overall score has slipped by ' + f1(-delta) + ' points.';
       else remark += ' The overall score has held steady since ' + prev.semName + '.';
     }
@@ -462,7 +497,7 @@
     if (worst) remark += ' Next step: focus on ' + worst.k.toLowerCase() + ', where ' + name + ' is furthest from the class average.';
     if (last.missing && last.missing.length) remark += ' Note: ' + last.missing.join(', ') + ' not yet graded.';
 
-    if (provisional && remark) remark = 'Provisional — based on ' + last.assessed + ' of 9 components. ' + remark;
+    if (provisional && remark) remark = 'Provisional: based on ' + last.assessed + ' of 9 components. ' + remark;
     return {
       sid: sid, name: name,
       last: last, prev: prev, delta: delta, overallRag: overallRag,
@@ -470,7 +505,7 @@
       provisional: provisional,
       strengths: strengths.map(bullet), weaknesses: weaknesses.map(bullet),
       opportunities: opportunities.map(bullet), threats: threats.map((t) =>
-        t.k.indexOf('Ungraded') === 0 ? t.k : t.k + ' — ' + f1(t.v) + '%' + (t.d !== null && t.d !== undefined ? ' (' + f1(t.d) + ' vs ' + (prev ? prev.semName : '') + ')' : '')),
+        t.k.indexOf('Ungraded') === 0 ? t.k : t.k + ': ' + f1(t.v) + '%' + (t.d !== null && t.d !== undefined ? ' (' + f1(t.d) + ' vs ' + (prev ? prev.semName : '') + ')' : '')),
       remark: remark,
     };
   }

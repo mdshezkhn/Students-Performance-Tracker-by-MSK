@@ -95,7 +95,7 @@ const FULL = { L: 8, S: 8, W: 8, R: 8, Sp: 16, Da: 8, M: 40, O: 40, Wr: 40 }; //
   eq(rows[0].total, 1, 'C.rank pool = gate-qualified only');
   eq(rows[0].rankProvisional, true, 'C.rank tagged provisional');
   const sw = A.swot({ semesters: [sem] }, 'C6');
-  ok(sw.remark.indexOf('Provisional — based on 6 of 9 components') === 0, 'C.remark prefix');
+  ok(sw.remark.indexOf('Provisional: based on 6 of 9 components') === 0, 'C.remark prefix (voice pass: colon, not em dash)');
   ok(Calc.atRisk(sem).length === 1, 'C.intervention allowed (final 44 < 50)');
 }
 

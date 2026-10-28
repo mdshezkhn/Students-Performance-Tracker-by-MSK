@@ -1,0 +1,20 @@
+SPR network capture — cold load, no sign-in, device sync OFF
+Captured with Playwright + Edge (Chromium), 2026-10-28 19:25, local server = 127.0.0.1 (not contacted remotely)
+
+[1] landing page (index.html), first visit in a fresh profile
+
+[2] app (app/index.html), fresh profile, no sign-in performed, sync off
+
+[3] app, signed in as admin (sample data), sync STILL off
+
+=== hosts contacted (total unique: 1) ===
+127.0.0.1:8934  (7 request(s))
+    http://127.0.0.1:8934/index.html
+    http://127.0.0.1:8934/media/landing-app-screenshot.png
+    http://127.0.0.1:8934/app/index.html
+    http://127.0.0.1:8934/app/sw.js
+    http://127.0.0.1:8934/app/
+    http://127.0.0.1:8934/app/index.html
+    ... +1 more local asset requests
+
+CONCLUSION: remote hosts contacted with sync off: NONE — everything came from this machine

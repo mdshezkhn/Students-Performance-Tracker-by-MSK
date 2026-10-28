@@ -5,16 +5,21 @@
   by source/build2.py. NEVER hand-edit root index.html — edit this template,
   then rebuild. build2.py refuses to run if root index.html has drifted from
   the last committed build.
+
+  2026-10-28 (notices-voice): rebuilt to match the app itself — warm paper,
+  board green, the app's serif. Plain headline, one real screenshot, three
+  short sections, no gradient, no video, no count-up stats, no slogans.
+  Every claim is verified by docs/qa/notices/network-hosts.txt.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; media-src 'self'; font-src data:; base-uri 'none'; form-action 'none'">
-<title>Students Performance Report</title>
-<meta name="description" content="ESL student performance tracking with live analytics, RAG/SWOT insights, and report cards. Designed for teachers, by a teacher.">
-<meta name="theme-color" content="#0b8ed2">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b8ed2'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-style='italic' font-size='38' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; base-uri 'none'; form-action 'none'">
+<title>Student's Performance Report (SPR) — a markbook for ESL classes</title>
+<meta name="description" content="A free markbook for ESL classes: weekly scores, automatic grades, printable report cards. Runs in your browser. Made by an ESL teacher for his own classes.">
+<meta name="theme-color" content="#1e3b32">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e3b32'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='38' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
 <style>/* Editorial Cinematic faces: Instrument Serif 400 + Inter variable (latin, embedded) */
 @font-face {
   font-family: 'Instrument Serif';
@@ -55,852 +60,173 @@
   src: url(data:font/woff2;base64,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) format('woff2');
 }
 </style>
-<style>/* =========================================================================
-   Students Performance Report — AEROFOLD azure theme
-   Instrument Serif display + Inter · azure #0b8ed2 · glass + cyan hairlines
-   white/black pills · paper-bloom video hero
-   ========================================================================= */
+<style>/* Landing for Student's Performance Report (SPR) — 2026-10-28 rebuild.
+   Matches the app: warm paper, board green, Georgia headings, system-ui body.
+   No gradients, no video, no scroll animation. */
+
 :root {
-  --ink: #0f172a;                    /* mock app UI inside browser card */
-  --ink-soft: hsl(215 25% 32%);
-  --paper: #ffffff;
-  --mist: #f6f8fa;
-  --azure: #0b8ed2;
-  --azure-mid: #0a7cbb;
-  --azure-deep: #076398;
-  --azure-ink: #043f66;
-  --on-azure: #ffffff;
-  --on-azure-muted: rgba(255, 255, 255, 0.86);
-  --on-azure-soft: rgba(255, 255, 255, 0.72);
-  --cyan: #70f2ff;
-  --cyan-soft: #c1eeff;
-  --glass: rgba(255, 255, 255, 0.13);
-  --glass-strong: rgba(255, 255, 255, 0.18);
-  --glass-deep: rgba(5, 75, 120, 0.55);
-  --hairline: linear-gradient(155deg,
-    rgba(112, 242, 255, 0.98) 0%,
-    rgba(104, 234, 255, 0.95) 42%,
-    rgba(87, 218, 255, 0.88) 100%);
-  --shadow-soft: 0 1px 2px rgba(3, 58, 92, 0.10);
-  --shadow-lift: 0 6px 18px rgba(3, 58, 92, 0.20);
-  --shadow-panel: 0 24px 80px rgba(0, 30, 60, 0.30);
-  --e-reveal: cubic-bezier(0.16, 1, 0.3, 1);
-  --e-settle: cubic-bezier(0.22, 1, 0.36, 1);
-  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
-  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --paper: #fbfaf5;
+  --paper-dim: #f4f0e2;
+  --board: #1e3b32;
+  --board-edge: #16302a;
+  --ink: #22312c;
+  --ink-60: #5b6a62;
+  --rule: #d9d4c2;
+  --rule-strong: #c9c5b2;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* ---------- Reset ---------- */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-body);
-  font-weight: 400;
-  font-size: 18px;
-  line-height: 1.625;
-  color: var(--on-azure);
-  background-color: var(--azure);
-  background-image: linear-gradient(180deg,
-    var(--azure) 0%, var(--azure-mid) 34%, var(--azure-deep) 68%, var(--azure-ink) 100%);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  font-synthesis: none;
-}
-a { color: inherit; text-decoration: none; }
-ul { list-style: none; }
-img, svg, video { display: block; }
-:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
-::selection { background: rgba(255, 255, 255, 0.28); color: #fff; }
-.browser ::selection { background: rgba(11, 142, 210, 0.22); color: inherit; }
-
-.container { max-width: 1280px; margin-inline: auto; padding-inline: 32px; }
-
-/* ---------- Type ---------- */
-.h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 56px;
-  line-height: 1.02;
-  letter-spacing: -1.5px;
-  text-wrap: balance;
-  color: #fff;
-}
-.h2 em { font-style: italic; color: var(--cyan-soft); }
-.h2--display { font-size: 72px; }
-.section__lede {
-  max-width: 620px;
-  margin-top: 18px;
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-/* ---------- Hero paper-bloom stage ---------- */
-.stage {
-  position: relative;
-  min-height: 100vh;
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  color: var(--on-azure);
-}
-.stage__media, .stage__scrim, .stage__tint { position: absolute; inset: 0; }
-.stage__media::before {
-  /* poster underlay: stays visible if video fails or motion is reduced */
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: url("media/aerofold-paper-bloom-poster.png") 50% 50% / cover no-repeat;
-}
-.stage__media video {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 50%;
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-.stage__media.is-playing video { opacity: 1; }
-.stage__tint {
-  background: radial-gradient(ellipse 68% 58% at 50% 45%,
-    rgba(4, 86, 140, 0.32),
-    rgba(4, 86, 140, 0.10) 58%,
-    rgba(4, 86, 140, 0.28) 100%);
-}
-.stage__scrim { display: none; }
-
-@media (max-aspect-ratio: 1/1) {
-  .stage__media video {
-    object-position: 50% 100%;
-    transform: scale(1.26);
-    transform-origin: 50% 100%;
-  }
-  .stage__media::before {
-    inset: auto;
-    left: 50%;
-    bottom: 0;
-    width: max(100%, calc(100dvh * 390 / 844));
-    height: max(100%, calc(100vw * 844 / 390));
-    background-position: 50% 100%;
-    transform: translateX(-50%) scale(1.26);
-    transform-origin: 50% 100%;
-  }
-  .stage__scrim {
-    display: block;
-    background: linear-gradient(180deg,
-      rgba(4, 86, 140, 0.26) 0%,
-      rgba(4, 86, 140, 0) 18%,
-      rgba(4, 86, 140, 0) 40%,
-      rgba(5, 90, 145, 0.22) 62%,
-      rgba(6, 94, 150, 0.34) 100%);
-  }
-}
-
-/* ---------- Entrance: rise with AEROFOLD easing ---------- */
-@keyframes fade-rise {
-  from { opacity: 0; transform: translateY(26px); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-.rise { animation: fade-rise 0.8s var(--e-reveal) both; }
-.rise--1 { animation-delay: 0s; }
-.rise--2 { animation-delay: 0.12s; }
-.rise--3 { animation-delay: 0.24s; }
-.rise--4 { animation-delay: 0.36s; }
-.fade { animation: fade-in 0.8s ease-out 0.4s both; }
-
-.reveal > .container > * {
-  opacity: 0;
-  transform: translateY(26px);
-  transition: opacity 0.7s var(--e-reveal), transform 0.7s var(--e-reveal);
-}
-.reveal.in > .container > * { opacity: 1; transform: none; }
-.reveal > .container > *:nth-child(2) { transition-delay: 0.08s; }
-.reveal > .container > *:nth-child(3) { transition-delay: 0.16s; }
-.reveal > .container > *:nth-child(n+4) { transition-delay: 0.24s; }
-
-/* ---------- Navigation ---------- */
-.nav { position: relative; z-index: 2; }
-.nav__inner {
-  max-width: 1280px;
-  margin-inline: auto;
-  padding: 24px 32px;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-}
-.brand {
-  font-family: var(--font-display);
-  font-size: 30px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  justify-self: start;
-  color: #fff;
-}
-.nav__links { display: flex; gap: 40px; }
-.nav__links a {
-  font-size: 14px;
-  font-weight: 515;
-  color: rgba(255, 255, 255, 0.92);
-  transition: opacity 0.18s ease;
-}
-.nav__links a:hover { opacity: 0.74; }
-
-/* ---------- Pill action buttons (AEROFOLD white/black) ---------- */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-.pill--nav {
-  font-size: 14px;
-  padding: 10px 24px;
-  justify-self: end;
-  background: #ffffff;
-  color: #000000;
-  box-shadow: var(--shadow-soft);
-}
-.pill--hero {
   font-size: 16px;
-  padding: 20px 56px;
-  background: #ffffff;
-  color: #000000;
-  box-shadow: var(--shadow-soft);
+  line-height: 1.6;
 }
-.pill--nav:hover, .pill--hero:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-lift);
-}
-.pill:active { transform: none; }
-.quiet-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 515;
-  color: rgba(255, 255, 255, 0.88);
-  transition: color 0.2s ease-in-out;
-}
-.quiet-link:hover { color: #fff; }
-.quiet-link svg { transition: transform 0.2s ease-in-out; }
-.quiet-link:hover svg { transform: translateY(2px); }
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 22px; }
 
-/* ---------- Hero badge (glass + cyan hairline) ---------- */
-.hero-badge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 34px;
-  border-radius: 17px;
-  padding: 0 14px 0 5px;
-  background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(10px) saturate(115%);
-  backdrop-filter: blur(10px) saturate(115%);
-}
-.hero-badge::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--hairline);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-}
-.hero-badge__chip {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 12px;
-  background: #ffffff;
-  color: var(--azure);
-  font-size: 12px;
-  font-weight: 620;
-  line-height: 1;
-}
-.hero-badge__text {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.96);
-  white-space: nowrap;
-}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; color: var(--ink); }
+h1 { font-size: clamp(30px, 5.4vw, 44px); line-height: 1.15; margin: 26px 0 10px; }
+h2 { font-size: 24px; margin: 0 0 14px; }
+p { margin: 0 0 14px; }
+a { color: var(--board); }
 
-/* ---------- Hero content ---------- */
-.hero { position: relative; z-index: 1; flex: 1; display: grid; place-items: center; padding: 48px 32px 72px; }
-.hero__inner { max-width: 1280px; text-align: center; }
-.hero__inner .hero-badge { margin-bottom: 28px; }
-.hero h1 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 80px;
-  line-height: 0.95;
-  letter-spacing: -2.46px;
-  color: #ffffff;
-  text-wrap: balance;
-}
-.hero h1 em { font-style: italic; color: var(--cyan-soft); }
-.hero h1 .hero-sub {
-  display: block;
-  margin-top: 22px;
-  font-family: var(--font-body);
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: -0.3px;
-  color: rgba(255, 255, 255, 0.92);
-}
-.hero__lede {
-  max-width: 670px;
-  margin: 28px auto 0;
-  font-size: 18px;
-  line-height: 1.625;
-  color: rgba(255, 255, 255, 0.95);
-  text-wrap: pretty;
-}
-.hero__actions {
-  margin-top: 48px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 28px;
-  flex-wrap: wrap;
-}
+/* nav */
+.nav { border-bottom: 1px solid var(--rule); background: var(--paper); }
+.nav__inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 14px; padding-bottom: 14px; flex-wrap: wrap; }
+.brand { font-family: var(--font-display); font-size: 17px; }
+.brand__abbr { color: var(--ink-60); }
+.nav__links { display: flex; gap: 18px; flex-wrap: wrap; }
+.nav__links a { text-decoration: none; font-size: 14.5px; color: var(--ink); }
+.nav__links a:hover { color: var(--board); text-decoration: underline; }
 
-/* ---------- Sections (one continuous azure descent) ---------- */
-.section { padding: 140px 0; }
-.section--paper, .section--mist { background: none; }
+/* hero */
+.hero { padding: 30px 0 8px; }
+.lede { font-size: 18.5px; color: var(--ink-60); max-width: 620px; margin-bottom: 18px; }
+.hero__actions { margin: 0 0 26px; }
 
-/* preview / browser mock — white card, AEROFOLD dialog shadow */
-#preview .h2, #preview .section__lede { text-align: center; margin-inline: auto; }
-.browser {
-  margin-top: 64px;
-  background: #fff;
-  border-radius: 24px;
-  overflow: hidden;
-  box-shadow: var(--shadow-panel);
-}
-.browser__top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 20px;
-  background: var(--mist);
-}
-.b-dot { width: 10px; height: 10px; border-radius: 50%; background: hsl(215 20% 82%); }
-.browser__url {
-  margin-left: 12px;
-  font-size: 14px;
-  color: var(--ink-soft);
-  background: #fff;
-  border-radius: 9999px;
-  padding: 4px 16px;
-}
-.browser__body { display: grid; grid-template-columns: 220px 1fr; min-height: 420px; }
-.browser__side {
-  background: var(--ink);
-  color: rgba(255, 255, 255, 0.66);
-  padding: 20px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.side-item { font-size: 14px; font-weight: 500; padding: 10px 14px; border-radius: 8px; }
-.side-item.is-active { background: rgba(255, 255, 255, 0.12); color: #fff; }
-.browser__main { padding: 28px 32px 36px; color: var(--ink); }
-.dash-head { display: flex; align-items: center; justify-content: space-between; }
-.dash-head h3 { font-family: var(--font-display); font-weight: 400; font-size: 26px; letter-spacing: -0.5px; }
-.chip { font-size: 14px; font-weight: 500; color: var(--ink-soft); background: var(--mist); border-radius: 9999px; padding: 5px 14px; }
-.dash-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 24px 0; }
-.dash-stat { background: var(--mist); border-radius: 10px; padding: 18px 22px; display: flex; flex-direction: column; gap: 2px; }
-.ds-val { font-family: var(--font-display); font-size: 28px; line-height: 1; letter-spacing: -1px; }
-.ds-label { font-size: 13px; color: var(--ink-soft); }
-.dash-table { width: 100%; border-collapse: collapse; font-size: 16px; }
-.dash-table th {
-  text-align: left;
-  font-size: 14px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-soft);
-  padding: 10px 12px;
-}
-.dash-table td { padding: 13px 12px; }
-.dash-table tbody tr { border-top: 1px solid var(--mist); }
-.t-time { color: var(--ink-soft); font-size: 14px; }
-.badge {
+.btn {
   display: inline-block;
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 9999px;
-  padding: 4px 12px;
+  background: var(--board);
+  color: #fff;
+  border: 1px solid var(--board);
+  border-radius: 9px;
+  padding: 10px 22px;
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  text-decoration: none;
 }
-.badge--hi  { background: var(--ink); color: #fff; }
-.badge--mid { background: var(--mist); color: var(--ink); }
-.badge--low { background: none; color: hsl(10 55% 42%); border: 1px solid hsl(10 55% 42% / 0.4); }
+.btn:hover { background: var(--board-edge); }
+.btn--quiet { background: transparent; color: var(--board); }
+.btn--quiet:hover { background: var(--paper-dim); }
 
-/* modules — glass cards with cyan hairline */
-#modules .h2, #modules .section__lede { text-align: center; margin-inline: auto; }
-.module-grid {
-  margin-top: 64px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-.module {
-  position: relative;
+/* the real screenshot */
+.shot { margin: 6px 0 0; }
+.shot img {
   display: block;
-  padding: 28px 30px 26px;
-  border-radius: 20px;
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(10px) saturate(115%);
-  backdrop-filter: blur(10px) saturate(115%);
-  transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
-}
-.module::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--hairline);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-}
-.module:hover {
-  transform: translateY(-2px);
-  background-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 12px 34px rgba(3, 58, 92, 0.22);
-}
-.module h3 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 26px;
-  letter-spacing: -0.5px;
-  color: #ffffff;
-}
-.module p { margin-top: 10px; font-size: 15.5px; color: rgba(255, 255, 255, 0.9); }
-.module__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-.module__arrow { flex: none; color: var(--cyan); transition: transform 0.2s ease-in-out; }
-.module:hover .module__arrow { transform: translateX(4px); }
-
-/* stat band — deep tint + cyan rules */
-.band {
-  padding: 110px 0;
-  background: rgba(4, 86, 140, 0.20);
-  border-top: 1px solid rgba(112, 242, 255, 0.28);
-  border-bottom: 1px solid rgba(112, 242, 255, 0.28);
-  color: var(--on-azure);
-}
-.band__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; text-align: center; }
-.band__item { display: flex; flex-direction: column; gap: 8px; }
-.band__num {
-  font-family: var(--font-display);
-  font-size: 72px;
-  line-height: 1;
-  letter-spacing: -2px;
-  color: #ffffff;
-}
-.band__label { font-size: 14px; font-weight: 515; color: rgba(255, 255, 255, 0.86); }
-
-/* security — deep glass panel */
-.security { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 96px; align-items: start; }
-.security__intro .section__lede { margin-bottom: 36px; }
-.checklist { display: flex; flex-direction: column; gap: 16px; color: rgba(255, 255, 255, 0.95); }
-.checklist li { display: flex; align-items: flex-start; gap: 12px; }
-.checklist svg { flex: none; margin-top: 5px; color: var(--cyan); }
-.protocols {
-  position: relative;
-  background: var(--glass-deep);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-  backdrop-filter: blur(16px) saturate(120%);
-  border-radius: 20px;
-  padding: 32px 36px 24px;
-  color: rgba(255, 255, 255, 0.95);
-}
-.protocols::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--hairline);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-}
-.protocols__alert {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #075e9b;
-  background: #ffffff;
-  border-radius: 9999px;
-  padding: 7px 16px;
-}
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; }
-.protocols h3 { font-family: var(--font-display); font-weight: 400; font-size: 26px; letter-spacing: -0.5px; margin: 20px 0 8px; color: #fff; }
-.proto-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 14px 0;
-  font-size: 16px;
-}
-.proto-row:not(:last-child) { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
-.toggle {
-  width: 40px; height: 22px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.28);
-  position: relative;
-  flex: none;
-}
-.toggle::after {
-  content: "";
-  position: absolute;
-  top: 3px; left: 3px;
-  width: 16px; height: 16px;
-  border-radius: 50%;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
   background: #fff;
 }
-.toggle.is-on { background: #ffffff; }
-.toggle.is-on::after { left: 21px; background: var(--azure); }
+.shot figcaption { font-size: 13.5px; color: var(--ink-60); margin-top: 8px; }
 
-/* final CTA */
-.cta { padding: 150px 0; color: var(--on-azure); }
-.cta__inner { text-align: center; }
-.cta__lede { margin: 20px auto 0; max-width: 560px; color: rgba(255, 255, 255, 0.9); }
-.cta .pill { margin-top: 48px; }
+/* sections */
+.sec { padding: 34px 0 10px; }
+.sec--tinted {
+  margin: 26px 0 0;
+  padding: 34px 0 26px;
+  background: var(--paper-dim);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.plain { margin: 0 0 16px; padding-left: 0; list-style: none; }
+.plain li { margin: 0 0 10px; padding-left: 20px; position: relative; }
+.plain li::before { content: ""; position: absolute; left: 2px; top: 0.72em; width: 8px; height: 8px; border-radius: 2px; background: var(--board); opacity: .55; }
+.signature { font-family: var(--font-display); font-style: italic; font-size: 18px; color: var(--board); }
 
-/* ---------- Footer ---------- */
-.footer { padding: 96px 0 40px; }
-.footer__grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
-  gap: 48px;
-}
-.footer__brand h3 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 30px;
-  letter-spacing: -0.5px;
-  line-height: 1.1;
-  color: #fff;
-}
-.footer__brand p { margin-top: 14px; font-size: 16px; color: rgba(255, 255, 255, 0.82); max-width: 320px; }
-.footer__col h4 { font-size: 14px; font-weight: 515; margin-bottom: 16px; color: #fff; }
-.footer__col a { display: block; font-size: 16px; color: rgba(255, 255, 255, 0.75); padding: 5px 0; transition: color 0.2s ease-in-out; }
-.footer__col a:hover { color: #fff; }
-.footer__bottom {
-  margin-top: 72px;
-  padding-top: 28px;
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.75);
-}
-.status { display: inline-flex; align-items: center; gap: 8px; font-weight: 515; }
-.footer__credit { margin-top: 18px; font-size: 14px; color: rgba(255, 255, 255, 0.75); }
+/* footer */
+.footer { border-top: 1px solid var(--rule); margin-top: 36px; padding: 20px 0 34px; }
+.footer__inner { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--ink-60); }
+.footer a { color: var(--ink-60); }
 
-/* ---------- Mobile ---------- */
-@media (max-width: 1024px) {
-  .footer__grid { grid-template-columns: 1fr 1fr; }
-  .security { grid-template-columns: 1fr; gap: 64px; }
-  .module-grid { gap: 20px; }
-}
-@media (max-width: 767px) {
-  body { font-size: 16px; }
-  .brand { font-size: 28px; }
-  .container { padding-inline: 24px; }
-  .nav__inner { padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-  .nav__links { display: none; }
-  .hero { padding: 32px 24px 56px; }
-  .hero-badge { height: 32px; padding: 0 12px 0 4px; gap: 8px; }
-  .hero-badge__chip { height: 22px; padding: 0 9px; font-size: 11.5px; }
-  .hero-badge__text { font-size: 12.5px; }
-  .hero h1 { font-size: 48px; }
-  .hero h1 .hero-sub { font-size: 17px; margin-top: 14px; }
-  .hero__lede { font-size: 16px; }
-  .hero__actions { margin-top: 40px; gap: 20px; }
-  .pill--hero { padding: 16px 40px; font-size: 15px; }
-  .pill--nav { padding: 10px 20px; }
-  .section { padding: 88px 0; }
-  .h2, .h2--display { font-size: 44px; letter-spacing: -1px; }
-  .browser { border-radius: 18px; }
-  .browser__body { grid-template-columns: 1fr; }
-  .browser__side { display: none; }
-  .browser__main { padding: 22px 20px 28px; }
-  .dash-stats { gap: 10px; }
-  .ds-val { font-size: 30px; }
-  .dash-table .t-time { display: none; }
-  .module-grid { grid-template-columns: 1fr; margin-top: 48px; gap: 16px; }
-  .module { padding: 24px 24px 22px; }
-  .band { padding: 80px 0; }
-  .band__grid { grid-template-columns: 1fr 1fr; gap: 40px 16px; }
-  .band__num { font-size: 44px; }
-  .cta { padding: 104px 0; }
-  .footer { padding: 72px 0 32px; }
-  .footer__grid { grid-template-columns: 1fr; gap: 36px; }
-}
-
-/* ---------- Reduced motion ---------- */
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .rise, .fade { animation: fade-in 0.01s both; }
-  .stage__media video { display: none; }
-  .pill, .quiet-link svg, .module__arrow, .module { transition: none; }
-  .pill--nav:hover, .pill--hero:hover, .module:hover { transform: none; }
-  .reveal > .container > * { opacity: 1; transform: none; transition: none; }
+@media (max-width: 560px) {
+  .nav__inner { flex-direction: column; align-items: flex-start; }
+  .hero { padding-top: 16px; }
 }
 </style>
 </head>
 <body>
 
-<div class="stage" id="platform">
-  <div class="stage__media" aria-hidden="true">
-    <video autoplay muted loop playsinline preload="auto"
-           poster="media/aerofold-paper-bloom-poster.png">
-      <source media="(max-aspect-ratio: 1/1)" src="media/aerofold-paper-bloom-portrait.mp4" type="video/mp4">
-      <source src="media/aerofold-paper-bloom-landscape.mp4" type="video/mp4">
-    </video>
+<nav class="nav">
+  <div class="wrap nav__inner">
+    <span class="brand">Student&rsquo;s Performance Report <span class="brand__abbr">(SPR)</span></span>
+    <div class="nav__links">
+      <a href="app/">Open the app</a>
+      <a href="notice.html">How your data is stored</a>
+      <a href="app/#/help">Help</a>
+    </div>
   </div>
-  <div class="stage__tint" aria-hidden="true"></div>
-  <div class="stage__scrim" aria-hidden="true"></div>
+</nav>
 
-  <nav class="nav fade" aria-label="Primary">
-    <div class="nav__inner">
-      <a class="brand" href="#platform">SPR with Mo</a>
-      <ul class="nav__links">
-        <li><a href="#platform">Platform</a></li>
-        <li><a href="#modules">Modules</a></li>
-        <li><a href="#security">Security</a></li>
-      </ul>
-      <a class="pill pill--nav" href="app/">Open App</a>
-    </div>
-  </nav>
+<header class="hero">
+  <div class="wrap">
+    <h1>A markbook for ESL classes.</h1>
+    <p class="lede">Enter weekly scores, watch grades update, print report cards. Made by an ESL teacher for his own classes.</p>
+    <p class="hero__actions"><a class="btn" href="app/">Open the app</a></p>
+    <figure class="shot">
+      <img src="media/landing-app-screenshot.png" alt="The SPR dashboard: the sample class with live grades and report-card tools." width="1160" height="724">
+      <figcaption>The app with its sample class. Your own data stays in your browser.</figcaption>
+    </figure>
+  </div>
+</header>
 
-  <header class="hero">
-    <div class="hero__inner">
-      <div class="hero-badge rise rise--1"><span class="hero-badge__chip">New</span><span class="hero-badge__text">Encrypted on device &middot; no tracking &middot; sync is optional</span></div>
-      <h1 class="rise rise--2">Every score tells a <em>story</em>.<span class="hero-sub">Help every learner write a brighter next chapter.</span></h1>
-      <p class="hero__lede rise rise--3">
-        Complete ESL performance tracking &mdash; classroom observations, spelling,
-        assignments, tests, auto&#8209;grading, cross&#8209;semester analytics, and
-        professional report cards.
-      </p>
-      <div class="hero__actions rise rise--4">
-        <a class="pill pill--hero" href="app/">Open the App</a>
-        <a class="quiet-link" href="#modules">Explore features
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-        </a>
-      </div>
-    </div>
-  </header>
-</div>
-
-<section class="section section--mist reveal" id="preview">
-  <div class="container">
-    <h2 class="h2">Your classroom, at a <em>glance</em></h2>
-    <p class="section__lede">Live grades, averages and updates &mdash; the moment scores are entered.</p>
-    <div class="browser" data-ui>
-      <div class="browser__top"><span class="b-dot"></span><span class="b-dot"></span><span class="b-dot"></span><span class="browser__url">my-spr-with-mo.duckdns.org</span></div>
-      <div class="browser__body">
-        <div class="browser__side" aria-hidden="true">
-          <span class="side-item is-active">Dashboard</span>
-          <span class="side-item">Students</span>
-          <span class="side-item">Enter Scores</span>
-          <span class="side-item">Grading</span>
-          <span class="side-item">Analysis</span>
-          <span class="side-item">Report Cards</span>
-        </div>
-        <div class="browser__main">
-          <div class="dash-head"><h3>Class Dashboard</h3><span class="chip">Encrypted on this device</span></div>
-          <div class="dash-stats">
-            <div class="dash-stat"><span class="ds-val">23</span><span class="ds-label">Students</span></div>
-            <div class="dash-stat"><span class="ds-val">87.7%</span><span class="ds-label">Class Avg</span></div>
-            <div class="dash-stat"><span class="ds-val">17</span><span class="ds-label">Grade A*</span></div>
-          </div>
-          <table class="dash-table">
-            <thead><tr><th>Student</th><th>Final</th><th>Grade</th><th class="t-time">Last Updated</th></tr></thead>
-            <tbody>
-              <tr><td>Student A</td><td>98.4%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student B</td><td>96.6%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student C</td><td>96.9%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student D</td><td>57.9%</td><td><span class="badge badge--mid">C</span></td><td class="t-time">5 min ago</td></tr>
-              <tr><td>Student E</td><td>41.2%</td><td><span class="badge badge--low">U</span></td><td class="t-time">5 min ago</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+<main>
+<section class="sec" id="what">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <ul class="plain">
+      <li><b>Weekly score entry.</b> Spelling, daily assignments, observations and tests, with auto-filled totals.</li>
+      <li><b>Automatic grades.</b> A* to U, computed from the school&rsquo;s formula (written 20%, every other part 10%).</li>
+      <li><b>Report cards.</b> One page per student, printable, with comments you can hand-copy into the school performance book.</li>
+      <li><b>Works offline.</b> After the first visit the app reopens without an internet connection.</li>
+    </ul>
   </div>
 </section>
 
-<section class="section section--paper reveal" id="modules">
-  <div class="container">
-    <h2 class="h2">Everything you <em>need</em></h2>
-    <p class="section__lede">From weekly score entry to semester report cards &mdash; the entire workflow in one place.</p>
-    <div class="module-grid">
-      <a class="module" href="app/#/entry/sp">
-        <span class="module__head"><h3>Score Entry</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Fast weekly entry for spelling, daily assignments, observations, and tests. Paste from Excel, auto-fill totals, live averages.</p>
-      </a>
-      <a class="module" href="app/#/grading">
-        <span class="module__head"><h3>Auto Grading</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>A* through U computed automatically with the SPR formula &mdash; Written counts 20%, every other part 10%. Grades update instantly when a score changes.</p>
-      </a>
-      <a class="module" href="app/#/analysis/class">
-        <span class="module__head"><h3>Comparative Analysis</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Cross-semester progress with movers, RAG indicators, SWOT analysis, and auto-generated teacher remarks.</p>
-      </a>
-      <a class="module" href="app/#/reports/student">
-        <span class="module__head"><h3>Report Cards</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Professional student report cards with SWOT, rankings, and parent-ready formatting. Print to PDF or batch-export to Excel.</p>
-      </a>
-      <a class="module" href="app/#/manage">
-        <span class="module__head"><h3>Excel Import / Export</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Import existing SPR workbooks with one click. Export back to the same format. Your data stays in this browser until <em>you</em> choose to export it or use encrypted Share&nbsp;&amp;&nbsp;sync.</p>
-      </a>
-      <a class="module" href="app/#/manage">
-        <span class="module__head"><h3>Privacy by Design</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>No tracking, no server accounts. No student data leaves this device unless you turn on sync or Save &amp; Share — and then only an encrypted copy.</p>
-      </a>
-    </div>
+<section class="sec sec--tinted" id="data">
+  <div class="wrap">
+    <h2>Your data</h2>
+    <ul class="plain">
+      <li>Data lives in this browser, on this device. It is encrypted with your password.</li>
+      <li>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. Then an encrypted copy goes to Supabase.</li>
+      <li>Exported Excel and backup files are not encrypted. Keep them on school-approved storage.</li>
+      <li>The maker of SPR does not collect, read or sell your data.</li>
+    </ul>
+    <p><a class="btn btn--quiet" href="notice.html">Read the full notice</a></p>
   </div>
 </section>
 
-<section class="band reveal" id="numbers">
-  <div class="container band__grid">
-    <div class="band__item"><span class="band__num" data-count="23">23</span><span class="band__label">Students Tracked</span></div>
-    <div class="band__item"><span class="band__num" data-count="9">9</span><span class="band__label">Grading Components</span></div>
-    <div class="band__item"><span class="band__num" data-count="6" data-suffix="+">6+</span><span class="band__label">Report Types</span></div>
-    <div class="band__item"><span class="band__num" data-count="100" data-suffix="%">100%</span><span class="band__label">Data Privacy</span></div>
+<section class="sec" id="who">
+  <div class="wrap">
+    <h2>Who made it</h2>
+    <p>Mohammed Shehzad Khan (Teacher Mo) teaches ESL and built SPR for his own classes, then opened it to colleagues at his school. It is free. It is not a commercial product.</p>
+    <p class="signature">Designed for teachers, by a teacher.</p>
   </div>
 </section>
-
-<section class="section section--paper reveal" id="security">
-  <div class="container security">
-    <div class="security__intro">
-      <h2 class="h2">Privacy &amp; <em>security</em></h2>
-      <p class="section__lede">No student data leaves this device unless you turn on sync or Save &amp; Share — and then only an encrypted copy. No telemetry, no tracking.</p>
-      <ul class="checklist">
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>Data stored encrypted in your browser; cloud copies (only if you turn sync on) are unreadable bytes</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>No server accounts &mdash; no analytics or tracking</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>Offline-ready: after your first successful visit, the app reopens without an internet connection</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>One-click backup file to move data between devices</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>One-click erase removes all data permanently</li>
-      </ul>
-    </div>
-    <div class="protocols" data-ui>
-      <p class="protocols__alert"><span class="dot"></span> No accounts. No tracking. No analytics.</p>
-      <h3>Security Protocols</h3>
-      <div class="proto-row"><span>Local-only data storage</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Offline-ready &mdash; nothing leaves the device unless you export or use encrypted Share &amp; sync</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Offline-ready (service worker)</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Auto-save on every input</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Encrypted JSON backups</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-    </div>
-  </div>
-</section>
-
-<section class="cta reveal">
-  <div class="container cta__inner">
-    <h2 class="h2 h2--display">Ready to get <em>started</em>?</h2>
-    <p class="cta__lede">Import your SPR Excel file and start tracking in under a minute.</p>
-    <a class="pill pill--hero" href="app/">Open the App</a>
-  </div>
-</section>
+</main>
 
 <footer class="footer">
-  <div class="container">
-    <div class="footer__grid">
-      <div class="footer__brand">
-        <h3>Students Performance Report</h3>
-        <p>A complete ESL performance tracking system for bilingual classrooms. Built from real teaching experience.</p>
-      </div>
-      <div class="footer__col"><h4>Platform</h4><a href="app/#/dashboard">Dashboard</a><a href="app/#/students">Students</a><a href="app/#/entry/sp">Enter Scores</a><a href="app/#/grading">Grading</a></div>
-      <div class="footer__col"><h4>Analytics</h4><a href="app/#/analysis/class">Class Progress</a><a href="app/#/analysis/student">Student Deep-Dive</a><a href="app/#/reports/class">Class Report</a></div>
-      <div class="footer__col"><h4>Reports</h4><a href="app/#/reports/student">Report Cards</a><a href="app/#/reports/class">Class Summary</a><a href="app/#/manage">Excel Import</a></div>
-      <div class="footer__col"><h4>Support</h4><a href="app/#/manage">Manage &amp; Setup</a><a href="#security">Privacy Notice</a><a href="#security">Data Backup</a></div>
-    </div>
-    <div class="footer__bottom">
-      <span>&copy; 2026 Students Performance Report. All rights reserved.</span>
-      <span class="status"><span class="dot"></span> Offline-ready after first visit &mdash; the cloud only ever holds an encrypted copy, and only if you turn sync on</span>
-    </div>
-    <p class="footer__credit">Designed for teachers, by a teacher &mdash; Mohammed Shehzad Khan (Teacher Mo)</p>
+  <div class="wrap footer__inner">
+    <span>Made by Mohammed Shehzad Khan (Teacher Mo). Provided as is. <a href="notice.html">See the notice</a>.</span>
+    <span class="footer__links"><a href="app/">Open the app</a> &middot; <a href="notice.html">Notice</a> &middot; <a href="app/#/help">Help</a></span>
   </div>
 </footer>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  /* section reveals: staggered fade-rise of each section's parts */
-  var els = document.querySelectorAll('.reveal');
-  var obs = new IntersectionObserver(function(entries) {
-    entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
-  }, { threshold: 0.12 });
-  els.forEach(function(el) { obs.observe(el); });
-
-  /* stat count-up (kept from original) */
-  var nums = document.querySelectorAll('[data-count]');
-  var numObs = new IntersectionObserver(function(entries) {
-    entries.forEach(function(e) {
-      if (!e.isIntersecting) return;
-      numObs.unobserve(e.target);
-      var el = e.target, target = parseInt(el.dataset.count || '0'), suffix = el.dataset.suffix || '', dur = 2000, start = performance.now();
-      /* HTML already carries the real final value (no-JS visitors see it);
-         the animation only runs for JS visitors and starts from 0 */
-      el.textContent = '0' + suffix;
-      function tick(now) {
-        var t = Math.min((now - start) / dur, 1);
-        el.textContent = Math.round((1 - Math.pow(1 - t, 4)) * target) + suffix;
-        if (t < 1) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-    });
-  }, { threshold: 0.3 });
-  nums.forEach(function(n) { numObs.observe(n); });
-
-  /* paper-bloom video lifecycle: fade in on play, poster underlay on failure.
-     NB: Chromium fires a harmless error on <source> skipped by its media query —
-     never remove the element, just drop the class so the poster underlay shows. */
-  var mediaEl = document.querySelector('.stage__media');
-  var v = mediaEl && mediaEl.querySelector('video');
-  if (v) {
-    v.addEventListener('playing', function() { mediaEl.classList.add('is-playing'); });
-    v.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
-    Array.prototype.forEach.call(v.querySelectorAll('source'), function(s) {
-      s.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
-    });
-    /* autoplay may have started before this script ran: sync the class */
-    if (!v.paused) { mediaEl.classList.add('is-playing'); }
-  }
-});
-</script>
 </body>
 </html>

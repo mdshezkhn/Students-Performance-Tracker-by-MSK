@@ -244,7 +244,7 @@
 
   function exportWorkbook(sem, audit) {
     const wb = stampProps(XLSX.utils.book_new(), {
-      Title: [sem.school, sem.className, 'SPR', sem.name].filter(Boolean).join(' - '),
+      Title: [sem.school, sem.className, "Student's Performance Report (SPR)", sem.name].filter(Boolean).join(' - '),
       Company: sem.school || 'SPR — by Teacher Mo'
     });
     const G = (sid) => Calc.gradeStudent(sem, sid);

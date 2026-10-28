@@ -450,8 +450,8 @@ const ADMIN = 'mo';
   {
     const fs = require('fs');
     const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-    ok(/data-count="23">23</.test(landing) && /data-count="6" data-suffix="\+">6\+</.test(landing) && /data-count="100" data-suffix="%">100%</.test(landing),
-      'stat counters carry their real final values in the HTML (visible with JS off)');
+    ok(!/data-count=/.test(landing) && /A markbook for ESL classes/.test(landing) && /Nothing is sent anywhere unless an admin turns on Device sync/.test(landing),
+      'landing is the plain 2026-10-28 rebuild: honest facts, no count-up stats');
     ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
       'no absolute privacy claims remain on the landing page');
     ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');

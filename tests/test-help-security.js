@@ -79,7 +79,7 @@ async function firstRun(B, user, pw) {
   if (ls) { click(A, ls); await sleep(900); }   /* sample data so the legacy shell renders */
   await go(A, '#/manage');
 
-  check(txt(A).indexOf('Data — administrator only') !== -1, 'Data section is labelled administrator-only');
+  check(/Data ?(—|:) ?administrator only/.test(txt(A)), 'Data section is labelled administrator-only');
   check(txt(A).indexOf('Erase everything') === -1, 'no Erase everything for the admin either (removed at owner request)');
   const rs = A.d.querySelector('[data-action="load-sample"].danger-solid');
   check(!!rs, 'Reset to sample data is the solid-red danger style');
