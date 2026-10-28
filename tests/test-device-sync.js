@@ -174,6 +174,19 @@ async function loginCloudAs(B, user, pass) {
   setVal(A, A.d.getElementById('suPass'), PW);
   setVal(A, A.d.getElementById('suConf'), PW);
   click(A, A.d.querySelector('[data-action="first-run"]'));
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = A.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new A.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
   await waitFor(function () { return !A.d.body.classList.contains('auth-gate'); }, 15000);
   await ackPrivacy(A);
   ok(!A.d.body.classList.contains('auth-gate'), 'owner signed in');
@@ -301,6 +314,19 @@ async function loginCloudAs(B, user, pass) {
   setVal(D, D.d.getElementById('suPass'), PW);
   setVal(D, D.d.getElementById('suConf'), PW);
   click(D, D.d.querySelector('[data-action="first-run"]'));
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = D.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new D.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new D.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new D.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
   await waitFor(function () { return !D.d.body.classList.contains('auth-gate'); }, 15000);
   await ackPrivacy(D);
   ok(!D.d.body.classList.contains('auth-gate'), 'device D set up its own local account');

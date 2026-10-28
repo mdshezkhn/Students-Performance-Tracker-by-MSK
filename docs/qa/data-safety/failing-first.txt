@@ -1,0 +1,47 @@
+1. stale tab cannot overwrite a newer write
+  ok: admin signed in
+  ok: made an edit in the stale tab
+  FAIL: stale overlay shown (reload prompt)
+  FAIL: stale tab did NOT overwrite the newer blob
+2. write failure: persistent banner, no false Saved
+  ok: signed in
+  FAIL: persistent NOT-SAVED banner shown
+  FAIL: banner says NOT SAVED with advice
+  FAIL: banner has a Download backup button
+  FAIL: indicator does not claim Saved
+3. persistent storage + backup affordances
+  ok: signed in
+  FAIL: navigator.storage.persist() requested after sign-in
+  FAIL: one-tap Download backup in the sidebar
+  FAIL: Manage shows persistent-storage status
+4. password policy (CS.pwOk) + first-run recovery gate
+  FAIL: admin pw "1" rejected
+  FAIL: common pw "password" rejected for admin
+  ok: strong admin pw accepted
+  ok: teacher pw >= 6 accepted
+  FAIL: teacher pw < 6 rejected
+  FAIL: first-run stops at a recovery-path dialog (master password or recovery file)
+  ok: setup completes once a recovery path is chosen
+5. sync pushes carry the write token
+  ok: signed in
+  FAIL: a push was attempted
+  FAIL: push carries x-spr-write-token header
+6. newer session mirror offers recovery
+  FAIL: boot offers to recover the newer mirror
+  FAIL: recovered data (Benjamin) is live after accepting
+7. deletes stash a safety copy and say so
+  ok: signed in
+  FAIL: delete dialog mentions the automatic safety copy
+  FAIL: safety copy stashed before removal
+8. reset.html: ERASE gate + forced raw copy first
+  FAIL: requires typing ERASE
+  FAIL: wipe button starts disabled
+  FAIL: wipe enables only after the raw copy is saved
+  FAIL: raw copy is no longer described as optional
+  ok: app bundle does not link reset.html
+9. vault mode warns that every sign-in shares the markbook
+  ok: signed in
+  FAIL: Manage shows the vault-mode warning
+  ok: Add-account dialog carries the warning
+
+DATA-SAFETY: 12 ok, 24 FAIL
