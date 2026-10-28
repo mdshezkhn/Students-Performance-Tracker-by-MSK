@@ -126,6 +126,16 @@ body {
 .btn.primary:hover { background: var(--board-edge); }
 .btn.danger { color: var(--red); border-color: #e0b4b0; }
 .btn.danger:hover { background: #faf0ef; border-color: var(--red); }
+/* destructive administrator actions — deliberately loud (2026-10-27) */
+.btn.danger-solid { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+.btn.danger-solid:hover { background: #a93329; border-color: #a93329; color: #fff; }
+.btn.danger-solid:focus-visible { outline-color: var(--red); }
+/* help & training modules (2026-10-27) */
+.help-mod { border: 1px solid var(--rule-strong); border-radius: 8px; background: #fff; padding: 10px 14px; margin-top: 10px; }
+.help-mod summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.help-mod summary:hover { color: var(--board); }
+.help-mod[open] { padding-bottom: 6px; }
+.help-mod ol { color: var(--ink-60); }
 .btn.sm { padding: 3px 9px; font-size: 12px; }
 select.inp, input.inp, textarea.inp {
   font: inherit; padding: 5px 8px; border: 1px solid var(--rule-strong);
@@ -608,7 +618,7 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="d2236b6f67";</script>
+<script>window.SPR_BUILD="ffa174d502";</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -3291,9 +3301,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   function navList() {
     const r = classRole((currentUser() || {}).role);
     let list;
-    if (r === 'admin') list = NAV_T.concat([['ranking', 'Ranking'], ['users', 'Users'], ['manage', 'Manage & setup']]);
-    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking'], ['manage', 'Manage & setup']]);
-    else list = NAV_T.concat([['manage', 'Manage & setup']]);   /* non-admin Manage = password card only (2026-10-25) */
+    if (r === 'admin') list = NAV_T.concat([['ranking', 'Ranking'], ['users', 'Users'], ['help', 'Help & training'], ['manage', 'Manage & setup']]);
+    else if (r === 'manager') list = NAV_T.concat([['ranking', 'Ranking'], ['help', 'Help & training'], ['manage', 'Manage & setup']]);
+    else list = NAV_T.concat([['help', 'Help & training'], ['manage', 'Manage & setup']]);   /* non-admin: password card + Help & training (2026-10-27, owner requests 2-3) */
     if (CLS && classPendingCount() && canDo('review')) list.splice(2, 0, ['review', 'Review (' + classPendingCount() + ')']);
     return list;
   }
@@ -3368,9 +3378,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
        with no class open has an empty in-memory DB but must see its class list */
     if (sprMode() === 'class' && !document.body.classList.contains('auth-gate')) {
       const cv = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
-      if (!CLS && cv !== 'classes' && !((cv === 'users' || cv === 'manage') && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
+      if (!CLS && cv !== 'classes' && cv !== 'help' && !((cv === 'users' || cv === 'manage') && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; }
       if (cv === 'users') { if (classRole((currentUser() || {}).role) === 'admin') { renderUsers(); window.scrollTo(0, 0); return; } location.hash = '#/classes'; return; }
       if (cv === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); window.scrollTo(0, 0); return; }
+      if (cv === 'help' && !CLS) { renderHelp(); railActive('help'); window.scrollTo(0, 0); return; }   /* Help works from the chooser too (self-contained, 2026-10-27) — exempted from the redirect above */
       if (cv === 'manage') {
         /* every role may open Manage now (2026-10-25): admins get the full
            setup page, non-admins get the password card (renderManage branches
@@ -3401,6 +3412,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       case 'report': renderReportCard(decodeURIComponent(parts[1] || '')); break;
       case 'ranking': renderRanking(); break;
       case 'manage': renderManage(); break;
+      case 'help': renderHelp(); break;
       case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
       default: renderDashboard();
@@ -5154,6 +5166,103 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '</main></div>';
   }
 
+  /* ============================== help & training ==============================
+     One page for every role: training modules, the manual + video, and a
+     request line to the owner (2026-10-27, owner request 3 — replaces the
+     small Help & support panel inside Manage & setup). The request form has
+     no server: it composes a message the teacher sends by email or pastes
+     into WeChat/DingTalk — nothing is uploaded by itself. */
+  const OWNER_EMAIL = 'mdshezkhn@aol.com';   /* site owner (Teacher Mo) — change here if the mailbox changes */
+
+  function reqText() {
+    const type = ($('#reqType') && $('#reqType').value) || 'Other';
+    const subj = ($('#reqSubj') && $('#reqSubj').value.trim()) || '';
+    const body = ($('#reqBody') && $('#reqBody').value.trim()) || '';
+    const me = currentUser() || {};
+    return '[SPR] ' + (subj || type) + '\n\nType: ' + type +
+      '\n\n' + (body || '(no details given)') +
+      '\n\n---\nFrom: ' + (me.name || me.username || 'unknown') + ' (' + roleLabel(me.role) + ')' +
+      '\nScreen: ' + (location.hash || '#/') +
+      '\nBuild: ' + (window.SPR_BUILD || 'unknown') +
+      '\nSent: ' + new Date().toLocaleString();
+  }
+  function reqMailto() {
+    const subj = ($('#reqSubj') && $('#reqSubj').value.trim()) || (($('#reqType') && $('#reqType').value) || 'SPR request');
+    return 'mailto:' + OWNER_EMAIL + '?subject=' + encodeURIComponent('[SPR] ' + subj) + '&body=' + encodeURIComponent(reqText());
+  }
+  function helpContentHtml() {
+    const MANUAL = '/media/manual/SPR-with-Mo_Teachers-Operation-Manual.pdf';
+    const VIDEO = '/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4';
+    const mod = (t, steps) => '<details class="help-mod"><summary>' + t + '</summary><ol class="small" style="margin:8px 0 2px;padding-left:20px;line-height:1.7">' +
+      steps.map((x) => '<li>' + x + '</li>').join('') + '</ol></details>';
+    return '<div class="panel"><b>Training modules</b> <span class="small muted">— tap a topic to open it. The illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</span>' +
+      '<div class="flex" style="margin-top:8px">' +
+        '<a class="btn sm" href="' + MANUAL + '" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
+        '<a class="btn sm" href="' + VIDEO + '" target="_blank" rel="noopener">Watch the video guide</a>' +
+      '</div>' +
+      '<video controls preload="none" src="' + VIDEO + '" style="width:100%;max-width:640px;margin-top:10px;border-radius:8px;background:#000;display:block"></video>' +
+      mod('1. Set up a class', [
+        'Manage &amp; setup &rarr; <b>New class / semester</b>: pick the year, term months, school and class name.',
+        'Add students on the <b>Students</b> tab — type them one by one, or expand <b>Paste many students</b> and paste a whole roster (one per line: ID, Chinese name, English name, Gender).',
+        'Already keep a paper or Excel SPR workbook? <b>Import SPR Excel</b> reads it straight in — one file per class.',
+      ]) +
+      mod('2. Day to day — observations, spelling and daily scores', [
+        '<b>Enter scores</b> is the everyday screen: observations, spelling and daily marks for the chosen month.',
+        'With <b>auto-fill totals</b> on (Manage &amp; setup &rarr; Settings), typing a score fills in its total automatically.',
+        'Everything saves to this browser as you type — the small dot in the sidebar confirms each save.',
+      ]) +
+      mod('3. Grading and report cards', [
+        '<b>Grading</b> turns the raw marks into grades with a class overview.',
+        '<b>Report Cards</b> builds each pupil&rsquo;s card and prints on one A4 page; add your own wording or start from the suggested comments.',
+        'A grade stays provisional until enough work is assessed — the 6-of-9 rule decides when a final grade appears.',
+      ]) +
+      mod('4. Share a class with a co-teacher', [
+        'Manage &amp; setup &rarr; <b>Share &amp; sync</b>: pick the class, press <b>Save &amp; Share</b>, send the link or QR code to your co-teacher.',
+        'Data is encrypted before upload — the cloud never sees names or scores in the clear.',
+        'Discipline: <b>pull before you start, push when you finish</b>. Last save wins; the app warns if a newer copy exists.',
+      ]) +
+      mod('5. Backups and moving to another computer', [
+        'Manage &amp; setup &rarr; <b>Download full backup (all semesters)</b> — one file with everything. Keep it in approved storage only (it is unencrypted).',
+        'On the new computer: sign in, then <b>Restore backup</b> and pick the file.',
+        'The app also keeps automatic <b>safety copies</b> before data gets replaced — restore them from Manage &amp; setup.',
+      ]) +
+      mod('6. Sign-ins and passwords', [
+        'Change your own password: Manage &amp; setup &rarr; <b>Change my password</b>.',
+        'Forgot it? The administrator resets it for you: <b>Users</b> (or Manage &amp; setup &rarr; Sign-ins on this device) &rarr; <b>Reset password</b>.',
+        'Admins: set a <b>master password</b> once — from the sign-in screen it can recover the admin account if that password is ever forgotten.',
+      ]) +
+      '</div>' +
+      '<div class="panel" style="margin-top:12px"><b>Raise a request to the administrator</b> <span class="small muted">— something broken, a feature idea, or an account or password problem. The request goes straight to Teacher Mo (the site owner); fixes usually ship within a day.</span>' +
+      '<div class="req-box" style="max-width:640px">' +
+        '<label style="display:block;margin-top:10px;font-size:13px">What is it about? <select class="inp" id="reqType" style="width:100%;margin-top:4px">' +
+          ['Something is broken', 'I need help using a screen', 'Feature idea', 'Password or account help', 'Other'].map((t) => '<option>' + t + '</option>').join('') + '</select></label>' +
+        '<label style="display:block;margin-top:10px;font-size:13px">Short summary <input class="inp" id="reqSubj" style="width:100%;margin-top:4px" placeholder="e.g. Spelling total does not auto-fill in March" maxlength="120"></label>' +
+        '<label style="display:block;margin-top:10px;font-size:13px">Details — what did you do, what happened, what did you expect? <textarea class="inp" id="reqBody" rows="5" style="width:100%;margin-top:4px" placeholder="Write in English or Chinese. Your name, screen and app version are added automatically."></textarea></label>' +
+        '<div class="flex" style="margin-top:12px">' +
+          '<button class="btn primary" data-action="req-email">Send by email</button>' +
+          '<button class="btn" data-action="req-copy">Copy request text</button>' +
+          '<span class="small muted" style="align-self:center">&ldquo;Copy request text&rdquo; is for WeChat / DingTalk — paste it into your chat with Teacher Mo.</span>' +
+        '</div>' +
+        '<p class="small muted" style="margin:8px 0 0">Before experimenting with data: download a full backup first (Manage &amp; setup). Your request text stays on this screen until you send it — nothing is uploaded by itself.</p>' +
+      '</div></div>';
+  }
+  function renderHelp() {
+    if ($('#content')) {
+      $('#content').innerHTML = pageHead('Help & training', 'guides, manuals and a direct line to the administrator') + helpContentHtml();
+      window.scrollTo(0, 0);
+      return;
+    }
+    /* self-contained: the chooser screen has no shell — draw the whole page */
+    $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:980px;margin:0 auto;width:100%">' +
+      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<a class="btn" href="' + (sprMode() !== 'class' ? '#/dashboard' : '#/classes') + '" style="font-size:11.5px;padding:5px 12px">&larr; Back to the app</a>' +
+        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
+      pageHead('Help & training', 'guides, manuals and a direct line to the administrator') +
+      helpContentHtml() +
+      '</main></div>';
+    window.scrollTo(0, 0);
+  }
+
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
@@ -5174,15 +5283,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       window.scrollTo(0, 0);
       return;
     }
-    /* non-admin (class mode): Manage holds ONE thing — the password card
-       (2026-10-25). Setup/pairing/admin tools stay out of teachers' reach;
-       students live on the Students tab now. */
-    if (sprMode() === 'class' && classRole((currentUser() || {}).role) !== 'admin') {
+    /* non-admin (both modes): Manage holds ONE thing — the password card
+       (2026-10-25; extended to legacy mode 2026-10-27). Setup/pairing/admin
+       tools — wizard, Excel import/export, backups, data reset — stay out of
+       teachers' reach; students live on the Students tab. */
+    if (classRole((currentUser() || {}).role) !== 'admin') {
       $('#content').innerHTML = pageHead('Manage & setup', 'your account') +
         '<div class="panel" style="max-width:620px">' +
         '<h3 style="font-family:var(--font-display);margin:0 0 8px">Your account</h3>' +
         '<p class="small muted" style="margin:0 0 12px">Change your own sign-in password. Everything else here is for the admin; students are managed on the Students tab.</p>' +
-        '<button class="btn primary" data-action="change-pass-open">Change my password</button></div>';
+        '<button class="btn primary" data-action="change-pass-open">Change my password</button>' +
+        '<p class="small muted" style="margin:10px 0 0">Forgot your password? Ask your administrator (Teacher Mo) to reset it — <b>Users &rarr; Reset password</b>. Step-by-step: <a href="#/help">Help &amp; training</a>, module 6.</p></div>';
       window.scrollTo(0, 0);
       return;
     }
@@ -5217,12 +5328,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<label>spelling total <input class="inp" type="number" data-setf="spTotal" value="' + st.spTotal + '"' + (canDo('edit.roster') ? '' : ' disabled') + ' style="width:64px"></label>' +
         '<label>daily total <input class="inp" type="number" data-setf="daTotal" value="' + st.daTotal + '"' + (canDo('edit.roster') ? '' : ' disabled') + ' style="width:64px"></label>' +
       '</div></div>' +
-      '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Help &amp; support</b> — the illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</p>' +
+      '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Help &amp; training</b> — step-by-step modules for every screen, the illustrated 30-page manual (PDF), the 4-minute video guide, and a direct request line to the administrator.</p>' +
       '<div class="flex">' +
-      '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teachers-Operation-Manual.pdf" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
-      '<a class="btn sm" href="/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4" target="_blank" rel="noopener">Watch the video guide</a></div>' +
-      '<p class="small muted" style="margin-top:8px">Something looks wrong or a feature misbehaves? Note what you did and what happened, and tell the site owner (Teacher Mo) — fixes usually ship within a day. Your data lives in this browser: before any experiment, use “Download full backup” below.</p></div>' +
-      '<div class="flex" style="margin-top:10px"><button class="btn" data-action="change-pass-open">Change my password</button></div>' +
+      '<a class="btn primary" href="#/help">Open Help &amp; training</a>' +
+      '<button class="btn" data-action="change-pass-open">Change my password</button></div>' +
+      '<p class="small muted" style="margin-top:8px">Forgot your password? The administrator resets it: Users &rarr; <b>Reset password</b> (Help &amp; training, module 6). Before any experiment with data, use “Download full backup” below.</p></div>' +
       (reviewPanelHtml() || '') +
 
       ((currentUser() || {}).role === 'admin' && sprMode() === 'legacy' && DB.semesters.length ?
@@ -5312,12 +5422,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Share &amp; sync needs the online version (https). Open the website in a browser to use it.</p>' : '') +
           '</div>';
       })()) +
-      '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Data</h3>' +
+      (isAdmin() ?
+      '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Data — administrator only</h3>' +
       '<div class="flex">' +
-        '<button class="btn" data-action="load-sample">Reset to sample data</button>' +
+        '<button class="btn danger-solid" data-action="load-sample">Reset to sample data</button>' +
         (window.__SPR_CORRUPT ? '<button class="btn" data-action="dl-corrupt">Download damaged data file</button>' : '') +
-        '<button class="btn danger" data-action="wipe">Erase everything</button>' +
       '</div>' +
+      '<p class="small muted" style="margin-top:8px;max-width:640px">Replaces every class, student and score in this browser with the demo semester. Real data is gone from this device (a cloud copy for sharing, if any, is <b>not</b> removed — overwrite it by pushing fresh data). A safety copy is kept automatically and can be restored from “Backups” below.</p>'
+      : '') +
       '<input type="file" id="file-xlsx" accept=".xlsx,.xls" multiple hidden>' +
       '<input type="file" id="file-json" accept=".json" hidden>' +
       ((classRole((currentUser() || {}).role) === 'admin')
@@ -5750,10 +5862,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       '<h4>Your responsibilities</h4><ul>' +
       '<li>This browser profile contains confidential student information — protect the device (screen lock, no shared accounts).</li>' +
       '<li>Backup files (JSON / Excel exports) contain full student data. Store them only on encrypted or school-approved storage, and delete them when no longer needed.</li>' +
-      '<li>Avoid entering student data on shared or public computers. If unavoidable, use “Erase everything” in Manage &amp; setup before leaving.</li>' +
+      '<li>Avoid entering student data on shared or public computers. If unavoidable, sign out before leaving the device (the administrator can remove a sign-in via Users &rarr; Reset password).</li>' +
       '<li>Sharing student performance outside school (parents, other staff) should follow your school’s policy and applicable law (e.g. PIPL in China, GDPR elsewhere).</li></ul>' +
       '<h4>Removing data</h4><ul>' +
-      '<li>“Erase everything” deletes all data from this browser, including the encryption keys. It does <b>not</b> delete a copy already pushed to the cloud — overwrite it by pushing fresh data, or (Device sync) use “Turn off &amp; delete cloud copy” in Manage.</li></ul>' +
+      '<li>The administrator can reset any password (Users &rarr; Reset password) and reset the dataset to the demo semester (Manage &amp; setup &rarr; Data) — both keep automatic safety copies so nothing is lost by accident. A copy already pushed to the cloud is overwritten by pushing fresh data, or (Device sync) “Turn off &amp; delete cloud copy” in Manage.</li></ul>' +
       '<p class="small muted">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</p></div>' +
       '<div class="dlg-actions"><button class="btn primary" data-action="' + (gate ? 'privacy-gate-ack' : 'dlg-close') + '">' +
       (gate ? 'I understand' : 'Close') + '</button></div>';
@@ -6114,11 +6226,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<label>Repeat password <input class="inp" type="password" id="naConf" autocomplete="new-password"></label>' +
         '<div class="login-err" id="naErr" aria-live="assertive"></div>' +
         '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
-        '<button class="btn primary" data-action="acct-add">Create sign-in</button></div>');
+        '<button class="btn primary" data-action="acct-add" id="naGo">Create sign-in</button></div>');
       return;
     }
     if (a === 'acct-add') {
       (async () => {
+        /* creating a sign-in runs two 600k key derivations (~2s): park the button so the admin sees it working */
+        const goBtn = $('#naGo');
+        if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Creating…'; }
+        try {
         if (!isAdmin()) { toast('Admin only.', true); return; }
         const err = $('#naErr');
         const un = ($('#naUser') ? $('#naUser').value : '').trim();
@@ -6151,6 +6267,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
         if (location.hash === '#/manage') renderManage();
         else if (location.hash === '#/users') renderUsers();   /* the new row appears immediately on the Users tab */
+        } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Create sign-in'; } }
       })();
       return;
     }
@@ -6163,11 +6280,15 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         '<label>Repeat password <input class="inp" type="password" id="rpConf" autocomplete="new-password"></label>' +
         '<div class="login-err" id="rpErr" aria-live="assertive"></div>' +
         '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
-        '<button class="btn primary" data-action="acct-reset" data-user="' + U.esc(un) + '">Save password</button></div>');
+        '<button class="btn primary" data-action="acct-reset" data-user="' + U.esc(un) + '" id="rpGo">Save password</button></div>');
       return;
     }
     if (a === 'acct-reset') {
       (async () => {
+        /* same 600k derivations as add — park the button while the keys are re-derived */
+        const goBtn = $('#rpGo');
+        if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Saving…'; }
+        try {
         if (!isAdmin()) { toast('Admin only.', true); return; }
         const err = $('#rpErr');
         const un = el.dataset.user;
@@ -6213,6 +6334,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school — rename it so it works everywhere'
              : 'Password updated for ' + un) + rewrapFail, !!rewrapFail);
         if (location.hash === '#/manage') renderManage();
+        } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Save password'; } }
       })();
       return;
     }
@@ -6453,6 +6575,14 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'ds-enable') { dsEnable(); return; }
     if (a === 'ds-now') { dsPullCheck(true); return; }
     if (a === 'ds-link') { dsLinkModal(); return; }
+    if (a === 'req-email') { window.location.href = reqMailto(); toast('Opening your email app — the request is already filled in.'); return; }
+    if (a === 'req-copy') {
+      const t = reqText();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(() => toast('Request copied — paste it to Teacher Mo in WeChat/DingTalk'), () => { toast('Could not copy — take a screenshot instead', true); });
+      } else { toast('Could not copy on this browser — take a screenshot instead', true); }
+      return;
+    }
     if (a === 'ds-ding') { const i = $('#dsLinkInp'); if (i) dingtalkOpen(i.value); return; }
     if (a === 'share-chatmsg') { const i = $('#shareLink'); if (i) copyChatMessage(i.value, 'SPR class markbook — tap to open and join our class:'); return; }
     if (a === 'share-ding') { const i = $('#shareLink'); if (i) dingtalkOpen(i.value); return; }
@@ -6556,10 +6686,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (CLS) { toast('In class mode use "Restore everything" (Classes screen) or import a class file — a single-markbook backup cannot replace a class workbook.', true); return; } const f = $('#file-json'); if (f) f.click(); return; }
     if (a === 'load-sample') {
       (async () => {
+        /* destructive master-reset of the dataset — administrator only (2026-10-27, owner request 2) */
+        if (!isAdmin()) { toast('Administrator only — ask Teacher Mo.', true); return; }
         if (DB.semesters.length) {
-          const okGo = await confirmDlg('Reset to sample data?', 'Your current classes and scores will be replaced by the sample semester.', 'Reset');
+          const okGo = await confirmDlg('Reset to sample data?', 'This replaces <b>every class, student and score in this browser</b> with the demo semester. Real data is gone from this device (a cloud copy for sharing, if any, is <b>not</b> removed). A safety copy is kept — restore it from Manage &rarr; Backups.', 'Reset to sample data');
           if (!okGo) return;
         }
+        stashSafetyBackup('before reset to sample data');
         DB = seedFromWindow();
         if (cryptoOK() && SESSION.dk) { await persistNow(true); }
         else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
@@ -6567,20 +6700,11 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       })();
       return;
     }
-    if (a === 'wipe') {
-      (async () => {
-        const okGo = await confirmDlg('Erase everything?', 'All classes, students and scores will be deleted <b>from this browser</b>, including the encryption keys. A copy already pushed to the cloud is <b>not</b> deleted — overwrite it by pushing fresh data, or use “Turn off &amp; delete cloud copy”.', 'Erase all data');
-        if (!okGo) return;
-        DB = emptyDB();
-        [LS_KEY, V2_KEY, 'spr-share-v1', 'spr-auth-v1', 'spr-session', 'spr-session-db'].forEach((k) => {
-          try { localStorage.removeItem(k); } catch (e) {} try { sessionStorage.removeItem(k); } catch (e) {}
-        });
-        Object.keys(localStorage).filter((k) => k.indexOf(CORRUPT_PREFIX) === 0).forEach((k) => { try { localStorage.removeItem(k); } catch (e) {} });
-        SESSION = { user: null, dk: null };
-        location.reload();
-      })();
-      return;
-    }
+    /* the old "wipe" (Erase everything) action was removed entirely on the
+       owner's decision (2026-10-27): it deleted all data AND every sign-in,
+       letting whoever ran it become the admin via first-time setup. Data
+       problems are handled by "Reset to sample data" (admin, keeps sign-ins
+       and stashes a safety copy) or a full backup restore. */
     if (a === 'dl-corrupt') {
       const raw = (window.__SPR_CORRUPT && window.__SPR_CORRUPT.raw) || '';
       const blob = new Blob([raw], { type: 'application/json' });
@@ -8036,6 +8160,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           '<div class="login-err" id="loginErr" aria-live="assertive"></div>' +
           '<button class="login-btn" data-action="do-login">Sign In</button>' +
           (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
+          '<div class="small" style="margin-top:10px;opacity:.75">Teacher and forgot your password? Ask the administrator to reset it (<b>Users &rarr; Reset password</b>).</div>' +
           (cryptoOK() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="login-other-device">I use SPR on another device &rarr;</button></div>' : '') +
           (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +

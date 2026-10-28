@@ -123,7 +123,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   await loginAs(W, 'Mo', PW);
   await waitFor(() => W.w.location.hash.indexOf('#/dashboard') === 0, 12000);   /* auto-open finishes its unwrap */
   check(W.w.location.hash.indexOf('#/dashboard') === 0, 'single class opens automatically (#/dashboard), got ' + W.w.location.hash);
-  check(navIds(W).join(',') === 'dashboard,students,entry,reports,ranking,users,manage', 'admin sidebar: 4 tools + Ranking + Users + Manage');
+  check(navIds(W).join(',') === 'dashboard,students,entry,reports,ranking,users,help,manage', 'admin sidebar: 4 tools + Ranking + Users + Help + Manage (2026-10-27)');
   check(!W.d.getElementById('classSwitch'), 'no class switcher with a single class');
   check(/Updated/.test(W.d.getElementById('content').innerHTML), 'dashboard shows an Updated-at line');
 

@@ -113,6 +113,16 @@ body {
 .btn.primary:hover { background: var(--board-edge); }
 .btn.danger { color: var(--red); border-color: #e0b4b0; }
 .btn.danger:hover { background: #faf0ef; border-color: var(--red); }
+/* destructive administrator actions — deliberately loud (2026-10-27) */
+.btn.danger-solid { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+.btn.danger-solid:hover { background: #a93329; border-color: #a93329; color: #fff; }
+.btn.danger-solid:focus-visible { outline-color: var(--red); }
+/* help & training modules (2026-10-27) */
+.help-mod { border: 1px solid var(--rule-strong); border-radius: 8px; background: #fff; padding: 10px 14px; margin-top: 10px; }
+.help-mod summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.help-mod summary:hover { color: var(--board); }
+.help-mod[open] { padding-bottom: 6px; }
+.help-mod ol { color: var(--ink-60); }
 .btn.sm { padding: 3px 9px; font-size: 12px; }
 select.inp, input.inp, textarea.inp {
   font: inherit; padding: 5px 8px; border: 1px solid var(--rule-strong);
