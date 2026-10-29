@@ -81,6 +81,55 @@ assert '__SW_VERSION__' not in sw
 app_html = app_html.replace('__SPR_BUILD__', sw_version, 1)
 assert '__SPR_BUILD__' not in app_html, 'build marker unreplaced'
 
+# ---------- the notice: one text, two languages, three places (2026-10-28) ----------
+# Single source of truth: source/notice.en.html + source/notice.zh.html.
+# They are (a) injected into the app as window.SPR_NOTICE and (b) rendered into
+# the standalone notice.html linked from the landing footer.
+import json as _json
+NOTICE_VERSION, NOTICE_DATE = '1', '28 Oct 2026'
+def _notice(src):
+    t = read(SRC / src)
+    # strip the leading build comment (lines starting with <!-- up to -->)
+    import re as _re
+    t = _re.sub(r'<!--[\s\S]*?-->', '', t, count=1)
+    return t.strip()
+notices = {'version': NOTICE_VERSION, 'date': NOTICE_DATE,
+           'en': _notice('notice.en.html'), 'zh': _notice('notice.zh.html')}
+notices_js = _json.dumps(notices, ensure_ascii=False)
+app_html = app_html.replace('window.SPR_NOTICE=/*__NOTICES__*/null;',
+                            'window.SPR_NOTICE=' + notices_js + ';', 1)
+assert '__NOTICES__' not in app_html, 'notice injection failed'
+
+def notice_page_html():
+    return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            '<meta name="robots" content="noindex">\n'
+            '<title>Notice — Student\'s Performance Report (SPR)</title>\n'
+            '<style>\n'
+            'body{margin:0;background:#fbfaf5;color:#22312c;font-family:Georgia,"Times New Roman",serif;line-height:1.65}\n'
+            '.wrap{max-width:720px;margin:0 auto;padding:48px 22px 64px}\n'
+            'h1{font-size:26px;margin:0 0 4px}h4{margin:22px 0 6px;font-size:16.5px}\n'
+            'p{margin:0 0 12px;font-size:15.5px}\n'
+            '.sub{color:#5b6a62;font-family:system-ui,sans-serif;font-size:14px;margin:0 0 20px}\n'
+            '.bar{display:flex;gap:8px;margin:0 0 18px}\n'
+            'button{font-family:system-ui,sans-serif;font-size:14px;border-radius:8px;border:1px solid #c9c5b2;background:#fff;padding:6px 14px;cursor:pointer}\n'
+            'button.on{background:#1e3b32;border-color:#1e3b32;color:#fff}\n'
+            '.meta{margin-top:26px;color:#5b6a62;font-size:13.5px;font-family:system-ui,sans-serif}\n'
+            '</style>\n</head>\n<body>\n<div class="wrap">\n'
+            '<h1>Notice</h1>\n<p class="sub">Student\u2019s Performance Report (SPR) \u2014 about SPR and your student data</p>\n'
+            '<div class="bar"><button id="btn-en" class="on" onclick="setLang(\'en\')">English</button>'
+            '<button id="btn-zh" onclick="setLang(\'zh\')">中文</button></div>\n'
+            '<div id="body-en">' + notices['en'] + '</div>\n'
+            '<div id="body-zh" style="display:none">' + notices['zh'] + '</div>\n'
+            '<p class="meta">Notice v' + NOTICE_VERSION + ', ' + NOTICE_DATE + '.</p>\n'
+            '<p class="meta"><a href="app/">Open the app</a></p>\n'
+            '</div>\n<script>\n'
+            'function setLang(l){document.getElementById("body-en").style.display=l==="en"?"":"none";'
+            'document.getElementById("body-zh").style.display=l==="zh"?"":"none";'
+            'document.getElementById("btn-en").className=l==="en"?"on":"";'
+            'document.getElementById("btn-zh").className=l==="zh"?"on":"";}\n'
+            '</script>\n</body>\n</html>\n')
+
 # ---------- landing ----------
 import base64, re
 landing = read(SRC / 'landing.template.html')
@@ -100,6 +149,7 @@ def write(p, text):
 write(DIST / 'app' / 'index.html', app_html)
 write(DIST / 'app' / 'sw.js', sw)
 write(DIST / 'index.html', landing)
+write(DIST / 'notice.html', notice_page_html())
 
 if DEPLOY.exists(): shutil.rmtree(DEPLOY)
 shutil.copytree(DIST, DEPLOY)

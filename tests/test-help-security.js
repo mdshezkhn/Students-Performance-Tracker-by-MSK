@@ -56,6 +56,19 @@ async function firstRun(B, user, pw) {
   setVal(B, B.d.getElementById('suPass'), pw);
   setVal(B, B.d.getElementById('suConf'), pw);
   click(B, B.d.querySelector('[data-action="first-run"]'));
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = B.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
   return waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000);
 }
 
@@ -79,7 +92,7 @@ async function firstRun(B, user, pw) {
   if (ls) { click(A, ls); await sleep(900); }   /* sample data so the legacy shell renders */
   await go(A, '#/manage');
 
-  check(txt(A).indexOf('Data — administrator only') !== -1, 'Data section is labelled administrator-only');
+  check(/Data ?(—|:) ?administrator only/.test(txt(A)), 'Data section is labelled administrator-only');
   check(txt(A).indexOf('Erase everything') === -1, 'no Erase everything for the admin either (removed at owner request)');
   const rs = A.d.querySelector('[data-action="load-sample"].danger-solid');
   check(!!rs, 'Reset to sample data is the solid-red danger style');

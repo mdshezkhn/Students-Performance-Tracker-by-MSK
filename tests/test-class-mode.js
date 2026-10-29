@@ -71,7 +71,7 @@ async function loginAs(B, user, pass) {
 }
 
 const ADMIN = 'mo';
-  let PW = 'tiny-pw';   /* 2026-10-25: no length floor - the suite's admin uses a short password */
+  let PW = 'class-admin-1';   /* item 4 (2026-10-28): admin minimum is 8 chars, so the suite's admin password grew */
 
 (async function main() {
   /* ---- S1: admin first-run + legacy sample data ---- */
@@ -82,10 +82,23 @@ const ADMIN = 'mo';
   click(B, B.d.querySelector('[data-action="show-setup"]'));
   await sleep(150);
   setVal(B, B.d.querySelector('#suUser'), ADMIN);
-  setVal(B, B.d.querySelector('#suPass'), 'tiny-pw');
-  setVal(B, B.d.querySelector('#suConf'), 'tiny-pw');
+  setVal(B, B.d.querySelector('#suPass'), 'class-admin-1');   /* item 4: admin minimum is 8 */
+  setVal(B, B.d.querySelector('#suConf'), 'class-admin-1');
   click(B, B.d.querySelector('[data-action="first-run"]'));
-  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 20000), 'a short admin password is ACCEPTED at setup (no length floor)');
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = B.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
+  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 20000), 'admin signed in after the recovery-path step (item 4)');
   /* the admin is now signed in with the short password; later sections re-login with ADMIN/PW */
   await ackPrivacy(B);
   const sample = B.d.querySelector('[data-action="load-sample"]');
@@ -450,8 +463,8 @@ const ADMIN = 'mo';
   {
     const fs = require('fs');
     const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-    ok(/data-count="23">23</.test(landing) && /data-count="6" data-suffix="\+">6\+</.test(landing) && /data-count="100" data-suffix="%">100%</.test(landing),
-      'stat counters carry their real final values in the HTML (visible with JS off)');
+    ok(!/data-count=/.test(landing) && /A markbook for ESL classes/.test(landing) && /Nothing is sent anywhere unless an admin turns on Device sync/.test(landing),
+      'landing is the plain 2026-10-28 rebuild: honest facts, no count-up stats');
     ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
       'no absolute privacy claims remain on the landing page');
     ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');

@@ -103,6 +103,33 @@ was chosen for usability on 2026-10-22. Every payload carries HMAC(key, ct)
 so tampered or mismatched-key copies are refused; wrong passwords fail the
 AES-GCM auth check and look like a plain wrong password.
 
+## Write protection: per-channel write token (item 5, 2026-10-28)
+
+The reviewer noted that anyone who knows a username can compute the channel id
+(`sha256('spr-ds1:chan:' + username)`) and PATCH garbage over the cloud copy
+with the public publishable key. HMAC makes devices refuse the tampered copy,
+but the backup itself is destroyed.
+
+Mitigation shipped on the data-safety branch:
+
+- Every paired device generates a random 48-hex **write token** at pairing
+  time (kept in the local sync config, never in the row).
+- Every push and pull request sends it as an `x-spr-write-token` header.
+- The Supabase side must be upgraded by the owner by running the SQL in
+  `docs/supabase-write-token.sql`: it adds a `write_token_hash` column and a
+  `previous` column (the last good payload, so one bad write can be rolled
+  back), replaces direct PATCH with a `security definer` RPC
+  (`spr_channel_write`) that compares `digest(token, 'sha256')` against the
+  stored hash, and revokes direct UPDATE on the table.
+
+What remains true until the owner runs that SQL: the row is still directly
+PATCHable by anyone with the publishable key. What remains true afterwards:
+the token travels with every request from a paired device, so a determined
+attacker who briefly holds a teacher's browser (or the local sync config)
+can still read it; the hash comparison also means an attacker CANNOT enrol
+their own token without the current one. Read access stays public by design
+(share links need it) and the payloads stay sealed.
+
 ## Known limits
 - Last-save-wins; no merge. Two offline devices that both edit will be asked
   to pick a copy.

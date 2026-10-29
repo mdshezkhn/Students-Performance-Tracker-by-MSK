@@ -5,240 +5,90 @@
   by source/build2.py. NEVER hand-edit root index.html — edit this template,
   then rebuild. build2.py refuses to run if root index.html has drifted from
   the last committed build.
+
+  2026-10-28 (notices-voice): rebuilt to match the app itself — warm paper,
+  board green, the app's serif. Plain headline, one real screenshot, three
+  short sections, no gradient, no video, no count-up stats, no slogans.
+  Every claim is verified by docs/qa/notices/network-hosts.txt.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; media-src 'self'; font-src data:; base-uri 'none'; form-action 'none'">
-<title>Students Performance Report</title>
-<meta name="description" content="ESL student performance tracking with live analytics, RAG/SWOT insights, and report cards. Designed for teachers, by a teacher.">
-<meta name="theme-color" content="#0b8ed2">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b8ed2'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-style='italic' font-size='38' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; base-uri 'none'; form-action 'none'">
+<title>Student's Performance Report (SPR) — a markbook for ESL classes</title>
+<meta name="description" content="A free markbook for ESL classes: weekly scores, automatic grades, printable report cards. Runs in your browser. Made by an ESL teacher for his own classes.">
+<meta name="theme-color" content="#1e3b32">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e3b32'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='38' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
 <style>/*__FONTS__*/</style>
 <style>/*__LANDING_CSS__*/</style>
 </head>
 <body>
 
-<div class="stage" id="platform">
-  <div class="stage__media" aria-hidden="true">
-    <video autoplay muted loop playsinline preload="auto"
-           poster="media/aerofold-paper-bloom-poster.png">
-      <source media="(max-aspect-ratio: 1/1)" src="media/aerofold-paper-bloom-portrait.mp4" type="video/mp4">
-      <source src="media/aerofold-paper-bloom-landscape.mp4" type="video/mp4">
-    </video>
+<nav class="nav">
+  <div class="wrap nav__inner">
+    <span class="brand">Student&rsquo;s Performance Report <span class="brand__abbr">(SPR)</span></span>
+    <div class="nav__links">
+      <a href="app/">Open the app</a>
+      <a href="notice.html">How your data is stored</a>
+      <a href="app/#/help">Help</a>
+    </div>
   </div>
-  <div class="stage__tint" aria-hidden="true"></div>
-  <div class="stage__scrim" aria-hidden="true"></div>
+</nav>
 
-  <nav class="nav fade" aria-label="Primary">
-    <div class="nav__inner">
-      <a class="brand" href="#platform">SPR with Mo</a>
-      <ul class="nav__links">
-        <li><a href="#platform">Platform</a></li>
-        <li><a href="#modules">Modules</a></li>
-        <li><a href="#security">Security</a></li>
-      </ul>
-      <a class="pill pill--nav" href="app/">Open App</a>
-    </div>
-  </nav>
+<header class="hero">
+  <div class="wrap">
+    <h1>A markbook for ESL classes.</h1>
+    <p class="lede">Enter weekly scores, watch grades update, print report cards. Made by an ESL teacher for his own classes.</p>
+    <p class="hero__actions"><a class="btn" href="app/">Open the app</a></p>
+    <figure class="shot">
+      <img src="media/landing-app-screenshot.png" alt="The SPR dashboard: the sample class with live grades and report-card tools." width="1160" height="724">
+      <figcaption>The app with its sample class. Your own data stays in your browser.</figcaption>
+    </figure>
+  </div>
+</header>
 
-  <header class="hero">
-    <div class="hero__inner">
-      <div class="hero-badge rise rise--1"><span class="hero-badge__chip">New</span><span class="hero-badge__text">Encrypted on device &middot; no tracking &middot; sync is optional</span></div>
-      <h1 class="rise rise--2">Every score tells a <em>story</em>.<span class="hero-sub">Help every learner write a brighter next chapter.</span></h1>
-      <p class="hero__lede rise rise--3">
-        Complete ESL performance tracking &mdash; classroom observations, spelling,
-        assignments, tests, auto&#8209;grading, cross&#8209;semester analytics, and
-        professional report cards.
-      </p>
-      <div class="hero__actions rise rise--4">
-        <a class="pill pill--hero" href="app/">Open the App</a>
-        <a class="quiet-link" href="#modules">Explore features
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-        </a>
-      </div>
-    </div>
-  </header>
-</div>
-
-<section class="section section--mist reveal" id="preview">
-  <div class="container">
-    <h2 class="h2">Your classroom, at a <em>glance</em></h2>
-    <p class="section__lede">Live grades, averages and updates &mdash; the moment scores are entered.</p>
-    <div class="browser" data-ui>
-      <div class="browser__top"><span class="b-dot"></span><span class="b-dot"></span><span class="b-dot"></span><span class="browser__url">my-spr-with-mo.duckdns.org</span></div>
-      <div class="browser__body">
-        <div class="browser__side" aria-hidden="true">
-          <span class="side-item is-active">Dashboard</span>
-          <span class="side-item">Students</span>
-          <span class="side-item">Enter Scores</span>
-          <span class="side-item">Grading</span>
-          <span class="side-item">Analysis</span>
-          <span class="side-item">Report Cards</span>
-        </div>
-        <div class="browser__main">
-          <div class="dash-head"><h3>Class Dashboard</h3><span class="chip">Encrypted on this device</span></div>
-          <div class="dash-stats">
-            <div class="dash-stat"><span class="ds-val">23</span><span class="ds-label">Students</span></div>
-            <div class="dash-stat"><span class="ds-val">87.7%</span><span class="ds-label">Class Avg</span></div>
-            <div class="dash-stat"><span class="ds-val">17</span><span class="ds-label">Grade A*</span></div>
-          </div>
-          <table class="dash-table">
-            <thead><tr><th>Student</th><th>Final</th><th>Grade</th><th class="t-time">Last Updated</th></tr></thead>
-            <tbody>
-              <tr><td>Student A</td><td>98.4%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student B</td><td>96.6%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student C</td><td>96.9%</td><td><span class="badge badge--hi">A*</span></td><td class="t-time">2 min ago</td></tr>
-              <tr><td>Student D</td><td>57.9%</td><td><span class="badge badge--mid">C</span></td><td class="t-time">5 min ago</td></tr>
-              <tr><td>Student E</td><td>41.2%</td><td><span class="badge badge--low">U</span></td><td class="t-time">5 min ago</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+<main>
+<section class="sec" id="what">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <ul class="plain">
+      <li><b>Weekly score entry.</b> Spelling, daily assignments, observations and tests, with auto-filled totals.</li>
+      <li><b>Automatic grades.</b> A* to U, computed from the school&rsquo;s formula (written 20%, every other part 10%).</li>
+      <li><b>Report cards.</b> One page per student, printable, with comments you can hand-copy into the school performance book.</li>
+      <li><b>Works offline.</b> After the first visit the app reopens without an internet connection.</li>
+    </ul>
   </div>
 </section>
 
-<section class="section section--paper reveal" id="modules">
-  <div class="container">
-    <h2 class="h2">Everything you <em>need</em></h2>
-    <p class="section__lede">From weekly score entry to semester report cards &mdash; the entire workflow in one place.</p>
-    <div class="module-grid">
-      <a class="module" href="app/#/entry/sp">
-        <span class="module__head"><h3>Score Entry</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Fast weekly entry for spelling, daily assignments, observations, and tests. Paste from Excel, auto-fill totals, live averages.</p>
-      </a>
-      <a class="module" href="app/#/grading">
-        <span class="module__head"><h3>Auto Grading</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>A* through U computed automatically with the SPR formula &mdash; Written counts 20%, every other part 10%. Grades update instantly when a score changes.</p>
-      </a>
-      <a class="module" href="app/#/analysis/class">
-        <span class="module__head"><h3>Comparative Analysis</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Cross-semester progress with movers, RAG indicators, SWOT analysis, and auto-generated teacher remarks.</p>
-      </a>
-      <a class="module" href="app/#/reports/student">
-        <span class="module__head"><h3>Report Cards</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Professional student report cards with SWOT, rankings, and parent-ready formatting. Print to PDF or batch-export to Excel.</p>
-      </a>
-      <a class="module" href="app/#/manage">
-        <span class="module__head"><h3>Excel Import / Export</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>Import existing SPR workbooks with one click. Export back to the same format. Your data stays in this browser until <em>you</em> choose to export it or use encrypted Share&nbsp;&amp;&nbsp;sync.</p>
-      </a>
-      <a class="module" href="app/#/manage">
-        <span class="module__head"><h3>Privacy by Design</h3><svg class="module__arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
-        <p>No tracking, no server accounts. No student data leaves this device unless you turn on sync or Save &amp; Share — and then only an encrypted copy.</p>
-      </a>
-    </div>
+<section class="sec sec--tinted" id="data">
+  <div class="wrap">
+    <h2>Your data</h2>
+    <ul class="plain">
+      <li>Data lives in this browser, on this device. It is encrypted with your password.</li>
+      <li>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. Then an encrypted copy goes to Supabase.</li>
+      <li>Exported Excel and backup files are not encrypted. Keep them on school-approved storage.</li>
+      <li>The maker of SPR does not collect, read or sell your data.</li>
+    </ul>
+    <p><a class="btn btn--quiet" href="notice.html">Read the full notice</a></p>
   </div>
 </section>
 
-<section class="band reveal" id="numbers">
-  <div class="container band__grid">
-    <div class="band__item"><span class="band__num" data-count="23">23</span><span class="band__label">Students Tracked</span></div>
-    <div class="band__item"><span class="band__num" data-count="9">9</span><span class="band__label">Grading Components</span></div>
-    <div class="band__item"><span class="band__num" data-count="6" data-suffix="+">6+</span><span class="band__label">Report Types</span></div>
-    <div class="band__item"><span class="band__num" data-count="100" data-suffix="%">100%</span><span class="band__label">Data Privacy</span></div>
+<section class="sec" id="who">
+  <div class="wrap">
+    <h2>Who made it</h2>
+    <p>Mohammed Shehzad Khan (Teacher Mo) teaches ESL and built SPR for his own classes, then opened it to colleagues at his school. It is free. It is not a commercial product.</p>
+    <p class="signature">Designed for teachers, by a teacher.</p>
   </div>
 </section>
-
-<section class="section section--paper reveal" id="security">
-  <div class="container security">
-    <div class="security__intro">
-      <h2 class="h2">Privacy &amp; <em>security</em></h2>
-      <p class="section__lede">No student data leaves this device unless you turn on sync or Save &amp; Share — and then only an encrypted copy. No telemetry, no tracking.</p>
-      <ul class="checklist">
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>Data stored encrypted in your browser; cloud copies (only if you turn sync on) are unreadable bytes</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>No server accounts &mdash; no analytics or tracking</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>Offline-ready: after your first successful visit, the app reopens without an internet connection</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>One-click backup file to move data between devices</li>
-        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>One-click erase removes all data permanently</li>
-      </ul>
-    </div>
-    <div class="protocols" data-ui>
-      <p class="protocols__alert"><span class="dot"></span> No accounts. No tracking. No analytics.</p>
-      <h3>Security Protocols</h3>
-      <div class="proto-row"><span>Local-only data storage</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Offline-ready &mdash; nothing leaves the device unless you export or use encrypted Share &amp; sync</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Offline-ready (service worker)</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Auto-save on every input</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-      <div class="proto-row"><span>Encrypted JSON backups</span><span class="toggle is-on" role="img" aria-label="enabled"></span></div>
-    </div>
-  </div>
-</section>
-
-<section class="cta reveal">
-  <div class="container cta__inner">
-    <h2 class="h2 h2--display">Ready to get <em>started</em>?</h2>
-    <p class="cta__lede">Import your SPR Excel file and start tracking in under a minute.</p>
-    <a class="pill pill--hero" href="app/">Open the App</a>
-  </div>
-</section>
+</main>
 
 <footer class="footer">
-  <div class="container">
-    <div class="footer__grid">
-      <div class="footer__brand">
-        <h3>Students Performance Report</h3>
-        <p>A complete ESL performance tracking system for bilingual classrooms. Built from real teaching experience.</p>
-      </div>
-      <div class="footer__col"><h4>Platform</h4><a href="app/#/dashboard">Dashboard</a><a href="app/#/students">Students</a><a href="app/#/entry/sp">Enter Scores</a><a href="app/#/grading">Grading</a></div>
-      <div class="footer__col"><h4>Analytics</h4><a href="app/#/analysis/class">Class Progress</a><a href="app/#/analysis/student">Student Deep-Dive</a><a href="app/#/reports/class">Class Report</a></div>
-      <div class="footer__col"><h4>Reports</h4><a href="app/#/reports/student">Report Cards</a><a href="app/#/reports/class">Class Summary</a><a href="app/#/manage">Excel Import</a></div>
-      <div class="footer__col"><h4>Support</h4><a href="app/#/manage">Manage &amp; Setup</a><a href="#security">Privacy Notice</a><a href="#security">Data Backup</a></div>
-    </div>
-    <div class="footer__bottom">
-      <span>&copy; 2026 Students Performance Report. All rights reserved.</span>
-      <span class="status"><span class="dot"></span> Offline-ready after first visit &mdash; the cloud only ever holds an encrypted copy, and only if you turn sync on</span>
-    </div>
-    <p class="footer__credit">Designed for teachers, by a teacher &mdash; Mohammed Shehzad Khan (Teacher Mo)</p>
+  <div class="wrap footer__inner">
+    <span>Made by Mohammed Shehzad Khan (Teacher Mo). Provided as is. <a href="notice.html">See the notice</a>.</span>
+    <span class="footer__links"><a href="app/">Open the app</a> &middot; <a href="notice.html">Notice</a> &middot; <a href="app/#/help">Help</a></span>
   </div>
 </footer>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  /* section reveals: staggered fade-rise of each section's parts */
-  var els = document.querySelectorAll('.reveal');
-  var obs = new IntersectionObserver(function(entries) {
-    entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
-  }, { threshold: 0.12 });
-  els.forEach(function(el) { obs.observe(el); });
-
-  /* stat count-up (kept from original) */
-  var nums = document.querySelectorAll('[data-count]');
-  var numObs = new IntersectionObserver(function(entries) {
-    entries.forEach(function(e) {
-      if (!e.isIntersecting) return;
-      numObs.unobserve(e.target);
-      var el = e.target, target = parseInt(el.dataset.count || '0'), suffix = el.dataset.suffix || '', dur = 2000, start = performance.now();
-      /* HTML already carries the real final value (no-JS visitors see it);
-         the animation only runs for JS visitors and starts from 0 */
-      el.textContent = '0' + suffix;
-      function tick(now) {
-        var t = Math.min((now - start) / dur, 1);
-        el.textContent = Math.round((1 - Math.pow(1 - t, 4)) * target) + suffix;
-        if (t < 1) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-    });
-  }, { threshold: 0.3 });
-  nums.forEach(function(n) { numObs.observe(n); });
-
-  /* paper-bloom video lifecycle: fade in on play, poster underlay on failure.
-     NB: Chromium fires a harmless error on <source> skipped by its media query —
-     never remove the element, just drop the class so the poster underlay shows. */
-  var mediaEl = document.querySelector('.stage__media');
-  var v = mediaEl && mediaEl.querySelector('video');
-  if (v) {
-    v.addEventListener('playing', function() { mediaEl.classList.add('is-playing'); });
-    v.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
-    Array.prototype.forEach.call(v.querySelectorAll('source'), function(s) {
-      s.addEventListener('error', function() { mediaEl.classList.remove('is-playing'); });
-    });
-    /* autoplay may have started before this script ran: sync the class */
-    if (!v.paused) { mediaEl.classList.add('is-playing'); }
-  }
-});
-</script>
 </body>
 </html>

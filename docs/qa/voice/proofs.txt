@@ -1,0 +1,18 @@
+B4 proofs (2026-10-28, branch notices-voice)
+
+1. Em dashes in UI strings:
+   source/app.js user-visible strings: 0 (remaining occurrences are code comments and the owner attribution line, which B1 keeps)
+   source/analysis.js: 1, a code comment only
+
+2. Banned words (seamless, powerful, intelligent, streamline, comprehensive, at a glance, insights, unlock) in UI strings: 0
+   (all remaining hits are JS comments)
+
+3. Product name: exactly one form. First mention: Student's Performance Report (SPR); afterwards SPR.
+   Variants found: 0 (sign-in card, landing, <title>, manifest, export headers all unified)
+
+4. Landing claims verified against docs/qa/notices/network-hosts.txt:
+   cold load (landing + app, sign-in, sync off) contacts NO remote host — only the site's own origin.
+   Supabase is contacted ONLY by Save & Share / Device sync, matching the notice wording.
+
+5. Report card prints on ONE A4 page (docs/qa/voice/report-card.pdf, page count asserted in shots.py output)
+   with the notice version added to the printed credit line.

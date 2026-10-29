@@ -100,8 +100,18 @@
      password is accepted everywhere (setup, add account, reset, change).
      Generated one-time passwords stay long (98 bits) — that is a feature,
      not a policy. */
+  /* item 4 (2026-10-28): the vault and the cloud row are only as strong as the
+     password wrapping them, and the data belongs to minors. Admin and manager
+     get a real minimum plus a common-password block; teachers (whose accounts
+     the admin provisions, often handed out on paper to type once) keep a
+     lighter minimum. */
+  const COMMON_PW = ['password', '123456', '12345678', '123456789', '1234567890', 'qwerty', 'abc123', 'password1', 'password123', '111111', '123123', '1234567891', '000000', '1234', '12345', 'iloveyou', 'qwerty123', '1q2w3e4r', 'admin', 'welcome', 'monkey', 'letmein', 'login', 'princess', 'dragon', 'sunshine', 'football', 'baseball', 'superman', 'batman', 'trustno1', 'master', 'shadow', 'michael', 'jennifer', 'charlie', 'jordan', 'harley', 'ranger', 'buster', 'thomas', 'tigger', 'robert', 'soccer', 'hockey', 'killer', 'george', 'sexy', 'andrew', 'summer'];
   function pwOk(role, pw) {
     if (!pw || typeof pw !== 'string') return 'Enter a password.';
+    const isTeacher = role === 'teacher' || role === 'eal';   /* accounts may store either spelling */
+    const min = isTeacher ? 6 : 8;
+    if (pw.length < min) return 'Use at least ' + min + ' characters.';
+    if (!isTeacher && COMMON_PW.indexOf(String(pw).toLowerCase()) !== -1) return 'That password is too common. Choose something others could not guess.';
     return null;   /* ok */
   }
   /* 20 random chars from a 30-symbol no-lookalike alphabet, grouped 5-5-5-5:
