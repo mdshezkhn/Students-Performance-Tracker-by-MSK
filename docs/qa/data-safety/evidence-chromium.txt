@@ -9,7 +9,7 @@ item2 NOT-SAVED banner on quota failure: PASS — NOT SAVED — storage is full 
 item2 banner has Download backup button: PASS
 item8 wipe starts disabled: PASS
 item8 wrong word keeps it disabled: PASS
-item8 raw copy downloads first: PASS — spr-raw-backup-2026-10-28.json
+item8 raw copy downloads first: PASS — spr-raw-backup-2026-10-29.json
 item8 typed ERASE + saved copy arms the wipe: PASS
 
 page errors across all tabs: 0

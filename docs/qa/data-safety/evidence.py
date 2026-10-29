@@ -28,6 +28,12 @@ def ack_privacy(pg):
     for sel in ['[data-action="privacy-gate-ack"]', '[data-action="privacy-ack"]']:
         try:
             pg.wait_for_selector(sel, timeout=2500)
+            try:
+                cbx = pg.locator('#notice-read')   # merged build: notice gate checkbox enables the button
+                if cbx.count() and not cbx.is_checked():
+                    cbx.check(); pg.wait_for_timeout(150)
+            except Exception:
+                pass
             pg.locator(sel).first.click()
             pg.wait_for_timeout(300)
         except Exception:
