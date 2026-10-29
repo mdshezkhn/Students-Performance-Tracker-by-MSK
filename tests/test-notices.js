@@ -67,7 +67,19 @@ function setupAdmin(B) {
     const set = (id, v) => { const e = A.d.getElementById(id); if (e) { e.value = v; e.dispatchEvent(new A.w.Event('input', { bubbles: true })); } };
     set('suUser', 'Mo'); set('suPass', 'good-pass-77'); set('suConf', 'good-pass-77');
     click(A, A.d.querySelector('[data-action="first-run"]'));
-    for (let t = 0; t < 30; t++) { await sleep(250); if (!A.d.body.classList.contains('auth-gate')) break; }
+    for (let t = 0; t < 40; t++) {
+      await sleep(250);
+      const dl = A.d.getElementById('dlg');
+      /* data-safety (merged 2026-10-28): first-run stops at a recovery-path dialog */
+      if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+        const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+        if (dlBtn) click(A, dlBtn);
+        await sleep(150);
+        const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new A.w.Event('change', { bubbles: true })); }
+        click(A, dl.querySelector('[data-action="recovery-ack"]')); await sleep(300);
+      }
+      if (!A.d.body.classList.contains('auth-gate')) break;
+    }
     check(!A.d.body.classList.contains('auth-gate'), 'admin signed in');
     const db = A.w.SPR_DEBUG_GET_DB();
     check(!!(db.settings && db.settings.noticeAccept && db.settings.noticeAccept.v === '1'), 'acceptance is in the workbook settings (rides in the full backup)');
@@ -108,7 +120,18 @@ function setupAdmin(B) {
     const set = (id, v) => { const e = E.d.getElementById(id); if (e) { e.value = v; e.dispatchEvent(new E.w.Event('input', { bubbles: true })); } };
     set('suUser', 'Mo'); set('suPass', 'good-pass-77'); set('suConf', 'good-pass-77');
     click(E, E.d.querySelector('[data-action="first-run"]'));
-    for (let t = 0; t < 30; t++) { await sleep(250); if (!E.d.body.classList.contains('auth-gate')) break; }
+    for (let t = 0; t < 40; t++) {
+      await sleep(250);
+      const dl = E.d.getElementById('dlg');
+      if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {   /* data-safety recovery step */
+        const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+        if (dlBtn) click(E, dlBtn);
+        await sleep(150);
+        const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new E.w.Event('change', { bubbles: true })); }
+        click(E, dl.querySelector('[data-action="recovery-ack"]')); await sleep(300);
+      }
+      if (!E.d.body.classList.contains('auth-gate')) break;
+    }
     /* empty DB -> the welcome screen: load the sample so Manage renders */
     const samp = E.d.querySelector('[data-action="load-sample"]');
     if (samp) { click(E, samp); await sleep(900); const yes = E.d.querySelector('#dlg [data-x="1"]'); if (yes) { click(E, yes); await sleep(600); } }

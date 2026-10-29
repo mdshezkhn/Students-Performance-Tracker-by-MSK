@@ -124,6 +124,7 @@
     /* online: immediate plaintext mirror in sessionStorage (dies with the tab)
        + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
+    try { localStorage.setItem('spr-edits-since-backup', String((Number(localStorage.getItem('spr-edits-since-backup')) || 0) + 1)); } catch (e5) {}
     clearTimeout(saveTimer);
     if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
     else if (cryptoOK() && SESSION.dk) saveTimer = setTimeout(() => persistNow(silent), 300);
@@ -139,16 +140,67 @@
       setTimeout(() => { dot.textContent = ''; dot.classList.remove('flash'); }, 1300);
     }
   }
-  async function persistNow(silent) {
-    if (CLS && CLS_KEY) { await classPersistNow(silent); return; }
+  /* ---- data-safety (2026-10-28): honest save reporting + stale-tab guard ----
+     A write that fails must never claim Saved (item 2), and a tab holding a
+     stale copy must never write over a newer one (item 1). */
+  let KNOWN_STORE_TS = 0;   /* ts of the v2 blob this tab loaded or last wrote */
+  let CLS_TS = 0;           /* ts of the class blob this tab loaded or last wrote */
+  let SPR_STALE = false;    /* another window wrote newer data; this tab is read-only */
+  let saveRetryTimer = null;
+  let SPR_PERSIST = null;   /* navigator.storage.persist() result, shown in Manage */
+  function classBlobTs(rawStr) { try { const b = JSON.parse(rawStr); return (b && b.ts) || 0; } catch (e) { return 0; } }
+  function storedV2Ts() { try { const v = JSON.parse(localStorage.getItem(V2_KEY)); return (v && v.ts) || 0; } catch (e) { return 0; } }
+  function showStaleOverlay() {
+    if (document.getElementById('spr-stale')) return;
+    SPR_STALE = true;
+    const d = document.createElement('div');
+    d.id = 'spr-stale';
+    d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(29,33,26,.62);display:flex;align-items:center;justify-content:center;padding:20px';
+    d.innerHTML = '<div style="max-width:440px;background:#fffdf6;border-radius:14px;padding:26px 28px;box-shadow:0 18px 60px rgba(0,0,0,.35)">' +
+      '<h3 style="margin:0 0 8px;font-family:var(--font-display)">Another window changed this class</h3>' +
+      '<p class="small" style="margin:0 0 16px">This window is out of date. Saving here would erase the newer changes, so editing is paused.</p>' +
+      '<button class="btn primary" data-action="stale-reload">Reload to continue</button></div>';
+    document.body.appendChild(d);
+  }
+  function saveFailedBanner() {
+    if (document.getElementById('saveAlert')) return;
+    const b = document.createElement('div'); b.id = 'saveAlert';
+    b.style.cssText = 'position:sticky;top:0;z-index:900;background:#8f2f2b;color:#fff;padding:10px 16px;font-size:14px';
+    b.innerHTML = '<b>NOT SAVED</b> \u2014 storage is full or blocked. Download a backup now. ' +
+      '<button class="btn sm" data-action="dl-backup" style="margin-left:8px">Download backup</button>';
+    document.body.insertBefore(b, document.body.firstChild);
+    clearTimeout(saveRetryTimer);
+    saveRetryTimer = setTimeout(() => { saveRetryTimer = null; persistNow(true); }, 10000);
+  }
+  function saveOkBanner() { const b = document.getElementById('saveAlert'); if (b) b.remove(); }
+  window.addEventListener('beforeunload', function (e) {
+    if (document.getElementById('saveAlert')) { e.preventDefault(); e.returnValue = ''; }
+  });
+  function requestPersistentStorage() {
     try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      navigator.storage.persist().then(function (ok) { SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); }).catch(function () { SPR_PERSIST = false; });
+    } catch (e) { SPR_PERSIST = false; }
+  }
+  async function persistNow(silent) {
+    if (SPR_STALE) { showStaleOverlay(); return false; }
+    if (CLS && CLS_KEY) { return classPersistNow(silent); }
+    try {
+      if (storedV2Ts() > KNOWN_STORE_TS) { showStaleOverlay(); return false; }   /* another tab wrote newer data */
       const v2 = readV2() || { fmt: 2, wraps: {} };
       v2.fmt = 2;
       v2.data = await sealDB(DB, SESSION.dk);
       v2.ts = Date.now();
-      writeV2(v2);
+      KNOWN_STORE_TS = v2.ts;
+      if (!writeV2(v2)) { saveFailedBanner(); return false; }   /* quota/blocked */
+      saveOkBanner();
       flashSaved(silent);
-    } catch (e) { toast('Could not save: storage full?', true); }
+      return true;
+    } catch (e) {
+      toast('Could not save: storage full?', true);
+      saveFailedBanner();
+      return false;
+    }
   }
   /* ---- payload validation: every import path (sync pull/join, JSON restore,
      Excel import) passes through here before data reaches the app ---- */
@@ -176,8 +228,10 @@
       const blob = new Blob([JSON.stringify(DB)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'SPR-backup-before-replace.json';
+      a.download = 'SPR-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       document.body.appendChild(a); a.click(); a.remove();
+      try { localStorage.setItem('spr-edits-since-backup', '0'); } catch (e2) {}
+      saveOkBanner();
     } catch (e) {}
   }
   /* in-app safety copy kept BEFORE data gets replaced (join link, cloud copy,
@@ -390,6 +444,7 @@
     try {
       const wb = normalizeDB(await CS.openClass(JSON.parse(raw), key));
       CLS = { id: id }; CLS_KEY = key;              /* only now is the class open */
+      CLS_TS = classBlobTs(raw) || Date.now();      /* item 1: adopt the blob we just opened */
       DB = wb;
       DB.sprClass = 1; DB.id = id;   /* DB IS the class workbook now */
       ui.classOpen = true;
@@ -438,19 +493,32 @@
     buildShell(); location.hash = '#/classes'; route();
   }
   async function classPersistNow(silent) {
-    if (!CLS || !CLS_KEY) return;
+    if (!CLS || !CLS_KEY) return false;
     try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}
     try {
+      if (SPR_STALE) { showStaleOverlay(); return false; }
+      let prevTs = 0;
+      try { const prev = JSON.parse(localStorage.getItem(classBlobKey(CLS.id)) || 'null'); prevTs = (prev && prev.ts) || 0; } catch (e1) {}
+      if (prevTs > (CLS_TS || 0)) { showStaleOverlay(); return false; }   /* another tab saved this class newer */
       const blob = await CS.sealClass(DB, CLS_KEY);
+      blob.ts = Date.now(); CLS_TS = blob.ts;
       localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
       const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
       if (m) { m.updatedAt = Date.now(); m.pendingCount = classPendingCount(); setClassIndex(ix); }
+      saveOkBanner();
       flashSaved(silent);
       /* shared-database hook (later phase): a school Supabase table will
          broadcast per-score changes so co-teachers' dashboards update live.
          Today's device sync only copies the whole sealed workbook. */
       scheduleSyncPush();
-    } catch (e) { toast('Could not save the class workbook: storage full?', true); }
+      return true;
+    } catch (e) {
+      toast('Could not save the class workbook: storage full?', true);
+      saveFailedBanner();
+      clearTimeout(saveRetryTimer);
+      saveRetryTimer = setTimeout(() => { saveRetryTimer = null; classPersistNow(true); }, 10000);
+      return false;
+    }
   }
   function classKeysToSession() {
     try {
@@ -587,6 +655,7 @@
           '<label for="semSelect">Semester</label>' +
             '<select id="semSelect">' + DB.semesters.map((s) => '<option value="' + U.esc(s.id) + '"' + (s.id === DB.currentSemesterId ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>' +
             '<div class="saved-dot" id="savedDot"></div>' +
+            '<button class="btn sm" data-action="dl-backup" style="margin:2px 0 6px" title="Download a full backup file of this class">Download backup</button>' +
             (function() { var u = currentUser(); if (!u) return '';
               var ini = (u.name || u.username).charAt(0).toUpperCase();
               return '<div class="user-chip"><span class="uc-avatar">' + U.esc(ini) + '</span>' +
@@ -2608,7 +2677,8 @@
         '</tbody></table>' : '') +
         '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
         '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook: no data copying needed.</span></div>' +
-        '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
+        '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: download backups regularly.' : 'checking… download backups regularly until it says granted.') + '</p>' +
+      '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
           ? '<b>Master password is set.</b> From the sign-in screen it can reset the admin password if that is ever forgotten. Keep it on paper: SPR cannot show it again.'
           : '<b>No master password yet.</b> Set one as a recovery key: if the admin password is ever forgotten, the master password resets it from the sign-in screen. Keep it on paper: SPR cannot show it again.') + '</p>' +
         '<div class="flex" style="margin-top:8px">' + (masterWrap()
@@ -2680,6 +2750,7 @@
           '</div>';
       })()) +
       (isAdmin() ?
+      (sprMode() !== 'class' ? '<div class="panel" style="margin-top:10px;border-color:#d8b0a6"><p class="small" style="margin:0"><b>Shared-markbook mode.</b> Every sign-in created here opens this same markbook: all students, all classes. If teachers should each get their own class with only their students, set their device up in class mode instead (one class device per classroom).</p></div>' : '') +
       '<h3 style="font-family:var(--font-display);margin:22px 0 12px">Data: administrator only</h3>' +
       '<div class="flex">' +
         '<button class="btn danger-solid" data-action="load-sample">Reset to sample data</button>' +
@@ -3443,11 +3514,59 @@
         try {
           const res = await firstRunCreate(un, pw);
           if (res.error) { if (errEl) errEl.textContent = res.error; return; }
-          closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
-          toast('Sign-in created: welcome to SPR');
-          if (!DB.settings.privacyAck) openPrivacy();
+          /* item 4: no admin account without a recovery path. The dialog stays
+             up until a master password is set or a recovery file is saved. */
+          openDlg('<h3>One more thing: your recovery path</h3>' +
+            '<p class="small">If the admin password is ever forgotten, one of these two is the only way back in. Choose one now.</p>' +
+            '<div class="panel" style="margin:10px 0"><b>1. Set a master password</b>' +
+            '<p class="small muted">A second password that can reset the admin password from the sign-in screen. Keep it on paper.</p>' +
+            '<div class="flex" style="gap:8px;flex-wrap:wrap"><input type="password" id="mrPw" class="inp" style="max-width:210px" placeholder="Master password" autocomplete="new-password">' +
+            '<button class="btn" data-action="recovery-master">Set master password</button></div>' +
+            '<div class="login-err" id="mrErr" aria-live="assertive"></div></div>' +
+            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file</b>' +
+            '<p class="small muted">A backup file of this brand-new (empty) workbook. Keep it with the school\u2019s records.</p>' +
+            '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-action="recovery-dl">Download recovery file</button>' +
+            '<label class="small" style="gap:6px"><input type="checkbox" id="recoverySaved"> I saved the file</label></div></div>' +
+            '<div class="login-err" id="recErr" aria-live="assertive"></div>' +
+            '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack">Continue</button></div>',
+            function (d) { d.addEventListener('cancel', function (e) { e.preventDefault(); }); });
         } catch (err) { if (errEl) errEl.textContent = 'Setup failed: ' + err.message; }
       })();
+      return;
+    }
+    if (a === 'recovery-master') {
+      (async () => {
+        const err = $('#mrErr');
+        const mst = ($('#mrPw') ? $('#mrPw').value : '') || '';
+        const perr = CS.pwOk('admin', mst);
+        if (perr) { if (err) err.textContent = perr; return; }
+        try {
+          const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
+          v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, mst);
+          writeV2(v2);
+          if (err) err.textContent = '';
+          const cb = $('#recoverySaved'); if (cb) { cb.checked = true; cb.disabled = true; }
+          toast('Master password set');
+        } catch (e2) { if (err) err.textContent = 'Could not set the master password: ' + e2.message; }
+      })();
+      return;
+    }
+    if (a === 'recovery-dl') {
+      downloadBackup();
+      const cb = $('#recoverySaved');
+      if (cb && !cb.disabled) cb.checked = true;
+      return;
+    }
+    if (a === 'recovery-ack') {
+      const cb = $('#recoverySaved');
+      const err = $('#recErr');
+      const v2 = readV2();
+      const masterSet = !!(v2 && v2.wraps && v2.wraps[MASTER_KEY]);
+      if (!masterSet && !(cb && cb.checked)) { if (err) err.textContent = 'Choose one of the two options first: set a master password or download the recovery file.'; return; }
+      try { localStorage.setItem('spr-recovery-ack', String(Date.now())); } catch (e3) {}
+      closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
+      toast('Sign-in created. Welcome to SPR');
+      if (!DB.settings.privacyAck) openPrivacy();
       return;
     }
     if (a === 'acct-del') {
@@ -3531,7 +3650,7 @@
     if (a === 'acct-add-open') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       openDlg('<h3>Add a sign-in</h3>' +
-        '<p class="small">Creates an account with its own password that opens this same markbook. With device sync on, it also works on any other system: the teacher signs in and the same data arrives. <b>Teacher</b>: the everyday markbook tools. <b>Management</b>: also sees the Ranking view across every workbook.</p>' +
+        '<p class="small">Creates an account with its own password. In this mode it opens this same markbook (all students); class mode gives each teacher their own class instead. With device sync on, it also works on any other system: the teacher signs in and the same data arrives. <b>Teacher</b>: the everyday markbook tools. <b>Management</b>: also sees the Ranking view across every workbook.</p>' +
         '<label>Username <input class="inp" id="naUser" placeholder="e.g. ZFYBLS" autocomplete="off"></label>' +
         '<label>Display name <input class="inp" id="naName" placeholder="shown on the sidebar (optional)"></label>' +
         '<label>Role <select class="inp" id="naRole"><option value="teacher">Teacher</option><option value="management">Management</option></select></label>' +
@@ -3888,6 +4007,10 @@
     if (a === 'ds-enable') { dsEnable(); return; }
     if (a === 'ds-now') { dsPullCheck(true); return; }
     if (a === 'ds-link') { dsLinkModal(); return; }
+    if (a === 'stale-reload') { location.reload(); return; }
+    if (a === 'dl-backup') { downloadBackup(); toast('Backup downloaded. Keep it somewhere safe outside this device.'); return; }
+    if (a === 'stale-reload') { location.reload(); return; }
+    if (a === 'dl-backup') { downloadBackup(); toast('Backup downloaded. Keep it somewhere safe outside this device.'); return; }
     if (a === 'req-email') { window.location.href = reqMailto(); toast('Opening your email app: the request is already filled in.'); return; }
     if (a === 'req-copy') {
       const t = reqText();
@@ -3977,8 +4100,9 @@
         const s = DB.semesters.find((x) => x.id === el.dataset.semid);
         if (!s) return;
         const okGo = await confirmDlg('Delete ' + U.esc(s.name) + '?',
-          'All scores for this semester will be removed. Export Excel or download a backup first if you need a copy.', 'Delete semester');
+          'All scores for this semester will be removed. A safety copy is kept first: Manage & setup &rarr; Backups can bring it back.', 'Delete semester');
         if (!okGo) return;
+        stashSafetyBackup('before deleting semester ' + (s.name || s.id));
         const idx = DB.semesters.findIndex((x) => x.id === s.id);
         DB.semesters = DB.semesters.filter((x) => x.id !== s.id);
         if (DB.currentSemesterId === s.id) DB.currentSemesterId = DB.semesters[0] ? DB.semesters[0].id : null;
@@ -3997,8 +4121,9 @@
         const stu = sem && sem.students.find((s) => s.id === sid);
         if (!stu) return;
         const okGo = await confirmDlg('Remove ' + U.esc(stu.nameEn || stu.nameCn || sid) + '?',
-          'Their scores in ' + U.esc(sem.name) + ' will be deleted.', 'Remove student');
+          'Their scores in ' + U.esc(sem.name) + ' will be deleted. A safety copy is kept first: Manage & setup &rarr; Backups can bring them back.', 'Remove student');
         if (!okGo) return;
+        stashSafetyBackup('before removing ' + (stu.nameEn || stu.nameCn || sid));
         const obs = sem.observations[sid] || null, spl = sem.spelling[sid] || null, dal = sem.daily[sid] || null, tst = sem.tests[sid] || null;
         const stuIdx = sem.students.findIndex((s) => s.id === sid);
         sem.students = sem.students.filter((s) => s.id !== sid);
@@ -4217,7 +4342,9 @@
   /* ---------- Supabase channel (Save & Share, per-class) ---------- */
   function sbHeaders(extra) {
     const sb = SB();
-    return Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
+    const h = Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
+    try { const c = dsCfg(); if (c && c.writeToken) h['x-spr-write-token'] = String(c.writeToken); } catch (e) {}
+    return h;
   }
   async function sbGet(channel) {
     const sb = SB();
@@ -4539,7 +4666,16 @@
     try { await dsKillRow(await dsChan(username)); } catch (e) {}
   }
   function dsOn() { const c = dsCfg(); return !!(c && c.on); }
-  function dsSaveCfg(cfg) { if (cfg) localStorage.setItem(DS_KEY, JSON.stringify(cfg)); else { try { localStorage.removeItem(DS_KEY); } catch (e) {} } }
+  function dsSaveCfg(cfg) {
+    if (cfg) {
+      /* item 5: every paired device gets a random write token; pushes carry it
+         and the cloud row keeps only its hash (see docs/device-sync.md) */
+      if (cfg.on && !cfg.writeToken) {
+        try { const t = new Uint8Array(24); crypto.getRandomValues(t); cfg.writeToken = Array.from(t).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); } catch (e) {}
+      }
+      localStorage.setItem(DS_KEY, JSON.stringify(cfg));
+    } else { try { localStorage.removeItem(DS_KEY); } catch (e) {} }
+  }
   function dsAdminActive() { return !!(cryptoOK() && isAdmin() && SESSION && SESSION.dk); }
   /* sync transport runs for EVERY signed-in user on a paired device (the
      markbook is shared by the whole school); channel CONTROL (enable / turn
@@ -4762,7 +4898,15 @@
     clearTimeout(dsTimer);
     dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
   }
-  function writeV2(v2) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} scheduleSyncPush(); }
+  function writeV2(v2) {
+    try {
+      localStorage.setItem(V2_KEY, JSON.stringify(v2));
+      KNOWN_STORE_TS = Math.max(KNOWN_STORE_TS, v2.ts || Date.now());
+      saveOkBanner();
+    } catch (e) { saveFailedBanner(); return false; }
+    scheduleSyncPush();
+    return true;
+  }
   /* tombstone-first row removal (a DELETE the row policy ignores still says
      204 in PostgREST, so overwrite the payload with a dead marker first) */
   async function dsKillRow(id) {
@@ -5535,6 +5679,8 @@
   async function init() {
     chartTheme();
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
+    KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
+    KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     try { DS_BOOT_TS = Math.max(DS_BOOT_TS, Number(localStorage.getItem('spr-ds-boot') || 0) || 0); } catch (e) {}
     window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
     /* a push scheduled but not yet fired when the tab is hidden/closed would
@@ -5542,14 +5688,24 @@
     function dsFlushPending() {
       if (dsTimer) { clearTimeout(dsTimer); dsTimer = null; try { dsPushNow(false); } catch (e) {} }
     }
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') dsFlushPending(); });
-    window.addEventListener('pagehide', dsFlushPending);
+    function flushPendingSave() {
+      if (!saveTimer) return;
+      clearTimeout(saveTimer); saveTimer = null;
+      if (CLS && CLS_KEY) classPersistNow(true);
+      else if (cryptoOK() && SESSION.dk) persistNow(true);
+      else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
+    }
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { flushPendingSave(); dsFlushPending(); } });
+    window.addEventListener('pagehide', function () { flushPendingSave(); dsFlushPending(); });
     DB = emptyDB();
     buildShell();
     document.title = "Student's Performance Report";
     window.addEventListener('hashchange', function () { route(); maybeJoin(); });
     window.addEventListener('storage', function (e) {
-      if (e.key === V2_KEY || e.key === LS_KEY) toast('Data changed in another tab: reload this tab to see it.', true);
+      if (e.key === V2_KEY || e.key === LS_KEY || (CLS && CLS_KEY && e.key === classBlobKey(CLS.id))) {
+        if (SESSION && SESSION.dk) showStaleOverlay();   /* another tab wrote newer data */
+        else toast('Data changed in another tab: reload this tab to see it.', true);
+      }
     });
     route();
     let ready = false;
@@ -5571,7 +5727,7 @@
               try {
                 const raw = localStorage.getItem(classBlobKey(meta.id));
                 try { window.__SPR_RESTORE_STEP += ' raw=' + (raw ? raw.length : 'null'); } catch (e9) {}
-                if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; try { window.__SPR_RESTORE_STEP += ' decrypted'; } catch (e9) {} }
+                if (raw) { CLS = { id: meta.id }; CLS_KEY = SESSION.keys[meta.id]; CLS_TS = classBlobTs(raw) || Date.now(); DB = normalizeDB(await CS.openClass(JSON.parse(raw), CLS_KEY)); DB.sprClass = 1; DB.id = meta.id; try { window.__SPR_RESTORE_STEP += ' decrypted'; } catch (e9) {} }
               } catch (e3) { try { window.__SPR_RESTORE_ERR = (e3 && e3.message) || 'unknown restore error'; } catch (e4) {} console.warn('[spr] the saved class copy could not be opened on restore:', e3 && e3.message); CLS = null; CLS_KEY = null; }
             }
             RESTORING = false;
@@ -5626,6 +5782,43 @@
       /* session was restored after the first paint: re-render with the real DB
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
+      /* item 6: a session mirror newer than the stored blob means the tab closed
+         faster than the 300 ms debounce could save — offer it back */
+      (function mirrorRecover() {
+        try {
+          const mir = JSON.parse(sessionStorage.getItem('spr-session-db') || 'null');
+          if (mir && mir.ts && mir.db && mir.ts > ((readV2() || {}).ts || 0)) {
+            confirmDlg('Recover your last edit?', 'The window closed before saving finished. The newer copy from that session can be brought back now.', 'Recover').then(function (yes) {
+              if (!yes) return;
+              try { DB = normalizeDB(mir.db); buildShell(); route(); persistNow(true); toast('Last edit recovered'); } catch (e) { toast('Could not recover that copy', true); }
+            });
+          }
+        } catch (e) {}
+      })();
+      /* item 3: ask the browser to keep SPR storage (best effort, shown in Manage) */
+      requestPersistentStorage();
+      /* item 3: Safari/iOS can drop site data after ~7 days idle — say it once */
+      (function iosDataWarn() {
+        try {
+          const ua = navigator.userAgent || '';
+          const safariish = /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrom|Edg|Firefox/.test(ua));
+          if (!safariish || localStorage.getItem('spr-ios-data-warn')) return;
+          localStorage.setItem('spr-ios-data-warn', '1');
+          openDlg('<h3>One thing to know about Safari</h3><p class="small">Safari on iPhone and iPad can remove website data after about 7 days of not using a site. Download a backup from the sidebar regularly, and keep a copy outside this device.</p><div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">Got it</button></div>');
+        } catch (e) {}
+      })();
+      /* item 3: many edits without a backup -> offer one (at most once a day) */
+      (function backupAfterSession() {
+        try {
+          if (!DB.semesters.length) return;
+          const n = Number(localStorage.getItem('spr-edits-since-backup')) || 0;
+          const DAY = 86400000;
+          const lastNudge = Number(localStorage.getItem('spr-backup-nudged-day')) || 0;
+          if (n < 30 || (Date.now() - lastNudge) < DAY) return;
+          localStorage.setItem('spr-backup-nudged-day', String(Date.now()));
+          openDlg('<h3>Download a backup?</h3><p class="small">' + n + ' changes have been made since the last backup download. It takes one tap and keeps the class recoverable.</p><div class="dlg-actions"><button class="btn" data-action="dlg-close">Not now</button><button class="btn primary" data-action="dl-backup">Download backup</button></div>');
+        } catch (e) {}
+      })();
       /* gentle backup nudge: monthly reminder, at most once a week */
       (function nudgeBackup() {
         if (!DB.semesters.length) return;

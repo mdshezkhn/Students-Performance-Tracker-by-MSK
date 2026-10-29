@@ -71,7 +71,7 @@ async function loginAs(B, user, pass) {
 }
 
 const ADMIN = 'mo';
-  let PW = 'tiny-pw';   /* 2026-10-25: no length floor - the suite's admin uses a short password */
+  let PW = 'class-admin-1';   /* item 4 (2026-10-28): admin minimum is 8 chars, so the suite's admin password grew */
 
 (async function main() {
   /* ---- S1: admin first-run + legacy sample data ---- */
@@ -82,10 +82,23 @@ const ADMIN = 'mo';
   click(B, B.d.querySelector('[data-action="show-setup"]'));
   await sleep(150);
   setVal(B, B.d.querySelector('#suUser'), ADMIN);
-  setVal(B, B.d.querySelector('#suPass'), 'tiny-pw');
-  setVal(B, B.d.querySelector('#suConf'), 'tiny-pw');
+  setVal(B, B.d.querySelector('#suPass'), 'class-admin-1');   /* item 4: admin minimum is 8 */
+  setVal(B, B.d.querySelector('#suConf'), 'class-admin-1');
   click(B, B.d.querySelector('[data-action="first-run"]'));
-  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 20000), 'a short admin password is ACCEPTED at setup (no length floor)');
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = B.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
+  ok(await waitFor(() => !B.d.body.classList.contains('auth-gate'), 20000), 'admin signed in after the recovery-path step (item 4)');
   /* the admin is now signed in with the short password; later sections re-login with ADMIN/PW */
   await ackPrivacy(B);
   const sample = B.d.querySelector('[data-action="load-sample"]');

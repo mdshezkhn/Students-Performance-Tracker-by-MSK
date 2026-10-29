@@ -56,6 +56,19 @@ async function firstRun(B, user, pw) {
   setVal(B, B.d.getElementById('suPass'), pw);
   setVal(B, B.d.getElementById('suConf'), pw);
   click(B, B.d.querySelector('[data-action="first-run"]'));
+  for (let t = 0; t < 40; t++) {
+    await sleep(250);
+    const dl = B.d.getElementById('dlg');
+    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
+      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
+      if (dlBtn) dlBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(150);
+      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
+      await sleep(150);
+      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      break;
+    }
+  }
   return waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000);
 }
 

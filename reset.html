@@ -33,15 +33,25 @@
     <li>Other teachers will re-connect to the new class with a fresh key (Manage &amp; setup → Advanced → Key &amp; link).</li>
   </ul>
   <div class="row">
-    <button class="ghost" id="save">Save a raw copy first (optional)</button>
-    <button class="danger" id="wipe">Erase everything and restart</button>
+    <button class="ghost" id="save">1. Save a raw copy to your Downloads folder</button>
   </div>
+  <div class="row" style="margin-top:12px">
+    <input id="erase-confirm" type="text" autocomplete="off" spellcheck="false" placeholder="type ERASE here" style="flex:1;min-width:170px;font-family:system-ui,sans-serif;font-size:15px;padding:11px 12px;border:1px solid #cfc9b4;border-radius:9px">
+    <button class="danger" id="wipe" disabled>2. Erase everything and restart</button>
+  </div>
+  <p class="sub" style="margin-top:12px">The erase button unlocks only after the raw copy is saved and you type ERASE above.</p>
   <div id="status"></div>
   <div class="fine">Tip: if you can still sign in on another computer where SPR works, you can first use <b>Manage &amp; setup → Advanced → Export everything</b> there, and after this reset use <b>Restore everything</b> here to bring your class data back.</div>
 </div>
 <script>
 (function () {
   var status = document.getElementById('status');
+  var savedCopy = false;
+  var confirmInp = document.getElementById('erase-confirm');
+  var wipeBtn = document.getElementById('wipe');
+  function armWipe() { wipeBtn.disabled = !(savedCopy && confirmInp.value.trim().toUpperCase() === 'ERASE'); }
+  if (confirmInp) confirmInp.addEventListener('input', armWipe);
+  if (confirmInp) confirmInp.addEventListener('change', armWipe);
   function dump() {
     var out = { madeAt: new Date().toISOString(), origin: location.origin, localStorage: {}, sessionStorage: {} };
     try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); out.localStorage[k] = localStorage.getItem(k); } } catch (e) {}
@@ -52,6 +62,9 @@
     a.download = 'spr-raw-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a); a.click(); a.remove();
     status.textContent = 'Raw copy saved to your Downloads folder.';
+    savedCopy = true;
+    wipe.disabled = false;
+    armWipe();
   }
   function clearAll() {
     try { sessionStorage.clear(); } catch (e) {}

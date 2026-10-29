@@ -44,6 +44,15 @@ with sync_playwright() as pw:
         pg.locator('[data-action="show-setup"]').first.click(); pg.wait_for_timeout(300)
     pg.fill('#suUser', 'Mo'); pg.fill('#suPass', 'voice-pass-1'); pg.fill('#suConf', 'voice-pass-1')
     pg.locator('[data-action="first-run"]').click(); pg.wait_for_timeout(1500)
+    # data-safety (merged 2026-10-28): first-run stops at a recovery-path dialog
+    for _ in range(20):
+        if pg.locator('[data-action="recovery-ack"]').count():
+            pg.locator('[data-action="recovery-dl"]').first.click(); pg.wait_for_timeout(200)
+            cb = pg.locator('#recoverySaved')
+            if cb.count() and cb.is_enabled(): cb.check(); pg.wait_for_timeout(150)
+            pg.locator('[data-action="recovery-ack"]').first.click(); pg.wait_for_timeout(400)
+        if 'auth-gate' not in (pg.get_attribute('body', 'class') or ''): break
+        pg.wait_for_timeout(300)
     if pg.locator('[data-action="load-sample"]').count():
         pg.locator('[data-action="load-sample"]').first.click(); pg.wait_for_timeout(600)
         if pg.locator('#dlg [data-x="1"]').count():
