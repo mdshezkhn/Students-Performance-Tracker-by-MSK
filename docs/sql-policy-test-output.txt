@@ -1,0 +1,55 @@
+
+=== A: old policy named exactly as the file guesses ("anon can update channels")
+SQL file ran without error
+direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
+  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
+write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
+enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
+enrol with RIGHT key: OK rows=0 [{"spr_channel_enrol":""}]
+ping after enrol: OK rows=0 [{"spr_channel_ping":"ok"}]
+write WRONG token: REFUSED: spr_channel_write: write token rejected
+write RIGHT token: OK rows=0 [{"spr_channel_write":""}]
+  after right write: {"payload":{"good":1},"has_prev":true}
+re-enrol attempt by attacker with own token+right key (already armed): REFUSED: spr_channel_enrol: channel already enrolled
+anon DELETE: REFUSED: permission denied for table spr_channels
+
+=== B: old policy has a DIFFERENT name ("Enable update for anon users")
+SQL file ran without error
+direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
+  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
+write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
+enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
+enrol with RIGHT key: OK rows=0 [{"spr_channel_enrol":""}]
+ping after enrol: OK rows=0 [{"spr_channel_ping":"ok"}]
+write WRONG token: REFUSED: spr_channel_write: write token rejected
+write RIGHT token: OK rows=0 [{"spr_channel_write":""}]
+  after right write: {"payload":{"good":1},"has_prev":true}
+re-enrol attempt by attacker with own token+right key (already armed): REFUSED: spr_channel_enrol: channel already enrolled
+anon DELETE: REFUSED: permission denied for table spr_channels
+
+=== C: old policy is an ALL policy ("public full access")
+SQL file ran without error
+direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
+  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
+write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
+enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
+enrol with RIGHT key: OK rows=0 [{"spr_channel_enrol":""}]
+ping after enrol: OK rows=0 [{"spr_channel_ping":"ok"}]
+write WRONG token: REFUSED: spr_channel_write: write token rejected
+write RIGHT token: OK rows=0 [{"spr_channel_write":""}]
+  after right write: {"payload":{"good":1},"has_prev":true}
+re-enrol attempt by attacker with own token+right key (already armed): REFUSED: spr_channel_enrol: channel already enrolled
+anon DELETE: REFUSED: permission denied for table spr_channels
+
+=== D: Save & Share shapes (two teachers, one token)
+owner INSERT (armed): OK rows=1
+co-teacher RPC write: OK rows=0
+owner RPC write again: OK rows=0
+  row now: pushed_by=Mo, previous.by=Anna
+old row RPC write (not enrolled): REFUSED: spr_channel_write: channel has no token enrolled yet
+old row enrol (share-key proof): OK rows=0
+old row RPC write after enrol: OK rows=0
+wrong-token write on armed row: REFUSED: spr_channel_write: write token rejected

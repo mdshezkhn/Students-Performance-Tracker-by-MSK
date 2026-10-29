@@ -1,12 +1,18 @@
 -- spr_channels write-token upgrade (round 5, 2026-10-29)
 --
 -- =====================================================================
---  DO NOT RUN YET. This file is verified against a mock of PostgREST
---  (tests/test-round5.js) but has NOT been run against the real
---  Supabase project. The reviewer runs it after verification.
---  If you run it while clients are older than the round5 build, cloud
---  pushes from those clients fail (they fall back to nothing). Wait
---  for the reviewer.
+--  DO NOT RUN YET. Verification so far (round 6):
+--    - this exact file ran on a real Postgres engine (PGlite + pgcrypto,
+--      anon role, RLS) in THREE policy scenarios: the old UPDATE policy
+--      named as guessed, named differently, and an ALL policy. Direct
+--      anon UPDATE and DELETE are REFUSED in all three; the row is never
+--      overwritten. Harness: docs/sql-policy-test.mjs, output in
+--      docs/qa/round6/sql-policy-test-output.txt.
+--    - the app's own write shapes (device sync AND Save & Share) pass
+--      against a mock of PostgREST (tests/test-round6.js).
+--  The reviewer still decides when to run it on the REAL project, and
+--  every device that pushes must first run the round6 app build (older
+--  clients fall back to the direct PATCH, which this file blocks).
 -- =====================================================================
 --
 -- WHY: the channel id is derivable from a username, and the public
@@ -36,12 +42,22 @@
 --           If it says the channel was enrolled just now: correct, that
 --           was the enrol RPC arming your existing cloud copy.
 --
+-- STEP 1 also prints a CHECK query result (section 7). EXPECTED, exactly:
+--   two rows only: "spr_channels_read" (SELECT) and "spr_channels_insert"
+--   (INSERT). ANY other row (UPDATE, DELETE, ALL) means the direct-write
+--   hole is still open: paste the result back to the reviewer.
+--
 -- WHAT THIS DOES NOT DO
 --   - It cannot un-leak a token that an attacker already copied off a
 --     paired device; rotate by turning sync off and on (regenerates the
 --     token and re-arms on the next push).
 --   - Reads stay public by design (share links need anon SELECT); the
 --     payloads are sealed and HMAC-checked, so a read is not a leak.
+--   - Account POINTER rows created before this file runs cannot be
+--     enrolled (their payload is sealed under the account password, so
+--     there is no key to prove). They become read-only: password changes
+--     on such accounts just show the usual advice line. New pointers are
+--     armed from birth.
 --
 -- 1. schema -----------------------------------------------------------------
 
@@ -151,12 +167,14 @@ security definer
 set search_path = public, extensions
 as $$
   select case
-    when not exists (select 1 from public.spr_channels where id = p_id)                  then 'no-row'
-    when write_token_hash is null                                                        then 'no-token'
-    when encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex') = write_token_hash then 'ok'
-    else 'bad-token'
-  end
-  from public.spr_channels where id = p_id;
+    when not exists (select 1 from public.spr_channels where id = p_id) then 'no-row'
+    else (select case
+            when write_token_hash is null then 'no-token'
+            when encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex') = write_token_hash then 'ok'
+            else 'bad-token'
+          end
+          from public.spr_channels where id = p_id)
+  end;
 $$;
 
 -- 5. who may call what ---------------------------------------------------------
@@ -168,16 +186,37 @@ grant execute on function public.spr_channel_enrol(uuid, text, text) to anon, au
 revoke execute on function public.spr_channel_ping(uuid, text) from public;
 grant execute on function public.spr_channel_ping(uuid, text) to anon, authenticated;
 
--- 6. close the direct-write hole ------------------------------------------------
+-- 6. close the direct-write hole, whatever the old policies are called ----------
+-- Drops EVERY existing UPDATE / DELETE / ALL policy on the table (their names
+-- are unknown to this file), removes the table privileges, then makes sure
+-- plain read and insert still work. Verified on a real Postgres engine with
+-- differently named policies and with an ALL policy.
 
-drop policy if exists "anon can update channels" on public.spr_channels;
-drop policy if exists "channels updatable" on public.spr_channels;
+do $$
+declare r record;
+begin
+  for r in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'spr_channels'
+      and cmd in ('UPDATE', 'DELETE', 'ALL')
+  loop
+    execute format('drop policy %I on public.spr_channels', r.policyname);
+  end loop;
+end
+$$;
 
-create policy "no direct updates"
-  on public.spr_channels for update to anon, authenticated
-  using (false)
-  with check (false);
+revoke update, delete on public.spr_channels from anon, authenticated;
 
--- NOTE: INSERT stays allowed for anon (a fresh channel is created by the
--- first push). Rows created after this file is run arrive WITH their
--- write_token_hash already set by the client, so they are armed from birth.
+-- an ALL policy may have been the thing that allowed reading and inserting:
+drop policy if exists "spr_channels_read" on public.spr_channels;
+create policy "spr_channels_read"
+  on public.spr_channels for select to anon, authenticated using (true);
+drop policy if exists "spr_channels_insert" on public.spr_channels;
+create policy "spr_channels_insert"
+  on public.spr_channels for insert to anon, authenticated with check (true);
+
+-- 7. CHECK (copy the result of this query back to the reviewer) ------------------
+-- Expected: only SELECT and INSERT rows. Any UPDATE, DELETE or ALL row means the
+-- hole is still open.
+select policyname, cmd, roles from pg_policies
+where schemaname = 'public' and tablename = 'spr_channels' order by cmd, policyname;

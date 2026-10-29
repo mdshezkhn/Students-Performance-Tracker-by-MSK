@@ -1,0 +1,16 @@
+round6 item 3 — headless Edge (channel=msedge), 3 fresh runs
+PASS run0: signed up (recovery path set)
+PASS run0: class mode after first class
+PASS run0: persistent-storage line resolves (('not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly', 0.0))
+PASS run0: resolved within 3 s
+PASS run1: signed up (recovery path set)
+PASS run1: class mode after first class
+PASS run1: persistent-storage line resolves (('not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly', 0.01))
+PASS run1: resolved within 3 s
+PASS run2: signed up (recovery path set)
+PASS run2: class mode after first class
+PASS run2: persistent-storage line resolves (('not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly', 0.0))
+PASS run2: resolved within 3 s
+page errors: 0
+
+12/12 PASS

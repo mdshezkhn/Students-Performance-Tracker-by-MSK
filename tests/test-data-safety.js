@@ -188,9 +188,15 @@ function click(B, el) { el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: 
     const pushes = calls.filter((c) => (/rest\/v1\/spr_channels/.test(c.url) || /rest\/v1\/rpc\/spr_channel_write/.test(c.url)) && (c.opts.method === 'PATCH' || c.opts.method === 'POST'));
     if (!pushes.length) console.log('    [dbg] fetch calls seen:', calls.map((c) => (c.opts.method || 'GET') + ' ' + c.url.slice(-40)).join(' | ') || '(none)');
     check(pushes.length >= 1, 'a push was attempted');
-    /* round5 item 1: the token travels in the spr_channel_write RPC BODY now; a header is invisible to row policies */
+    /* round5 item 1 + round6: a brand-new channel is ARMED at its first insert
+       (write_token_hash in the body); an existing row is written via the
+       spr_channel_write RPC with the token in the body. This harness has no
+       pre-existing row, so the armed insert is the correct path here. */
     const rpcPush = pushes.find((c) => /rpc\/spr_channel_write/.test(c.url));
-    check(!!rpcPush && String(rpcPush.opts.body || '').includes('p_token'), 'push carries the write token in the RPC body (round5)');
+    const insPush = pushes.find((c) => /rest\/v1\/spr_channels$/.test(c.url.split('?')[0]) && c.opts.method === 'POST');
+    check((!!rpcPush && String(rpcPush.opts.body || '').includes('p_token')) ||
+          (!!insPush && String(insPush.opts.body || '').includes('write_token_hash')),
+      'push carries the token: RPC body (round5) or armed insert (round6)');
     A.w.close();
   }
 

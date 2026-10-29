@@ -176,15 +176,18 @@
   window.addEventListener('beforeunload', function (e) {
     if (document.getElementById('saveAlert')) { e.preventDefault(); e.returnValue = ''; }
   });
+  let PERSIST_PENDING = false;
   function requestPersistentStorage() {
     try {
-      if (!navigator.storage || !navigator.storage.persist) return;
+      if (!navigator.storage || !navigator.storage.persist || PERSIST_PENDING) return;
+      PERSIST_PENDING = true;
       if (navigator.storage.persisted) {
         /* current truth FIRST (answers in ms); persist() refines it after */
         navigator.storage.persisted().then(function (yes) { if (SPR_PERSIST === null) { SPR_PERSIST = !!yes; if (location.hash === '#/manage') renderManage(); } }).catch(function () {});
       }
-      navigator.storage.persist().then(function (ok) { SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); }).catch(function () { SPR_PERSIST = false; });
-      setTimeout(function () { if (SPR_PERSIST === null) { SPR_PERSIST = false; if (location.hash === '#/manage') renderManage(); } }, 3000);   /* round5 item 4: never stick on checking */
+      const done = function (ok) { PERSIST_PENDING = false; SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); };
+      navigator.storage.persist().then(function (ok) { done(ok); }, function () { done(false); });
+      setTimeout(function () { if (SPR_PERSIST === null) { done(false); } }, 3000);   /* round5 item 4 + round6: never stick on checking, promise or no promise */
     } catch (e) { SPR_PERSIST = false; }
   }
   async function persistNow(silent) {
@@ -2683,6 +2686,7 @@
         '</tbody></table>' : '') +
         '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
         '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook: no data copying needed.</span></div>' +
+        (SPR_PERSIST === null ? (function () { setTimeout(requestPersistentStorage, 0); return ''; })() : '') +
         '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly.' : 'checking…') + '</p>' +
       '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
           ? '<b>Master password is set.</b> From the sign-in screen it can reset the admin password if that is ever forgotten. Keep it on paper: SPR cannot show it again.'
@@ -3975,7 +3979,8 @@
             if (row && row.payload && row.payload.sprPTR === 1) {
               const pt = await ptrOpen(row.payload, cur);
               const env2 = await ptrSeal(pt, nw);
-              await sbSave(chan, env2, row.share_name || 'SPR pointer', me.username, new Date().toISOString(), false);
+              const dsC = dsCfg();
+              await sbSave(chan, env2, row.share_name || 'SPR pointer', me.username, new Date().toISOString(), false, dsC ? { token: dsC.writeToken, keyProof: dsC.key } : null);
               ptrNote = ' Cloud pointer updated too.';
             }
           } catch (e2) { ptrNote = ' (Could not update the cloud pointer - on other devices use the I-use-SPR-on-another-device option with the OLD password once, or ask the admin to reset it.)'; }
@@ -4396,7 +4401,7 @@
     const c = getShare();
     const id = c.channel || c.bin;
     if (!id || !c.key) return null;
-    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key);
+    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key) + (c.writeToken ? '&t=' + encodeURIComponent(c.writeToken) : '');
   }
   /* ---------- Supabase channel (Save & Share, per-class) ---------- */
   function sbHeaders(extra) {
@@ -4445,10 +4450,13 @@
     const rows = await res.json();
     return rows.length ? rows[0] : null;
   }
-  async function sbSave(channel, env, shareName, who, at, insert) {
+  async function sbSave(channel, env, shareName, who, at, insert, opts) {
     const sb = SB();
-    const dsC = (function () { try { return dsCfg(); } catch (e0) { return null; } })();
-    const token = dsC && dsC.writeToken;
+    /* round6: the token+key travel with the CALLER (device sync passes its
+       dsCfg values, Save & Share passes the share channel's own pair), so a
+       share push can never fall back to a different channel's token */
+    const token = opts && opts.token;
+    const keyProof = opts && opts.keyProof;
     if (token) {
       /* write-token world. Fresh channel: the very first INSERT arms the row
          (write_token_hash in the insert body). Existing row: the RPC is the
@@ -4477,9 +4485,9 @@
       } catch (e) {
         if (e && e.rpcMissing) {   /* SQL not run yet: legacy direct write */
           /* fall through to the direct path below */
-        } else if (e && e.notEnrolled && dsC.key) {
+        } else if (e && e.notEnrolled && keyProof) {
           try {
-            await sbEnrol(channel, token, dsC.key);
+            await sbEnrol(channel, token, keyProof);
             return await sbWrite(channel, token, env, who, at, shareName);
           } catch (e2) {
             if (e2 && e2.rpcMissing) { /* fall through */ }
@@ -4505,7 +4513,11 @@
        an opaque channel id, a timestamp and encrypted bytes */
     const pt = new TextEncoder().encode(JSON.stringify({ spr: 1, sem: sem, name: shareName || '', by: who }));
     const ct = await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, pt);
-    return { sprEnc: 1, v: 2, pushedAt: pushedAt, iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
+    const ctBytes = new Uint8Array(ct);
+    /* mac lets the server VERIFY a key-holder during enrol (same shape as the
+       device-sync envelope): b64url(HMAC-SHA256(key, ct)) */
+    const mac = await dsHmac(bytesFromB64u(keyB64), ctBytes);
+    return { sprEnc: 1, v: 2, pushedAt: pushedAt, iv: b64uFromBytes(iv), ct: b64uFromBytes(ctBytes), mac: mac };
   }
   function mergeSharedSem(sem) {
     validateDB({ semesters: [sem], settings: {} });
@@ -4584,10 +4596,19 @@
         const pushedAt = new Date().toISOString();
         if (!c.key) c.key = b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
         if (!c.channel) c.channel = uuid();
+        /* round6: the share channel gets its OWN write token (never reused from
+           device sync). It rides the share link next to the key, so the
+           co-teacher pushes with the same token; the server sees only its hash. */
+        if (!c.writeToken) {
+          const t = new Uint8Array(24); crypto.getRandomValues(t);
+          c.writeToken = Array.from(t, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        }
+        setShare(c);
         const env = await sealSem(sem, c.key, who, pushedAt, c.shareName);
+        const sbOpts = { token: c.writeToken, keyProof: c.key };
         /* '' keeps NOT NULL columns happy without sending real names (privacy) */
-        let out = await sbSave(c.channel, env, '', '', pushedAt, !row);
-        if (out === 'conflict') { out = await sbSave(c.channel, env, '', '', pushedAt, false); }
+        let out = await sbSave(c.channel, env, '', '', pushedAt, !row, sbOpts);
+        if (out === 'conflict') { out = await sbSave(c.channel, env, '', '', pushedAt, false, sbOpts); }
         c.lastPush = pushedAt; c.lastPushBy = who; setShare(c);
         toast('Saved & shared: send the link or QR to your co-teacher');
         shareQrModal();
@@ -4659,13 +4680,13 @@
 
     toast('The classic npoint channel was retired - ask your co-teacher for a current Save & Share link.', true);
   }
-  async function shareJoin(id, keyB64) {
-    if (looksUuid(id)) return joinSb(id, keyB64);
+  async function shareJoin(id, keyB64, writeToken) {
+    if (looksUuid(id)) return joinSb(id, keyB64, writeToken);
     /* pre-2026 npoint links are retired: nothing is fetched from npoint */
     toast('This share link uses the retired classic channel. Ask the sender to Push again with current SPR (Save & Share), or open a backup file.', true);
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   }
-  async function joinSb(channel, keyB64) {
+  async function joinSb(channel, keyB64, writeToken) {
     const sb = SB();
     try {
       if (!(sb.url && sb.key)) throw new Error('Save & Share is not set up on this browser yet');
@@ -4679,10 +4700,11 @@
       const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
       const okGo = await confirmDlg('Join shared class?',
         'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Join');
-      if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
+      const cleanUrl = function () { try { history.replaceState(null, '', location.pathname + location.search); } catch (eH) { try { location.hash = '/dashboard'; } catch (eH2) {} } };
+      if (!okGo) { cleanUrl(); return; }
       stashSafetyBackup('before replacing data');
-      setShare({ provider: 'sb', channel: channel, key: keyB64 || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
-      history.replaceState(null, '', location.pathname + location.search);
+      setShare({ provider: 'sb', channel: channel, key: keyB64 || null, writeToken: writeToken || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
+      cleanUrl();
       mergeSharedSem(obj.sem);
       toast('Joined: Save & Share now keeps this class in sync');
     } catch (e) {
@@ -4692,8 +4714,8 @@
   }
   function maybeJoin() {
     const h = location.hash || '';
-    const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?/);
-    if (m) { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null); return; }
+    const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?(?:&t=([^&]+))?/);
+    if (m) { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); return; }
     const p = h.match(/^#pair=([^&]+)&k=([^&]+)/);
     if (p) dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
   }
@@ -4775,15 +4797,15 @@
       if (!known) {
         /* first write must INSERT: a 409 means this username is already taken
            in the SPR cloud by another school: never overwrite their pointer */
-        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true);
+        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true, { token: cfg.writeToken, keyProof: cfg.key });
         if (res !== 'ok') return 'name-taken';
       } else {
         /* re-seal (password reset): PATCH our own row, then verify it landed —
            PostgREST reports success even when the id matches zero rows */
-        await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), false);
+        await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), false, { token: cfg.writeToken, keyProof: cfg.key });
         const back = await sbGet(id);
         if (!back || !back.payload || back.payload.ct !== env.ct) {
-          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true);
+          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true, { token: cfg.writeToken, keyProof: cfg.key });
           if (res !== 'ok') return 'name-taken';
         }
       }
@@ -5111,8 +5133,9 @@
       }
       const at = new Date().toISOString();
       const who = (cfg && cfg.device ? cfg.device : 'device') + ': ' + SESSION.user;
-      let r = await sbSave(chan, env, 'devicesync', who, at, !row);
-      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false);
+      const sbOpts = { token: cfg.writeToken, keyProof: cfg.key };
+      let r = await sbSave(chan, env, 'devicesync', who, at, !row, sbOpts);
+      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false, sbOpts);
       if (r !== 'ok') throw new Error('cloud save rejected');
       await dsAdoptChan(cfg, chan);
       cfg = dsCfg() || cfg;
@@ -5892,6 +5915,7 @@
             saveAuth(auth);
           }
           ready = true;
+          requestPersistentStorage();   /* round6 item 3: reloads must ask too (fresh sign-in already does) */
           try { window.__SPR_SESSION_RESTORED = sess.user; } catch (e5) {}
         }
       } catch (e) { try { sessionStorage.removeItem('spr-session'); } catch (e2) {} }
@@ -5983,7 +6007,7 @@
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
   /* round5: sync internals for the mock-PostgREST regression suite */
-  window.SPR_SYNC_TEST = { push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex };
+  window.SPR_SYNC_TEST = { push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex, sbSave: sbSave, sealSem: sealSem };
   window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };
