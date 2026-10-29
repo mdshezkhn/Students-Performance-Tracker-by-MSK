@@ -1,0 +1,44 @@
+1. write-token protection: real sync code vs mock PostgREST
+  ok: before-SQL: admin signed in
+  FAIL: before-SQL: push succeeds (direct PATCH, header ignored)
+  FAIL: before-SQL: cloud row holds the sealed copy
+  ok: before-SQL: row is NOT armed (owner has not run the SQL)
+  ok: after-SQL: admin signed in
+  FAIL: after-SQL: push succeeds via the RPC (auto-enrol on first refusal)
+  FAIL: after-SQL: client enrolled with the key proof (no manual SQL)
+  FAIL: after-SQL: token travels in the RPC body, not a header
+  FAIL: after-SQL: row armed with sha256(token)
+  FAIL: after-SQL: previous payload kept for rollback
+  FAIL: after-SQL: push with a wrong token is refused
+  ok: after-SQL: the cloud copy was NOT touched
+  FAIL: after-SQL: cloud copy is not marked saved (lastResult=fail)
+  FAIL: after-SQL: plain message says device data is safe
+  FAIL: fresh channel: first push succeeded
+  FAIL: fresh channel: armed from its very first write (insert carried the hash)
+  FAIL: Manage has a "Test cloud connection" button
+  FAIL: SQL file warns DO NOT RUN YET until verified
+  FAIL: SQL defines the enrol RPC (no manual token paste)
+  FAIL: SQL defines the read-only ping RPC
+  FAIL: no "paste token into SQL" instruction remains
+2. first class creation lands in class mode
+  ok: fresh admin signed in (empty vault, legacy mode at this point)
+  ok: first-run Manage offers the New class wizard
+  FAIL: browser is now in CLASS mode after the first class
+  FAIL: class index holds exactly the new class
+  FAIL: admin holds the class key in their keyring (per-class access)
+  ok: teacher signed in
+  FAIL: teacher holds a key for exactly ONE class (their own)
+3. recovery dialog: honest text + Continue gated on a real download
+  ok: recovery dialog offers the master password
+  ok: text says what the file can and cannot recover
+  FAIL: Continue starts DISABLED (no self-ticked "I saved")
+  FAIL: the self-tick checkbox is gone
+  ok: Continue enables only after the download button actually fired
+  ok: setup completes after the download-gated route
+4. leftovers
+  FAIL: 0 em dashes left in UI strings (comments and "— later —" placeholders excepted)
+  ok: Manage persistent-storage "not granted" wording present in the bundle
+  ok: persistent storage never sticks on "checking…"
+  ok: persistent storage shows its final state (granted / not granted)
+
+ROUND5: 14 ok, 24 FAIL

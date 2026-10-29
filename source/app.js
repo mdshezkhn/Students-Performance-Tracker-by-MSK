@@ -179,7 +179,12 @@
   function requestPersistentStorage() {
     try {
       if (!navigator.storage || !navigator.storage.persist) return;
+      if (navigator.storage.persisted) {
+        /* current truth FIRST (answers in ms); persist() refines it after */
+        navigator.storage.persisted().then(function (yes) { if (SPR_PERSIST === null) { SPR_PERSIST = !!yes; if (location.hash === '#/manage') renderManage(); } }).catch(function () {});
+      }
       navigator.storage.persist().then(function (ok) { SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); }).catch(function () { SPR_PERSIST = false; });
+      setTimeout(function () { if (SPR_PERSIST === null) { SPR_PERSIST = false; if (location.hash === '#/manage') renderManage(); } }, 3000);   /* round5 item 4: never stick on checking */
     } catch (e) { SPR_PERSIST = false; }
   }
   async function persistNow(silent) {
@@ -450,7 +455,7 @@
       ui.classOpen = true;
       /* self-heal: if the stored wrap cannot be derived from the user's real
          password (e.g. it was sealed under a one-time migration password on
-         another device), re-seal it now while we hold the correct key —
+         another device), re-seal it now while we hold the correct key:
          after this, sign-in alone unlocks the class again on every device */
       if (SESSION.pw) {
         const meH = myUser();
@@ -557,6 +562,7 @@
 
   /* ============================ toast & dialogs ============================ */
   function toast(msg, err) {
+    if (typeof document === 'undefined' || !document.getElementById) return;   /* window already torn down (close during an in-flight save) */
     const root = $('#toast-root'); if (!root) return;
     const t = document.createElement('div');
     t.className = 'toast' + (err ? ' err' : '');
@@ -750,7 +756,7 @@
     return '<div class="class-card">' +
       '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
       '<span class="cc-school">' + U.esc(c.school || '') + '</span>' +
-      '<div class="cc-pair small">' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</div>' +
+      '<div class="cc-pair small">' + U.esc(c.eal || '(none yet)') + ' ↔ ' + U.esc(c.support || '(none yet)') + '</div>' +
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
@@ -804,7 +810,7 @@
         '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key: a dry run and a backup come first.</p>' +
         '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       (ix.length ? '<h4 style="margin:16px 0 8px">Pairing &amp; share links</h4><table class="tbl"><tbody>' +
-        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</td>' +
+        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '(none yet)') + ' ↔ ' + U.esc(c.support || '(none yet)') + '</td>' +
           '<td><button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair…</button> ' +
           '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button></td></tr>').join('') +
         '</tbody></table>' +
@@ -905,8 +911,8 @@
       '<h3>New class</h3>' +
       '<div class="flex" style="gap:10px;flex-wrap:wrap"><label class="small">School <input class="inp" id="cn-school" style="width:160px" value=""></label>' +
       '<label class="small">Class name <input class="inp" id="cn-name" style="width:120px" placeholder="P4C4"></label></div>' +
-      '<div class="flex" style="gap:10px;margin-top:8px;flex-wrap:wrap"><label class="small">EAL teacher <select class="inp" id="cn-eal"><option value="">— later —</option>' + ealOpts + '</select></label>' +
-      '<label class="small">Support teacher <select class="inp" id="cn-sup"><option value="">— later —</option>' + supOpts + '</select></label></div>' +
+      '<div class="flex" style="gap:10px;margin-top:8px;flex-wrap:wrap"><label class="small">EAL teacher <select class="inp" id="cn-eal"><option value="">(set later)</option>' + ealOpts + '</select></label>' +
+      '<label class="small">Support teacher <select class="inp" id="cn-sup"><option value="">(set later)</option>' + supOpts + '</select></label></div>' +
       '<p class="small muted" style="margin-top:8px">Pairing a teacher now issues their class key with a fresh password (shown once). You can also pair later.</p>' +
       '<div class="login-err" id="cn-err"></div>' +
       '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Create class</button></div>',
@@ -996,7 +1002,7 @@
     const ix = classIndex(); const c = ix.find((x) => x.id === id);
     if (!c) return;
     const users = getAuth().users;
-    const sel = (role, cur) => '<select class="inp" id="pair-' + role + '"><option value="">— none —</option>' +
+    const sel = (role, cur) => '<select class="inp" id="pair-' + role + '"><option value="">(none yet)</option>' +
       users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
     openDlg(
       '<h3>Pair teachers: ' + U.esc(c.name) + '</h3>' +
@@ -1250,7 +1256,7 @@
     } else if (!DB.semesters.length) { toast('Nothing to migrate', true); return; }
     const plan = CS.planMigration(src);
     const users = getAuth().users;
-    const sel = (cid, role) => '<select class="inp" data-mig="' + U.esc(cid) + ':' + role + '"><option value="">— none —</option>' +
+    const sel = (cid, role) => '<select class="inp" data-mig="' + U.esc(cid) + ':' + role + '"><option value="">(none yet)</option>' +
       users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '">' + U.esc(u.username) + '</option>').join('') + '</select>';
     const rows = plan.classes.map((c) =>
       '<tr><td><b>' + U.esc(c.name) + '</b><div class="small muted">' + U.esc(c.school) + '</div></td>' +
@@ -2511,7 +2517,7 @@
     const VIDEO = '/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4';
     const mod = (t, steps) => '<details class="help-mod"><summary>' + t + '</summary><ol class="small" style="margin:8px 0 2px;padding-left:20px;line-height:1.7">' +
       steps.map((x) => '<li>' + x + '</li>').join('') + '</ol></details>';
-    return '<div class="panel"><b>Training modules</b> <span class="small muted">— tap a topic to open it. The illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</span>' +
+    return '<div class="panel"><b>Training modules</b> <span class="small muted">Tap a topic to open it. The illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</span>' +
       '<div class="flex" style="margin-top:8px">' +
         '<a class="btn sm" href="' + MANUAL + '" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
         '<a class="btn sm" href="' + VIDEO + '" target="_blank" rel="noopener">Watch the video guide</a>' +
@@ -2548,7 +2554,7 @@
         'Admins: set a <b>master password</b> once: from the sign-in screen it can recover the admin account if that password is ever forgotten.',
       ]) +
       '</div>' +
-      '<div class="panel" style="margin-top:12px"><b>Raise a request to the administrator</b> <span class="small muted">— something broken, a feature idea, or an account or password problem. The request goes straight to Teacher Mo (the site owner); fixes usually ship within a day.</span>' +
+      '<div class="panel" style="margin-top:12px"><b>Raise a request to the administrator</b> <span class="small muted">Something broken, a feature idea, or an account or password problem. The request goes straight to Teacher Mo (the site owner); fixes usually ship within a day.</span>' +
       '<div class="req-box" style="max-width:640px">' +
         '<label style="display:block;margin-top:10px;font-size:13px">What is it about? <select class="inp" id="reqType" style="width:100%;margin-top:4px">' +
           ['Something is broken', 'I need help using a screen', 'Feature idea', 'Password or account help', 'Other'].map((t) => '<option>' + t + '</option>').join('') + '</select></label>' +
@@ -2629,7 +2635,7 @@
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b>: store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
       (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
-        '<b>Safety copies</b> <span class="small muted">— kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
+        '<b>Safety copies</b> <span class="small muted">Kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
         safetyBackups().map((b, i) => '<div class="flex" style="margin-top:6px;gap:8px;align-items:center;flex-wrap:wrap">' +
           '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + ((b.db || {}).semesters || []).length + ' class(es)</span>' +
           '<button class="btn sm" data-action="sb-restore" data-i="' + i + '">Restore</button>' +
@@ -2677,7 +2683,7 @@
         '</tbody></table>' : '') +
         '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
         '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook: no data copying needed.</span></div>' +
-        '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: download backups regularly.' : 'checking… download backups regularly until it says granted.') + '</p>' +
+        '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly.' : 'checking…') + '</p>' +
       '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
           ? '<b>Master password is set.</b> From the sign-in screen it can reset the admin password if that is ever forgotten. Keep it on paper: SPR cannot show it again.'
           : '<b>No master password yet.</b> Set one as a recovery key: if the admin password is ever forgotten, the master password resets it from the sign-in screen. Keep it on paper: SPR cannot show it again.') + '</p>' +
@@ -3336,6 +3342,23 @@
       months: months, students: students,
       observations: {}, spelling: {}, daily: {}, tests: {},
     });
+    /* round5 item 2: the FIRST class on a fresh browser must land in class
+       mode (per-class workbooks, pairing, per-teacher access): never in the
+       shared single-markbook. Existing vault browsers keep vault mode. */
+    if (sprMode() !== 'class' && !classIndex().length && !DB.semesters.length) {
+      const clsName = sem.className || sem.name;
+      (async () => {
+        const cid = await createClassWorkbook(sem.school || 'School', clsName, '', '');
+        if (!cid) return;
+        await openClass(cid);
+        DB.semesters.push(sem);
+        DB.currentSemesterId = sem.id;
+        saveDB(); buildShell(); closeDlg();
+        toast('Class ' + clsName + ' created. This browser now manages classes one at a time: add teachers from Users to give them this class.');
+        location.hash = '#/dashboard'; route();
+      })();
+      return;
+    }
     DB.semesters.push(sem);
     DB.currentSemesterId = sem.id;
     saveDB(); buildShell(); closeDlg();
@@ -3518,17 +3541,17 @@
              up until a master password is set or a recovery file is saved. */
           openDlg('<h3>One more thing: your recovery path</h3>' +
             '<p class="small">If the admin password is ever forgotten, one of these two is the only way back in. Choose one now.</p>' +
-            '<div class="panel" style="margin:10px 0"><b>1. Set a master password</b>' +
-            '<p class="small muted">A second password that can reset the admin password from the sign-in screen. Keep it on paper.</p>' +
+            '<div class="panel" style="margin:10px 0"><b>1. Set a master password (recommended)</b>' +
+            '<p class="small muted">A second password that resets the admin password from the sign-in screen. No file needed, and it still works years from now. Keep it on paper.</p>' +
             '<div class="flex" style="gap:8px;flex-wrap:wrap"><input type="password" id="mrPw" class="inp" style="max-width:210px" placeholder="Master password" autocomplete="new-password">' +
             '<button class="btn" data-action="recovery-master">Set master password</button></div>' +
             '<div class="login-err" id="mrErr" aria-live="assertive"></div></div>' +
-            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file</b>' +
-            '<p class="small muted">A backup file of this brand-new (empty) workbook. Keep it with the school\u2019s records.</p>' +
+            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file instead</b>' +
+            '<p class="small muted">What this can and cannot do: the file restores your data <b>as of the moment you save it</b>. Right now that is nothing: the workbook is empty. SPR offers a fresh recovery file at the first backup prompt (when there is real data to protect). Keep the newest copy with the school\u2019s records. A file cannot reset a forgotten password: it only brings data back.</p>' +
             '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-action="recovery-dl">Download recovery file</button>' +
-            '<label class="small" style="gap:6px"><input type="checkbox" id="recoverySaved"> I saved the file</label></div></div>' +
+            '<span class="small muted" id="recoveryDlState">not downloaded yet</span></div></div>' +
             '<div class="login-err" id="recErr" aria-live="assertive"></div>' +
-            '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack">Continue</button></div>',
+            '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack" id="recoveryGo" disabled>Continue</button></div>',
             function (d) { d.addEventListener('cancel', function (e) { e.preventDefault(); }); });
         } catch (err) { if (errEl) errEl.textContent = 'Setup failed: ' + err.message; }
       })();
@@ -3545,24 +3568,27 @@
           v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, mst);
           writeV2(v2);
           if (err) err.textContent = '';
-          const cb = $('#recoverySaved'); if (cb) { cb.checked = true; cb.disabled = true; }
+          const go = $('#recoveryGo'); if (go) go.disabled = false;
           toast('Master password set');
         } catch (e2) { if (err) err.textContent = 'Could not set the master password: ' + e2.message; }
       })();
       return;
     }
     if (a === 'recovery-dl') {
-      downloadBackup();
-      const cb = $('#recoverySaved');
-      if (cb && !cb.disabled) cb.checked = true;
+      downloadBackup();   /* round5 item 3: Continue enables only after this really fired */
+      try { DB.settings.recoveryFilePending = 1; saveDB(true); } catch (eR) {}
+      const st = $('#recoveryDlState');
+      if (st) st.textContent = 'downloaded: a fresh one is offered at the first backup prompt';
+      const go = $('#recoveryGo'); if (go) go.disabled = false;
       return;
     }
     if (a === 'recovery-ack') {
-      const cb = $('#recoverySaved');
+      const go = $('#recoveryGo');
       const err = $('#recErr');
       const v2 = readV2();
       const masterSet = !!(v2 && v2.wraps && v2.wraps[MASTER_KEY]);
-      if (!masterSet && !(cb && cb.checked)) { if (err) err.textContent = 'Choose one of the two options first: set a master password or download the recovery file.'; return; }
+      if (go && go.disabled) { if (err) err.textContent = 'Choose one of the two options first: set a master password, or download the recovery file.'; return; }
+      if (!masterSet && !(go && !go.disabled)) { if (err) err.textContent = 'Choose one of the two options first.'; return; }
       try { localStorage.setItem('spr-recovery-ack', String(Date.now())); } catch (e3) {}
       closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
       toast('Sign-in created. Welcome to SPR');
@@ -3905,7 +3931,7 @@
     if (a === 'change-pass-save') {
       (async () => {
         /* P1.1: self-service for EVERY role. The current password is verified
-           by UNLOCKING (login wrap / v2 wrap): never against a stored hash —
+           by UNLOCKING (login wrap / v2 wrap): never against a stored hash:
            and everything wrapped under the old password is re-wrapped under
            the new one: v2 master wrap, the login wrap, and every class key in
            the user's keyring. */
@@ -4002,6 +4028,39 @@
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(inp.value).then(() => toast('Share link copied'), () => { inp.select(); document.execCommand('copy'); toast('Share link copied'); });
       } else { inp.select(); document.execCommand('copy'); toast('Share link copied'); }
+      return;
+    }
+    if (a === 'recovery-file-now') {
+      downloadBackup();
+      try { delete DB.settings.recoveryFilePending; saveDB(true); } catch (eR2) {}
+      closeDlg();
+      toast('Recovery file saved: it now holds your real data as of today');
+      return;
+    }
+    if (a === 'ds-test') {
+      if (!dsOn()) { toast('Turn on device sync first', true); return; }
+      (async () => {
+        const c = dsCfg();
+        let msg;
+        try {
+          const chan = c.channel || await dsChan(c.owner || SESSION.user);
+          const r = await sbPing(chan, c.writeToken);
+          msg = r === 'ok' ? 'Cloud connection is good: the server knows this device\u2019s write token, and pushes are protected.'
+              : r === 'no-token' ? 'Connected, but the cloud channel has no write token enrolled yet. Your next change will enrol it automatically. Until then the server refuses pushes (they fail safely).'
+              : r === 'bad-token' ? 'Connected, but the server rejected this device\u2019s write token: turn device sync off and on to rotate it.'
+              : r === 'no-row' ? 'Connected: no cloud copy exists yet. It is created on your first change.'
+              : r === 'not-installed' ? 'Connected, but the server-side protection is NOT installed yet: the cloud copy can still be overwritten by anyone. See docs/supabase-write-token.sql (three copy-paste steps).'
+              : 'Unexpected answer from the server: ' + r;
+        } catch (e) {
+          if (e && e.rpcMissing) {
+            msg = 'Connected, but the server-side protection is NOT installed yet (the write-token SQL has not been run). Pushes fall back to the old unprotected write, so the cloud copy can still be overwritten by anyone until the owner runs docs/supabase-write-token.sql.';
+          } else {
+            msg = 'Cloud connection FAILED: ' + String((e && e.message) || e) + '. Your data on this device is safe.';
+          }
+        }
+        openDlg('<h3>Cloud connection</h3><p class="small">' + U.esc(msg) + '</p>' +
+          '<div class="dlg-actions"><button class="btn primary" data-x="close">Close</button></div>');
+      })();
       return;
     }
     if (a === 'ds-enable') { dsEnable(); return; }
@@ -4342,9 +4401,42 @@
   /* ---------- Supabase channel (Save & Share, per-class) ---------- */
   function sbHeaders(extra) {
     const sb = SB();
-    const h = Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
-    try { const c = dsCfg(); if (c && c.writeToken) h['x-spr-write-token'] = String(c.writeToken); } catch (e) {}
-    return h;
+    /* round5 item 1: the write token travels in the RPC body now (a header is
+       invisible to the row policy and was ignored by the server anyway) */
+    return Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
+  }
+  async function sha256Hex(str) {
+    const d = await subtle().digest('SHA-256', new TextEncoder().encode(String(str)));
+    return Array.from(new Uint8Array(d), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  async function rpcBody(fn, payload) {
+    const sb = SB();
+    const res = await fetch(sb.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+    if (res.status === 404) { const e = new Error('rpc-missing'); e.rpcMissing = true; throw e; }
+    if (!res.ok) {
+      let m = 'HTTP ' + res.status;
+      try { const j = await res.json(); m = (j && (j.message || j.details)) || m; } catch (e2) {}
+      const e = new Error(m);
+      e.notEnrolled = /no token enrolled/i.test(m);
+      e.badToken = /write token rejected/i.test(m);
+      e.alreadyEnrolled = /already enrolled/i.test(m);
+      throw e;
+    }
+    try { return await res.json(); } catch (e3) { return null; }
+  }
+  async function sbWrite(channel, token, env, who, at, shareName) {
+    await rpcBody('spr_channel_write', { p_id: channel, p_token: String(token), p_payload: env, p_pushed_by: who, p_pushed_at: at, p_share_name: shareName });
+    return 'ok';
+  }
+  async function sbEnrol(channel, token, keyB64) {
+    /* proof of pairing: the sync key itself, verified server-side by
+       recomputing the row's payload HMAC (see docs/supabase-write-token.sql) */
+    await rpcBody('spr_channel_enrol', { p_id: channel, p_token: String(token), p_key: String(keyB64) });
+    return true;
+  }
+  async function sbPing(channel, token) {
+    const r = await rpcBody('spr_channel_ping', { p_id: channel, p_token: String(token || '') });
+    return (r === null || r === undefined) ? '' : String(r);
   }
   async function sbGet(channel) {
     const sb = SB();
@@ -4355,6 +4447,47 @@
   }
   async function sbSave(channel, env, shareName, who, at, insert) {
     const sb = SB();
+    const dsC = (function () { try { return dsCfg(); } catch (e0) { return null; } })();
+    const token = dsC && dsC.writeToken;
+    if (token) {
+      /* write-token world. Fresh channel: the very first INSERT arms the row
+         (write_token_hash in the insert body). Existing row: the RPC is the
+         only write path; if the row predates the SQL (hash NULL) this client
+         enrols once with the key proof and retries. If the server does not
+         have the RPC yet (SQL not run), fall back to the legacy direct write
+         so nothing breaks before the owner upgrades. */
+      if (insert) {
+        let armed = null;
+        try {
+          armed = JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env, write_token_hash: await sha256Hex(token) });
+        } catch (eHash) { armed = null; }
+        if (armed) {
+          const r1 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: armed });
+          if (r1.ok) return 'ok';
+          if (r1.status === 409) return 'conflict';
+          /* pre-SQL server: the hash column does not exist (PGRST204) */
+          const r2 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
+          if (r2.status === 409) return 'conflict';
+          if (!r2.ok) throw new Error('HTTP ' + r2.status);
+          return 'ok';
+        }
+      }
+      try {
+        return await sbWrite(channel, token, env, who, at, shareName);
+      } catch (e) {
+        if (e && e.rpcMissing) {   /* SQL not run yet: legacy direct write */
+          /* fall through to the direct path below */
+        } else if (e && e.notEnrolled && dsC.key) {
+          try {
+            await sbEnrol(channel, token, dsC.key);
+            return await sbWrite(channel, token, env, who, at, shareName);
+          } catch (e2) {
+            if (e2 && e2.rpcMissing) { /* fall through */ }
+            else throw e2;
+          }
+        } else throw e;
+      }
+    }
     if (insert) {
       const res = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
       if (res.status === 409) return 'conflict';
@@ -4989,8 +5122,10 @@
       return true;
     } catch (e) {
       try { console.warn('cloud save failed:', (e && e.message) || e); } catch (e4) {}   /* silent failures here cost days to diagnose */
-      const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
-      if (interactive) toast('Cloud save failed: it will retry on your next change', true);
+      const reason = String((e && e.message) || e || 'unknown error').replace(/\s+/g, ' ').slice(0, 160);
+      const c2 = dsCfg();
+      if (c2) { c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.'; dsSaveCfg(c2); }
+      if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
       /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
          new edit to get the data out */
       clearTimeout(dsTimer);
@@ -5333,6 +5468,7 @@
       '<tr><td>Last cloud check</td><td>' + U.esc(when(cfg.lastCheck)) + '</td></tr>' +
       '</tbody></table>' +
       '<div class="flex" style="margin-top:10px"><button class="btn sm" data-action="ds-now">Check for newer copy</button>' +
+      '<button class="btn sm" data-action="ds-test">Test cloud connection</button>' +
       '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
       '<button class="btn sm" data-action="ds-off">Turn off</button>' +
       '<button class="btn sm danger" data-action="ds-off-del">Turn off &amp; delete cloud copy</button></div>' +
@@ -5405,7 +5541,7 @@
     username = String(username || '').trim();
     if (username.toLowerCase() === MASTER_KEY) return { error: 'Invalid username or password.' };
     /* fresh browser: quietly pull accounts + data from the cloud, then sign
-       in normally. Unpaired browsers need nothing but the admin account —
+       in normally. Unpaired browsers need nothing but the admin account:
        the channel is derived from the username and the key is password-wrapped.
        Paired browsers try their pairing first (covers pre-migration rows),
        then the account. */
@@ -5492,7 +5628,7 @@
       const hasBlob = function (c) { return !!localStorage.getItem(classBlobKey(c.id)); };
       /* key in hand -> open right away; otherwise a single class with data on
          this device is STILL auto-opened: openClass either derives the key
-         from the just-typed password or shows one honest recovery screen —
+         from the just-typed password or shows one honest recovery screen:
          never the bare chooser (the 2026-10-24 owner's case) */
       const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0]
         || ((ix.filter(hasBlob).length === 1 && SESSION.pw) ? ix.filter(hasBlob)[0] : null);
@@ -5783,7 +5919,7 @@
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
       /* item 6: a session mirror newer than the stored blob means the tab closed
-         faster than the 300 ms debounce could save — offer it back */
+         faster than the 300 ms debounce could save: offer it back */
       (function mirrorRecover() {
         try {
           const mir = JSON.parse(sessionStorage.getItem('spr-session-db') || 'null');
@@ -5828,6 +5964,16 @@
         if ((now - lastNudge) < 7 * DAY) return;
         if (last && (now - last) < 30 * DAY) return;
         const days = last ? Math.round((now - last) / DAY) : null;
+        if (DB.settings.recoveryFilePending) {
+          /* round5 item 3: the setup-time recovery file was empty; the honest
+             one is generated HERE, from real data, at the first backup prompt */
+          openDlg('<h3>Your recovery file needs updating</h3>' +
+            '<p class="small">The recovery file from sign-up day was empty. This one is generated from your <b>current</b> data and restores your classes as of today. Save it with the school\u2019s records.</p>' +
+            '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Later</button>' +
+            '<button class="btn primary" data-action="recovery-file-now">Download recovery file</button></div>');
+          DB.settings.lastBackupNudgeAt = now; saveDB(true);
+          return;
+        }
         toast(days ? 'It has been ' + days + ' days since your last backup: download a fresh copy in Manage & setup.' : 'You have never downloaded a backup: keep a copy of your classes in Manage & setup.');
         DB.settings.lastBackupNudgeAt = now; saveDB(true);
       })();
@@ -5836,6 +5982,8 @@
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
+  /* round5: sync internals for the mock-PostgREST regression suite */
+  window.SPR_SYNC_TEST = { push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex };
   window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };

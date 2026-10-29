@@ -185,10 +185,12 @@ function click(B, el) { el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: 
     editStudentField(A, 'Benjamin');
     A.w.dispatchEvent(new A.w.PageTransitionEvent('pagehide'));
     await sleep(1500);
-    const pushes = calls.filter((c) => /rest\/v1\/spr_channels/.test(c.url) && (c.opts.method === 'PATCH' || c.opts.method === 'POST'));
+    const pushes = calls.filter((c) => (/rest\/v1\/spr_channels/.test(c.url) || /rest\/v1\/rpc\/spr_channel_write/.test(c.url)) && (c.opts.method === 'PATCH' || c.opts.method === 'POST'));
     if (!pushes.length) console.log('    [dbg] fetch calls seen:', calls.map((c) => (c.opts.method || 'GET') + ' ' + c.url.slice(-40)).join(' | ') || '(none)');
     check(pushes.length >= 1, 'a push was attempted');
-    check(pushes.length >= 1 && !!(pushes[0].opts.headers || {})['x-spr-write-token'], 'push carries x-spr-write-token header');
+    /* round5 item 1: the token travels in the spr_channel_write RPC BODY now; a header is invisible to row policies */
+    const rpcPush = pushes.find((c) => /rpc\/spr_channel_write/.test(c.url));
+    check(!!rpcPush && String(rpcPush.opts.body || '').includes('p_token'), 'push carries the write token in the RPC body (round5)');
     A.w.close();
   }
 
