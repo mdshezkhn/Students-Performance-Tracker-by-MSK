@@ -5,12 +5,13 @@
   "description": "ESL teacher's markbook \u2014 zero-dependency static site (dev/test tooling only; nothing here ships in the app)",
   "scripts": {
     "build": "python source/build2.py",
-    "test": "node tests/completeness.test.js && node tests/calc-regression.test.js && node tests/excel-import.test.js && node tests/classstore.test.js && node tests/test-help-security.js",
+    "test": "node tests/completeness.test.js && node tests/calc-regression.test.js && node tests/excel-import.test.js && node tests/classstore.test.js && node tests/test-help-security.js && node tests/test-data-safety.js && node tests/test-notices.js && node tests/test-round5.js && node tests/test-round6.js && node tests/test-round7.js && node tests/test-load.js && node tests/test-simple-ui.js && node tests/test-class-mode.js && node tests/test-device-sync.js && node tests/test-classes-escape.js && node tests/test-pair-open.js",
     "test:all": "npm test && node tests/test-device-sync.js",
     "test:racy": "SPR_RUN_RACY_S8=1 node tests/test-device-sync.js",
     "test:jsdom": "node tests/test-device-sync.js && node tests/test-class-mode.js && node tests/test-classes-escape.js"
   },
   "devDependencies": {
-    "jsdom": "^24.1.3"
+    "jsdom": "^24.1.3",
+    "@electric-sql/pglite": "^0.5.13"
   }
 }

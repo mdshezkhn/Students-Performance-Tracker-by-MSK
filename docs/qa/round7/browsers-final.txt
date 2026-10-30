@@ -1,0 +1,42 @@
+127.0.0.1 - - [30/Oct/2026 12:42:58] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:42:58] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:42:58] "GET /app/ HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:44:10] "GET /app/sw.js HTTP/1.1" 304 -
+127.0.0.1 - - [30/Oct/2026 12:44:11] "GET /app/sw.js HTTP/1.1" 304 -
+127.0.0.1 - - [30/Oct/2026 12:45:18] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:45:18] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:45:18] "GET /app/ HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:45:18] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:46:34] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:46:35] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:47:48] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:47:50] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:47:52] "GET /app/ HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 12:49:07] "GET /app/sw.js HTTP/1.1" 304 -
+127.0.0.1 - - [30/Oct/2026 12:49:09] "GET /app/sw.js HTTP/1.1" 304 -
+PASS chromium: recovery dialog appeared
+PASS chromium: signed in (no auth gate)
+PASS chromium: class created
+PASS chromium: class mode after first class
+PASS chromium: class re-opened after reload (shell + rail live)
+PASS chromium: backup download fired | 671 B
+PASS chromium: restore flow accepted the backup file
+PASS chromium: zero page errors
+PASS webkit: recovery dialog appeared
+PASS webkit: signed in (no auth gate)
+PASS webkit: class created
+PASS webkit: class mode after first class
+PASS webkit: class re-opened after reload (shell + rail live)
+PASS webkit: backup download fired | 671 B
+PASS webkit: restore flow accepted the backup file
+PASS webkit: zero page errors
+PASS firefox: recovery dialog appeared
+PASS firefox: signed in (no auth gate)
+PASS firefox: class created
+PASS firefox: class mode after first class
+PASS firefox: class re-opened after reload (shell + rail live)
+PASS firefox: backup download fired | 671 B
+PASS firefox: restore flow accepted the backup file
+PASS firefox: zero page errors
+
+BROWSERS: 24 checks, 0 FAIL

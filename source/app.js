@@ -509,6 +509,7 @@
       try { const prev = JSON.parse(localStorage.getItem(classBlobKey(CLS.id)) || 'null'); prevTs = (prev && prev.ts) || 0; } catch (e1) {}
       if (prevTs > (CLS_TS || 0)) { showStaleOverlay(); return false; }   /* another tab saved this class newer */
       const blob = await CS.sealClass(DB, CLS_KEY);
+      if (!CLS || !CLS_KEY) return false;   /* the class was closed while the seal was running */
       blob.ts = Date.now(); CLS_TS = blob.ts;
       localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
       const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
@@ -521,6 +522,7 @@
       scheduleSyncPush();
       return true;
     } catch (e) {
+      console.warn('class workbook save failed:', (e && (e.stack || e.message)) || e);   /* silent failures here cost days to diagnose */
       toast('Could not save the class workbook: storage full?', true);
       saveFailedBanner();
       clearTimeout(saveRetryTimer);
@@ -564,6 +566,9 @@
   }
 
   /* ============================ toast & dialogs ============================ */
+  function safariDataDlg() {
+    openDlg('<h3>One thing to know about Safari</h3><p class="small">Safari on iPhone and iPad can remove website data after about 7 days of not using a site. Download a backup from the sidebar regularly, and keep a copy outside this device.</p><div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">Got it</button></div>');
+  }
   function toast(msg, err) {
     if (typeof document === 'undefined' || !document.getElementById) return;   /* window already torn down (close during an in-flight save) */
     const root = $('#toast-root'); if (!root) return;
@@ -647,6 +652,7 @@
     $('#app').innerHTML =
       '<div class="app">' +
         '<nav class="rail">' +
+          '<button class="rail-menu no-print" data-action="rail-toggle" aria-expanded="false">Menu</button>' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
           '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
@@ -674,7 +680,11 @@
             '<div class="rail-privacy"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
             '<div class="quote">Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div></div>' +
         '</nav>' +
-        '<main class="page"><div id="content"></div></main>' +
+        '<main class="page">' +
+          (sprMode() === 'class' && CLS ?
+            '<div class="cls-topbar"><span class="cls-topbar-name">' + U.esc((CLS && CLS.name) || '') + '</span>' +
+            '<button class="btn primary" data-action="share-hub">Save &amp; Share</button></div>' : '') +
+          '<div id="content"></div></main>' +
       '</div>' +
       '';;
   }
@@ -781,6 +791,7 @@
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+        '<button class="uc-out" data-action="ios-warn-again" style="font-size:11.5px;padding:5px 12px">Show the iPhone/iPad warning again</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
       '</div>' +
       pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
@@ -2472,20 +2483,20 @@
         '<button class="btn" data-action="acct-add-open">Add account</button>' +
         '<button class="btn" data-action="class-roster-btn">Import roster CSV</button>' +
       '</div></div>' +
-      (rows.length ? '<table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
+      (rows.length ? '<div class="sheet"><table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
         rows.map((u) => {
           const ci = usersClassInfo(u.username, u.role);
           const selfNow = u.username === SESSION.user;
-          return '<tr><td>' + U.esc(u.name || u.username) + '</td>' +
-            '<td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
-            '<td>' + roleLabel(u.role) + '</td>' +
-            '<td>' + cell(ci.classes) + '</td>' +
-            '<td>' + cell(ci.partner) + '</td>' +
-            '<td>' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
+          return '<tr><td data-l="Name">' + U.esc(u.name || u.username) + '</td>' +
+            '<td data-l="Username">' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
+            '<td data-l="Role">' + roleLabel(u.role) + '</td>' +
+            '<td data-l="Class">' + cell(ci.classes) + '</td>' +
+            '<td data-l="Paired with">' + cell(ci.partner) + '</td>' +
+            '<td data-l="Status">' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
             '<td>' + (selfNow ? '' :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
-        }).join('') + '</tbody></table>'
+        }).join('') + '</tbody></table></div>'
         : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
       '</main></div>';
@@ -2599,9 +2610,11 @@
         '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
           (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
           '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+          '<button class="uc-out" data-action="ios-warn-again" style="font-size:11.5px;padding:5px 12px">Show the iPhone/iPad warning again</button>' +
           '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
         '</div>' +
-        pageHead('Manage & setup', 'setup, pairing and recovery tools') +
+        pageHead('Manage & setup', 'setup, pairing and recovery tools',
+          '<button class="btn" data-action="ios-warn-again">Show the iPhone/iPad warning again</button>') +
         renderClassesAdvanced(classIndex(), false) +
         '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
         '</main></div>';
@@ -2622,7 +2635,8 @@
       window.scrollTo(0, 0);
       return;
     }
-    $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data') +
+    $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data',
+      '<button class="btn" data-action="ios-warn-again">Show the iPhone/iPad warning again</button>') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
@@ -3505,6 +3519,10 @@
 
   /* ============================ global listeners ============================ */
   document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.rail .nav a') && window.matchMedia && window.matchMedia('(max-width: 700px)').matches) {
+      const rail = document.querySelector('.rail');
+      if (rail) rail.classList.remove('open');
+    }
     const el = e.target.closest('[data-action]');
     if (!el) return;
     /* pseudo-links (href='#') must not navigate: the hashchange re-route would
@@ -4027,6 +4045,23 @@
     if (a === 'share-push') { sharePush(); return; }
     if (a === 'share-pull') { sharePull(); return; }
     if (a === 'share-qr') { shareQrModal(); return; }
+    if (a === 'share-hub') { SHARE_LAST_ERR = ''; shareHubDlg(); return; }
+    if (a === 'hub-copy') {
+      const inp = $('#hubLink');
+      const done = () => hubStatus('#hubSaveStatus', 'Link copied.', false);
+      try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(inp ? inp.value : '').then(done, done); } else if (inp) { inp.select(); document.execCommand('copy'); done(); } } catch (e) { done(); }
+      return;
+    }
+    if (a === 'hub-test') {
+      hubStatus('#hubTestStatus', 'Testing…', false);
+      hubPing().then((r) => {
+        if (r === 'ok') hubStatus('#hubTestStatus', 'Cloud connection works.', false);
+        else if (r === 'unreachable') hubStatus('#hubTestStatus', "Can't reach the cloud from this network. Try again from another network, or ask the school IT.", true);
+        else if (r === 'unprotected') hubStatus('#hubTestStatus', 'Cloud connection works, but the protection upgrade has not been run yet.', true);
+        else hubStatus('#hubTestStatus', 'The cloud copy is protected and your key is wrong.', true);
+      });
+      return;
+    }
     if (a === 'share-copy') {
       const inp = $('#shareLink');
       if (!inp) return;
@@ -4111,6 +4146,12 @@
       return;
     }
     if (a === 'privacy-open') { openPrivacy(); return; }
+    if (a === 'rail-toggle') {
+      const rail = document.querySelector('.rail');
+      if (rail) { rail.classList.toggle('open'); const b = rail.querySelector('.rail-menu'); if (b) b.setAttribute('aria-expanded', rail.classList.contains('open') ? 'true' : 'false'); }
+      return;
+    }
+    if (a === 'ios-warn-again') { safariDataDlg(); return; }
     if (a === 'notice-lang') { noticeLang = el.dataset.lang === 'zh' ? 'zh' : 'en'; openPrivacy(); return; }
     if (a === 'privacy-open-full') {
       openDlg('<h3>Notice / 使用说明</h3>' + noticeBodyHtml() +
@@ -4527,6 +4568,66 @@
     DB.currentSemesterId = sem.id;
     saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
   }
+  /* round7 item 4: ONE obvious Save & Share dialog, plain words only.
+     Jargon (channel/token/enrol/HMAC/sealed/pointer) never appears here;
+     raw error text lives behind the Details toggle. */
+  let SHARE_LAST_ERR = '';
+  function hubPing() {
+    /* exactly one harmless server call; plain answers, no raw errors */
+    return (async () => {
+      const c = getShare();
+      const sb = SB();
+      if (!(sb.url && sb.key) || !(c.provider === 'sb' || c.channel)) return 'off';
+      try {
+        const r = await sbPing(c.channel, c.writeToken || '');
+        if (r === 'ok') return 'ok';
+        if (r === 'rpcMissing') return 'unprotected';
+        return 'wrong-key';
+      } catch (e) { return 'unreachable'; }
+    })();
+  }
+  function shareHubDlg() {
+    const c = getShare();
+    const sb = SB();
+    const on = !!(sb.url && sb.key && (c.provider === 'sb' || c.channel));
+    if (!on) {
+      openDlg('<h3>Save &amp; Share</h3>' +
+        '<p class="small">Saving to the cloud is not turned on for this class' +
+        (subtle() ? '' : ', and this browser only has the offline version: it needs the https website') +
+        '. Nothing leaves this device.</p>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dl-backup">Download backup</button>' +
+        '<button class="btn" data-x="close">Close</button></div>');
+      return;
+    }
+    const whenTxt = c.lastPush ? new Date(c.lastPush).toLocaleString() + (c.lastPushBy ? ', by ' + c.lastPushBy : '') : 'never';
+    const link = shareLink();
+    openDlg('<h3>Save &amp; Share</h3>' +
+      '<p class="small" style="margin-top:-4px">Your work is saved in this browser. A cloud copy is the safety net and the way a colleague gets this class. The cloud copy never replaces what is on this device without asking you first.</p>' +
+      '<h4 style="margin:10px 0 4px">1. Save a copy to the cloud</h4>' +
+      '<p class="small muted" style="margin:0 0 6px">Last saved: ' + U.esc(whenTxt) + '</p>' +
+      '<div class="flex" style="gap:8px;align-items:center"><button class="btn primary" data-action="share-push" id="hubSaveBtn">Save a copy to the cloud</button>' +
+      '<span class="small muted" id="hubSaveStatus"></span></div>' +
+      '<h4 style="margin:12px 0 4px">2. Share this class with a colleague</h4>' +
+      '<div class="flex" style="gap:8px;align-items:center"><input class="inp" id="hubLink" readonly style="flex:1;min-width:220px;font-size:12px" value="' + U.esc(link || '') + '">' +
+      '<button class="btn" data-action="hub-copy">Copy link</button></div>' +
+      '<p class="small muted" style="margin:6px 0 0">Anyone with this link can edit this class. Send it only to a teacher who should see these students.</p>' +
+      '<h4 style="margin:12px 0 4px">3. Test cloud connection</h4>' +
+      '<div class="flex" style="gap:8px;align-items:center"><button class="btn" data-action="hub-test">Test cloud connection</button>' +
+      '<span class="small muted" id="hubTestStatus"></span></div>' +
+      '<details style="margin-top:12px"><summary class="small muted">Details</summary>' +
+      '<pre class="small muted" id="hubErr" style="white-space:pre-wrap"></pre></details>' +
+      '<div class="dlg-actions"><button class="btn" data-x="close">Close</button></div>');
+    const errBox = $('#hubErr');
+    if (errBox && SHARE_LAST_ERR) errBox.textContent = SHARE_LAST_ERR;
+    const closeBtn = $('#dlg [data-x="close"]');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeDlg());
+  }
+  function hubStatus(id, msg, bad) {
+    const el = $(id);
+    if (el) { el.textContent = msg; el.style.color = bad ? '#b45309' : ''; }
+    const errBox = $('#hubErr');
+    if (errBox && bad && SHARE_LAST_ERR) errBox.textContent = SHARE_LAST_ERR;
+  }
   function shareQrModal() {
     const link = shareLink();
     if (!link) { toast('Create the share first', true); return; }
@@ -4613,7 +4714,7 @@
         toast('Saved & shared: send the link or QR to your co-teacher');
         shareQrModal();
         if (location.hash === '#/manage') renderManage();
-      } catch (e) { toast('Save & Share failed: ' + e.message, true); }
+      } catch (e) { SHARE_LAST_ERR = String((e && e.message) || e); toast('Could not save. Open Save & Share again for details.', true); }
       return;
     }
     toast('The classic npoint channel was retired - Save & Share now uses the encrypted SPR cloud (Create share).', true);
@@ -5964,7 +6065,7 @@
           const safariish = /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrom|Edg|Firefox/.test(ua));
           if (!safariish || localStorage.getItem('spr-ios-data-warn')) return;
           localStorage.setItem('spr-ios-data-warn', '1');
-          openDlg('<h3>One thing to know about Safari</h3><p class="small">Safari on iPhone and iPad can remove website data after about 7 days of not using a site. Download a backup from the sidebar regularly, and keep a copy outside this device.</p><div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">Got it</button></div>');
+          safariDataDlg();
         } catch (e) {}
       })();
       /* item 3: many edits without a backup -> offer one (at most once a day) */
@@ -6008,6 +6109,20 @@
   window.SPR_DEBUG_GET_DB = function () { return DB; };
   /* round5: sync internals for the mock-PostgREST regression suite */
   window.SPR_SYNC_TEST = { push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex, sbSave: sbSave, sealSem: sealSem };
+  window.SPR_DEBUG_HUB = shareHubDlg;   /* round7: hub dialog is reachable */
+  window.SPR_SYNC_TEST.sharePush = sharePush;   /* round7: conflict flow under test */
+  window.SPR_DEBUG_PING = function (sbCfg, chan, tok) {
+    /* plain-language outcomes for the hub's connection test */
+    return (async () => {
+      let saved = null;
+      try { saved = localStorage.getItem('spr-sb-v1'); if (sbCfg) localStorage.setItem('spr-sb-v1', JSON.stringify(sbCfg)); } catch (e0) {}
+      try {
+        const r = await sbPing(chan, tok);
+        return r === 'ok' ? 'Cloud connection works.' : (r === 'rpcMissing' ? 'Cloud connection works, but the protection upgrade has not been run yet.' : 'The cloud copy is protected and your key is wrong.');
+      } catch (e) { return "Can't reach the cloud from this network. Try again from another network, or ask the school IT."; }
+      finally { try { if (saved === null) localStorage.removeItem('spr-sb-v1'); else localStorage.setItem('spr-sb-v1', saved); } catch (e2) {} }
+    })();
+  };
   window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };

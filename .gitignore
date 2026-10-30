@@ -10,3 +10,5 @@ tests/_*.sh
 
 *.bundle
 __pycache__/
+.pw/
+qa_root/

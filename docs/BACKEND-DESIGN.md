@@ -1,3 +1,9 @@
+> **Round-7 gate (2026-10-30):** the shared-database build described here is
+> **NOT part of this round.** It stays design-only until three gates are met,
+> in order: the school approves it in writing, a network reachability test
+> from the school network succeeds, and the teachers who would use it sign
+> off. Nothing in this document has been run against production.
+
 # SPR Backend Design — P1 Design Review, rev 3 (still nothing created)
 
 Status: **DESIGN FOR APPROVAL, rev 3** — direction (Supabase Auth + RLS, free

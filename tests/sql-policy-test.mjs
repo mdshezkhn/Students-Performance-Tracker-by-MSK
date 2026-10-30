@@ -90,3 +90,26 @@ async function scenarioShare() {
     `select public.spr_channel_write($1::uuid,$2,$3::jsonb,'Evil',now(),'')`, [sid, 'evil', JSON.stringify({evil:1})]));
 }
 await scenarioShare();
+
+// ===== round 7, scenario E: the owner's rollback, proven =====
+// Run the SQL, then run the exact rollback statements from
+// docs/OWNER-RUNBOOK-supabase.md, then verify the OLD behaviour is back
+// (direct anon UPDATE works again) and the data survived.
+const ROLLBACK = `
+  create policy "anon can update channels"
+    on public.spr_channels for update to anon using (true) with check (true);
+  grant update, delete on public.spr_channels to anon, authenticated;
+`;
+async function scenarioE() {
+  console.log('\n=== E: run SQL, then the runbook rollback, old behaviour back, data intact');
+  const db = await fresh('old update policy', null);
+  await db.query(`insert into public.spr_channels(id,pushed_by,payload) values ($1,'mo',$2)`, [id, JSON.stringify({sprDS:1,ct:b64u(ct),mac,iv:'x'})]);
+  try { await db.exec(SQL); console.log('SQL ran'); } catch(e){ console.log('SQL ERROR:', e.message); return; }
+  const q = async (sql, params=[]) => { try { await db.exec('set role anon'); const r = await db.query(sql, params); await db.exec('reset role'); return 'OK rows='+(r.affectedRows ?? r.rows.length)+' '+JSON.stringify(r.rows).slice(0,80);} catch(e){ await db.exec('reset role'); return 'REFUSED: '+e.message.slice(0,80);} };
+  console.log('after SQL, direct UPDATE:', await q(`update public.spr_channels set payload='{"x":1}'::jsonb where id=$1`, [id]));
+  try { await db.exec(ROLLBACK); console.log('rollback ran'); } catch(e){ console.log('ROLLBACK ERROR:', e.message); return; }
+  console.log('rollback: direct UPDATE again:', await q(`update public.spr_channels set payload='{"legit":true}'::jsonb where id=$1`, [id]));
+  const after = await db.query('select payload from public.spr_channels where id=$1',[id]);
+  console.log('rollback: payload intact:', JSON.stringify(after.rows[0].payload).includes('legit') ? 'yes' : 'NO');
+}
+await scenarioE();

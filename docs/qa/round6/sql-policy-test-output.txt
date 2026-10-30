@@ -2,7 +2,7 @@
 === A: old policy named exactly as the file guesses ("anon can update channels")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+  row payload now: {"ct":"SpRsRDhpfsqDJpNRc0zGD4_avVTmf8OLHCFhqvhPd8vIwcV-2TG9P   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
@@ -17,7 +17,7 @@ anon DELETE: REFUSED: permission denied for table spr_channels
 === B: old policy has a DIFFERENT name ("Enable update for anon users")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+  row payload now: {"ct":"SpRsRDhpfsqDJpNRc0zGD4_avVTmf8OLHCFhqvhPd8vIwcV-2TG9P   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
@@ -32,7 +32,7 @@ anon DELETE: REFUSED: permission denied for table spr_channels
 === C: old policy is an ALL policy ("public full access")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"1fTY7KRi3-_GqoWg1cjazDi7-Xof_ZjeeyCbUpvs3SBn-4bMg07MB   (intact)
+  row payload now: {"ct":"SpRsRDhpfsqDJpNRc0zGD4_avVTmf8OLHCFhqvhPd8vIwcV-2TG9P   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
@@ -53,3 +53,10 @@ old row RPC write (not enrolled): REFUSED: spr_channel_write: channel has no tok
 old row enrol (share-key proof): OK rows=0
 old row RPC write after enrol: OK rows=0
 wrong-token write on armed row: REFUSED: spr_channel_write: write token rejected
+
+=== E: run SQL, then the runbook rollback, old behaviour back, data intact
+SQL ran
+after SQL, direct UPDATE: REFUSED: permission denied for table spr_channels
+rollback ran
+rollback: direct UPDATE again: OK rows=1 []
+rollback: payload intact: yes

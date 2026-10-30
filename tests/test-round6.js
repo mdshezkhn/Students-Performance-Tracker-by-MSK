@@ -143,17 +143,19 @@ async function waitShell(B, ms) {
     const pgliteDir = path.join(__dirname, '..', 'node_modules', '@electric-sql', 'pglite');
     if (fs.existsSync(pgliteDir)) {
       let out = '';
-      try { out = execFileSync(process.execPath, [path.join(__dirname, '..', 'docs', 'sql-policy-test.mjs'), sqlPath], { encoding: 'utf8', timeout: 300000 }); } catch (e) { out = (e.stdout || '') + (e.stderr || ''); }
+      try { out = execFileSync(process.execPath, [path.join(__dirname, 'sql-policy-test.mjs'), sqlPath], { encoding: 'utf8', timeout: 300000 }); } catch (e) { out = (e.stdout || '') + (e.stderr || ''); }
       fs.mkdirSync(path.join(__dirname, '..', 'docs', 'qa', 'round6'), { recursive: true });
       fs.writeFileSync(path.join(__dirname, '..', 'docs', 'qa', 'round6', 'sql-policy-test-output.txt'), out);
       const blocks = out.split('===').slice(1);
-      check(blocks.length === 4, 'harness ran the 3 policy scenarios + the Save & Share shapes (got ' + blocks.length + ')');
+      check(blocks.length === 5, 'harness ran the 3 policy scenarios + the Save & Share shapes + the round-7 rollback proof (got ' + blocks.length + ')');
       check((out.match(/REFUSED: permission denied/g) || []).length >= 3, 'direct UPDATE by anon is REFUSED in every scenario');
       check(!/HOLE STILL OPEN/.test(out), 'row never overwritten in any scenario');
       check(/ping unknown row: OK rows=\d+ .*no-row/.test(out), 'ping returns no-row (not NULL) on the real engine');
       check((out.match(/anon DELETE: REFUSED/g) || []).length >= 1, 'anon DELETE refused (ALL-policy scenario)');
     } else {
-      check(false, 'PGlite not installed: real-engine proof skipped');
+      /* round7 item 1c: never a silent pass */
+      console.log('SKIPPED: real-Postgres proof needs PGlite (npm ci --include=dev)');
+      process.exit(1);
     }
   }
 

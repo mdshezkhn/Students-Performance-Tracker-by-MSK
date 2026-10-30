@@ -5,7 +5,7 @@
    shell (single HTML file + manifest + icons) is precached, and requests to
    other origins (Share & Sync: npoint / Supabase) are always passed through. */
 
-const CACHE = 'spr-app-shell-dab9d2ca20';
+const CACHE = 'spr-app-shell-4d74bfab76';
 const APP_SHELL = ['./', './index.html']; /* owner decision: no web-app manifest — app shell only */
 
 const OFFLINE_FALLBACK = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
