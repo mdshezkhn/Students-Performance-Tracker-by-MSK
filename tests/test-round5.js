@@ -275,12 +275,13 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     click(A, wiz); await sleep(400);
     set('wiz-class', 'P1A'); set('wiz-school', 'Demo School');
     click(A, A.d.querySelector('[data-action="wiz-create"]'));
-    await sleep(1500);
-    check(A.w.localStorage.getItem('spr-mode-v1') === 'class', 'browser is now in CLASS mode after the first class');
-    const ix = JSON.parse(A.w.localStorage.getItem('spr-class-index-v1') || '[]');
-    check(ix.length === 1, 'class index holds exactly the new class');
-    const adminKeyring = (JSON.parse(A.w.localStorage.getItem(AUTH_KEY)).users[0].keyring) || {};
-    check(Object.keys(adminKeyring).length >= 1, 'admin holds the class key in their keyring (per-class access)');
+    const modeIn = await (async () => { for (let t = 0; t < 60; t++) { await sleep(250); if (A.w.localStorage.getItem('spr-mode-v1') === 'class') return true; } return false; })();
+    check(modeIn, 'browser is now in CLASS mode after the first class');
+    const ixIn = await (async () => { for (let t = 0; t < 40; t++) { await sleep(250); const v = JSON.parse(A.w.localStorage.getItem('spr-class-index-v1') || '[]'); if (v.length === 1) return true; } return false; })();
+    check(ixIn, 'class index holds exactly the new class');
+    /* key gen + wraps + first blob seal are real PBKDF2: wait for the wrap */
+    const krIn = await (async () => { for (let t = 0; t < 80; t++) { await sleep(250); const u = (JSON.parse(A.w.localStorage.getItem(AUTH_KEY) || '{}').users || [])[0]; if (u && Object.keys(u.keyring || {}).length >= 1) return true; } return false; })();
+    check(krIn, 'admin holds the class key in their keyring (per-class access)');
     /* add a teacher (class-mode admin: the sign-ins live on the Users tab),
        then sign in as the teacher in a fresh window and check scope */
     A.w.location.hash = '#/users'; await sleep(700);
@@ -315,14 +316,27 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
         else console.log('    [dbg] no one-time password shown. dlg:', dlgTxt(A).slice(0, 120));
         const done = A.d.querySelector('#dlg [data-x="1"]');
         if (done) { click(A, done); await sleep(400); }
+        /* the pair re-wraps the class key under the one-time password (PBKDF2):
+           carry only after anna's keyring actually holds it */
+        for (let t = 0; t < 80; t++) {
+          await sleep(250);
+          try {
+            const au = JSON.parse(A.w.localStorage.getItem(AUTH_KEY) || '{}');
+            const an = (au.users || []).find((u) => u.username === 'anna');
+            if (an && Object.keys(an.keyring || {}).length >= 1) break;
+          } catch (e) {}
+        }
       }
     }
-    const carried = JSON.parse(A.w.localStorage.getItem(AUTH_KEY)); delete carried.session;
     const cid = (JSON.parse(A.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).id;
+    /* the class blob is sealed asynchronously (real PBKDF2) AFTER the index
+       lands: carry only when the blob actually exists, or T boots unopenable */
+    for (let t = 0; t < 80; t++) { await sleep(250); if (A.w.localStorage.getItem('spr-class-' + cid)) break; }
+    const carried = JSON.parse(A.w.localStorage.getItem(AUTH_KEY)); delete carried.session;
     const T = boot('try{localStorage.setItem("' + AUTH_KEY + '",' + JSON.stringify(JSON.stringify(carried)) + ');}catch(e){}' +
                    'try{localStorage.setItem("spr-mode-v1","class");}catch(e){}' +
                    'try{localStorage.setItem("spr-class-index-v1",' + JSON.stringify(A.w.localStorage.getItem('spr-class-index-v1') || '[]') + ');}catch(e){}' +
-                   'try{localStorage.setItem("spr-class-blob-' + cid + '",' + JSON.stringify(A.w.localStorage.getItem('spr-class-blob-' + cid) || '') + ');}catch(e){}' +
+                   'try{localStorage.setItem("spr-class-blob-' + cid + '",' + JSON.stringify(A.w.localStorage.getItem('spr-class-' + cid) || '') + ');}catch(e){}' +
                    'try{localStorage.setItem("spr-privacy-ack-v1","1");}catch(e){}');
     await sleep(500); await waitShell(T);
     const setT = (id, v) => { const e = T.d.getElementById(id); if (e) { e.value = v; e.dispatchEvent(new T.w.Event('input', { bubbles: true })); } };
@@ -332,9 +346,18 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(tIn, 'teacher signed in');
     if (!tIn) {
       const tAuth = String(T.w.localStorage.getItem(AUTH_KEY));
-      try { console.log('    [dbg] T users:', JSON.parse(tAuth).users.map((u) => u.username).join(','), '| blob?', !!T.w.localStorage.getItem('spr-class-blob-' + cid), '| ix:', String(T.w.localStorage.getItem('spr-class-index-v1')).slice(0, 60)); } catch (e5) {}
+      try { console.log('    [dbg] T users:', JSON.parse(tAuth).users.map((u) => u.username).join(','), '| blob?', !!T.w.localStorage.getItem('spr-class-' + cid), '| ix:', String(T.w.localStorage.getItem('spr-class-index-v1')).slice(0, 60)); } catch (e5) {}
     }
-    const tKeyring = (JSON.parse(T.w.localStorage.getItem(AUTH_KEY)).users.find((u) => u.username === 'anna').keyring) || {};
+    const tKeyring = await (async () => {
+      for (let t = 0; t < 40; t++) {
+        await sleep(250);
+        try {
+          const an = (JSON.parse(T.w.localStorage.getItem(AUTH_KEY) || '{}').users || []).find((u) => u.username === 'anna');
+          if (an && Object.keys(an.keyring || {}).length >= 1) return an.keyring;
+        } catch (e) {}
+      }
+      return {};
+    })();
     check(Object.keys(tKeyring).length === 1, 'teacher holds a key for exactly ONE class (their own)');
   }
 

@@ -708,7 +708,7 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="4d74bfab76";</script>
+<script>window.SPR_BUILD="f5bba971d8";</script>
 <script>window.SPR_NOTICE={"version": "1", "date": "28 Oct 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
@@ -7726,6 +7726,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   const DS_KEY = 'spr-devicesync-v1';
   const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* A wanted push is NEVER dropped (fix 2026-10-31). Until now, a push
+     requested while a pull-check held the row, or while the device was signed
+     out, vanished silently: scheduleSyncPush() refused to schedule and the
+     debounce timer had no retry. A concurrent device still holding the
+     pre-deletion account list could then publish the deleted account back
+     onto the shared row. The want now survives in the sync cfg (so it even
+     crosses a reload) and is retried until the row accepts it. */
+  function dsPushWanted() { const c = dsCfg(); return !!(c && c.pendingPush); }
+  function dsSetPushWanted(v) {
+    const c = dsCfg(); if (!c) return;
+    if (v) c.pendingPush = true; else delete c.pendingPush;
+    dsSaveCfg(c);
+  }
   /* the pull-check must never treat the copy this device JUST installed as
      "newer than itself": floor the boot clock at the envelope's seal time
      (v2.ts is the SENDER's last local write: often older than the envelope) */
@@ -7996,11 +8009,18 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload(), gone: dsGone() });   /* NO hash ever leaves this device */
+    const users = syncUsers();
+    const gone = dsGone();
+    /* accounts signature: covers login wraps, keyrings and tombstones, which
+       change with NO class edit. The push short-circuit compares this next to
+       the content sum, or an accounts-only change (password reset, account
+       removal) is never published and other devices keep the stale list. */
+    const asum = await dsSum(JSON.stringify({ users: users, gone: gone }));
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    const env = { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, asum: asum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
     /* the wrap lets a fresh device unwrap this sync key with nothing but the
        admin username + password; refreshed on every push made during a fresh
        sign-in, carried forward unchanged otherwise */
@@ -8038,10 +8058,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
     location.reload();
   }
-  function scheduleSyncPush() {
-    if (!dsCanPush()) return;
+  let dsTimerAt = 0;                           /* when the armed timer will fire */
+  function scheduleSyncPush(delay) {
+    if (!dsOn()) return;
+    dsSetPushWanted(true);                     /* remembered across reloads */
+    const at = Date.now() + (delay || 4000);
+    if (dsTimer && dsTimerAt <= at) return;    /* already armed sooner: keep it (a 30s backoff never delays a fresh edit) */
     clearTimeout(dsTimer);
-    dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
+    dsTimerAt = at;
+    dsTimer = setTimeout(async function () {
+      dsTimer = null; dsTimerAt = 0;
+      if (!dsPushWanted()) return;
+      if (!dsCanPush() || dsHoldPush) { scheduleSyncPush(4000); return; }   /* not now: retried, not dropped */
+      dsSetPushWanted(false);
+      let okPush = false;
+      try { okPush = await dsPushNow(false); } catch (e) { okPush = false; }
+      if (!okPush) scheduleSyncPush(30000);    /* read/save failed: back off, keep trying */
+    }, Math.max(0, at - Date.now()));
   }
   function writeV2(v2) {
     try {
@@ -8115,7 +8148,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           return false;
         }
       }
-      if (row && row.payload && row.payload.sum === env.sum && !wrapRepair) {
+      if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && !wrapRepair) {
         await dsAdoptChan(cfg, chan);
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
@@ -8139,10 +8172,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const c2 = dsCfg();
       if (c2) { c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
-      /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
-         new edit to get the data out */
-      clearTimeout(dsTimer);
-      dsTimer = setTimeout(function () { if (dsCanPush()) dsPushNow(false); }, 30000);
+      /* auto-retry a failed push after 30s — a flaky link shouldn't need a new
+         edit to get the data out; scheduleSyncPush keeps retrying (30s backoff)
+         until the row accepts it */
+      scheduleSyncPush(30000);
       return false;
     }
   }

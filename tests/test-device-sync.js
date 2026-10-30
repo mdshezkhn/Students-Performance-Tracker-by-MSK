@@ -12,7 +12,7 @@ const webcrypto = require('crypto').webcrypto;
    carries the new hash and fresh-browser bootstrap fails. Device-sync is
    replaced by RemoteStore in a later phase; run these two checks on demand:
    SPR_RUN_RACY_S8=1 node tests/test-device-sync.js */
-const RUN_RACY_S8 = process.env.SPR_RUN_RACY_S8 === '1';
+const RUN_RACY_S8 = process.env.SPR_RUN_RACY_S8 !== '0';
 
 /* jsdom is the ONLY dev dependency (package.json). Resolve it the normal
    way from a clean clone / CI (`npm install`), with the legacy sibling
@@ -127,7 +127,7 @@ function reboot(B) {
 }
 async function waitFor(cond, ms) {
   const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (cond()) return true; await sleep(400); }
+  while (Date.now() - t0 < ms) { if (await cond()) return true; await sleep(400); }
   return cond();
 }
 function loginAs(B, user, pass) {
@@ -565,6 +565,15 @@ async function loginCloudAs(B, user, pass) {
   /* back on the teacher device: continue signed-in as the teacher with the NEW password */
   TEAPW_NOW = TEAPW3;
 
+  /* decrypt a sync row the way the app does (suite-side, for assertions) */
+  const b64uToBytes = function (s) { const t = s.replace(/-/g, '+').replace(/_/g, '/'); const b = atob(t + '='.repeat((4 - t.length % 4) % 4)); return Uint8Array.from(b, function (c) { return c.charCodeAt(0); }); };
+  async function rowPlain(B, row) {
+    const cfg = JSON.parse(B.w.localStorage.getItem('spr-devicesync-v1'));
+    const key = await require('crypto').webcrypto.subtle.importKey('raw', b64uToBytes(cfg.key), 'AES-GCM', false, ['decrypt']);
+    const pt = await require('crypto').webcrypto.subtle.decrypt({ name: 'AES-GCM', iv: b64uToBytes(row.payload.iv) }, key, b64uToBytes(row.payload.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+
   /* ---------- S8: teacher sign-in-anywhere (cloud pointer) ---------- */
   console.log('== S8: teacher signs in on a FRESH browser via cloud pointer ==');
   const TEAPW2 = 'teacher-pass-2-reset';
@@ -597,6 +606,15 @@ async function loginCloudAs(B, user, pass) {
   loginAs(Bt, ADMIN, PW);
   await waitFor(function () { return !Bt.d.body.classList.contains('auth-gate'); }, 25000);
   await ackPrivacy(Bt);
+  /* answer the boot adoption dialog if one is open (a real user would):
+     pushes stay held until the decision dialog closes, so the reset's
+     data-row push below would never land otherwise */
+  for (let drain = 0; drain < 3; drain++) {
+    const dlgBtn = Bt.d.querySelector('#dlg[open] [data-x="1"]');
+    if (!dlgBtn) break;
+    click(Bt, dlgBtn);
+    await sleep(900);
+  }
   Bt.w.location.hash = '#/manage';
   await sleep(300);
   click(Bt, Bt.d.querySelector('[data-action="acct-reset-open"][data-user="' + TEA + '"]'));
@@ -625,8 +643,7 @@ async function loginCloudAs(B, user, pass) {
     const G3 = boot();
     await sleep(300);
     await ackGate(G3);
-    loginAs(G3, TEA, TEAPW);
-    const oldPwRejected = await waitFor(function () { return ((G3.d.getElementById('loginErr') || {}).textContent || '').indexOf('Invalid') !== -1; }, 25000);
+    const oldPwRejected = !(await loginCloudAs(G3, TEA, TEAPW));
     ok(oldPwRejected, 'old teacher password no longer bootstraps');
     const G4 = boot();
     await sleep(300);
@@ -670,12 +687,13 @@ async function loginCloudAs(B, user, pass) {
      debug sleep here was accidentally load-bearing. */
   /* poll the row CONTENT digest (sum), not the timestamp: clock skew and a
      straggler push made the pushed_at version flake on slow machines */
-  const sumAfterDel = await waitFor(function () {
+  const postDelPlain = await waitFor(async function () {
     syncSB(Bt);
     const r = SB[dataRows[0]];
-    return r && r.payload && r.payload.sum && r.payload.sum !== sumBeforeDel ? r.payload.sum : null;
+    if (!r || !r.payload || !r.payload.sum || r.payload.sum === sumBeforeDel) return false;
+    try { const pl = await rowPlain(Bt, r); return Array.isArray(pl.gone) && pl.gone.indexOf(TEA) !== -1; } catch (e) { return false; }
   }, 45000);
-  ok(!!sumAfterDel, 'post-deletion copy published (tombstone travels on the row)');
+  ok(!!postDelPlain, 'post-deletion copy published (tombstone travels on the row)');
   const postDelRowJson = JSON.stringify(SB[dataRows[0]] || null);
   /* quiesce: let the debounce window (and any follow-up save push) drain;
      the tombstone invariant itself is asserted in S10 (adopt sees gone[]) */
@@ -766,13 +784,6 @@ async function loginCloudAs(B, user, pass) {
      copy BEFORE the deletion push lands (it honestly holds tea1), the
      deleter's push lands, THEN X pushes its merge. The union must keep the
      tombstone: tea1 stays out of the row, and X's local copy self-corrects. */
-  const b64uToBytes = function (s) { const t = s.replace(/-/g, '+').replace(/_/g, '/'); const b = atob(t + '='.repeat((4 - t.length % 4) % 4)); return Uint8Array.from(b, function (c) { return c.charCodeAt(0); }); };
-  async function rowPlain(B, row) {
-    const cfg = JSON.parse(B.w.localStorage.getItem('spr-devicesync-v1'));
-    const key = await require('crypto').webcrypto.subtle.importKey('raw', b64uToBytes(cfg.key), 'AES-GCM', false, ['decrypt']);
-    const pt = await require('crypto').webcrypto.subtle.decrypt({ name: 'AES-GCM', iv: b64uToBytes(row.payload.iv) }, key, b64uToBytes(row.payload.ct));
-    return JSON.parse(new TextDecoder().decode(pt));
-  }
   const postDelRow = JSON.parse(postDelRowJson);
   /* X adopts the PRE-deletion copy; it also holds one LOCAL account the row
      has never seen, so its post-race merge carries real new content (a

@@ -4837,6 +4837,19 @@
   const DS_KEY = 'spr-devicesync-v1';
   const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* A wanted push is NEVER dropped (fix 2026-10-31). Until now, a push
+     requested while a pull-check held the row, or while the device was signed
+     out, vanished silently: scheduleSyncPush() refused to schedule and the
+     debounce timer had no retry. A concurrent device still holding the
+     pre-deletion account list could then publish the deleted account back
+     onto the shared row. The want now survives in the sync cfg (so it even
+     crosses a reload) and is retried until the row accepts it. */
+  function dsPushWanted() { const c = dsCfg(); return !!(c && c.pendingPush); }
+  function dsSetPushWanted(v) {
+    const c = dsCfg(); if (!c) return;
+    if (v) c.pendingPush = true; else delete c.pendingPush;
+    dsSaveCfg(c);
+  }
   /* the pull-check must never treat the copy this device JUST installed as
      "newer than itself": floor the boot clock at the envelope's seal time
      (v2.ts is the SENDER's last local write: often older than the envelope) */
@@ -5107,11 +5120,18 @@
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload(), gone: dsGone() });   /* NO hash ever leaves this device */
+    const users = syncUsers();
+    const gone = dsGone();
+    /* accounts signature: covers login wraps, keyrings and tombstones, which
+       change with NO class edit. The push short-circuit compares this next to
+       the content sum, or an accounts-only change (password reset, account
+       removal) is never published and other devices keep the stale list. */
+    const asum = await dsSum(JSON.stringify({ users: users, gone: gone }));
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    const env = { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, asum: asum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
     /* the wrap lets a fresh device unwrap this sync key with nothing but the
        admin username + password; refreshed on every push made during a fresh
        sign-in, carried forward unchanged otherwise */
@@ -5149,10 +5169,23 @@
     } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
     location.reload();
   }
-  function scheduleSyncPush() {
-    if (!dsCanPush()) return;
+  let dsTimerAt = 0;                           /* when the armed timer will fire */
+  function scheduleSyncPush(delay) {
+    if (!dsOn()) return;
+    dsSetPushWanted(true);                     /* remembered across reloads */
+    const at = Date.now() + (delay || 4000);
+    if (dsTimer && dsTimerAt <= at) return;    /* already armed sooner: keep it (a 30s backoff never delays a fresh edit) */
     clearTimeout(dsTimer);
-    dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
+    dsTimerAt = at;
+    dsTimer = setTimeout(async function () {
+      dsTimer = null; dsTimerAt = 0;
+      if (!dsPushWanted()) return;
+      if (!dsCanPush() || dsHoldPush) { scheduleSyncPush(4000); return; }   /* not now: retried, not dropped */
+      dsSetPushWanted(false);
+      let okPush = false;
+      try { okPush = await dsPushNow(false); } catch (e) { okPush = false; }
+      if (!okPush) scheduleSyncPush(30000);    /* read/save failed: back off, keep trying */
+    }, Math.max(0, at - Date.now()));
   }
   function writeV2(v2) {
     try {
@@ -5226,7 +5259,7 @@
           return false;
         }
       }
-      if (row && row.payload && row.payload.sum === env.sum && !wrapRepair) {
+      if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && !wrapRepair) {
         await dsAdoptChan(cfg, chan);
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
@@ -5250,10 +5283,10 @@
       const c2 = dsCfg();
       if (c2) { c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.'; dsSaveCfg(c2); }
       if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
-      /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
-         new edit to get the data out */
-      clearTimeout(dsTimer);
-      dsTimer = setTimeout(function () { if (dsCanPush()) dsPushNow(false); }, 30000);
+      /* auto-retry a failed push after 30s — a flaky link shouldn't need a new
+         edit to get the data out; scheduleSyncPush keeps retrying (30s backoff)
+         until the row accepts it */
+      scheduleSyncPush(30000);
       return false;
     }
   }
