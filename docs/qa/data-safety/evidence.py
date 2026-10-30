@@ -51,14 +51,13 @@ def first_run(pg, user, pw):
     pg.wait_for_selector('#suUser', timeout=8000)
     pg.fill('#suUser', user); pg.fill('#suPass', pw); pg.fill('#suConf', pw)
     pg.locator('[data-action="first-run"]').click()
-    # item 4: mandatory recovery-path dialog
+    # item 4: mandatory recovery-path dialog (round5 item 3: master route;
+    # the round-4 self-tick checkbox no longer exists)
     try:
-        pg.wait_for_selector('[data-action="recovery-ack"]', timeout=20000)
-        pg.locator('[data-action="recovery-dl"]').click()
-        pg.wait_for_timeout(300)
-        cb = pg.locator('#recoverySaved')
-        if not cb.is_disabled():
-            cb.check()
+        pg.wait_for_selector('#mrPw', state='visible', timeout=25000)
+        pg.fill('#mrPw', pw + '-Master')
+        pg.locator('[data-action="recovery-master"]').click()
+        pg.wait_for_selector('#recoveryGo:not([disabled])', timeout=30000)
         pg.locator('[data-action="recovery-ack"]').click()
     except Exception as e:
         log('  [recovery step] ' + str(e).splitlines()[0])
@@ -106,6 +105,9 @@ with sync_playwright() as pw:
         log('item1 sample data loaded: (no button — maybe already seeded)')
 
     pgA.goto(BASE + '/app/index.html#/students'); pgA.wait_for_timeout(900)
+    # round5 item 2: the chooser may need the class opened first
+    if pgA.locator('[data-action="class-open"]').count():
+        pgA.locator('[data-action="class-open"]').first.click(); pgA.wait_for_timeout(1500)
 
     # tab B: same browser profile, fresh page → sign in again
     pgB = ctx.new_page()
