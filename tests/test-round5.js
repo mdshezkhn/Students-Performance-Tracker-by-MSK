@@ -174,7 +174,7 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     const A = boot(await preSeed({ dsCfg: cfg0, sb: { url: 'http://127.0.0.1:' + MOCK_PORT, key: 'mock-anon' } }));
     await sleep(300);
     check(await waitShell(A), 'before-SQL: admin signed in');
-    await sleep(1200);   /* let the boot pull-check release its push hold */
+    await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000 && A.w.SPR_SYNC_TEST && A.w.SPR_SYNC_TEST.hold()) await sleep(250); })();   /* condition: boot pull-check released its push hold */
     calls.length = 0;
     const pushed = A.w.SPR_SYNC_TEST ? await pushRetry(A) : null;
     if (pushed !== true) console.log('    [dbg] A:', JSON.stringify({ logs: A.w.__logs, canPush: A.w.SPR_SYNC_TEST.canPush(), hold: A.w.SPR_SYNC_TEST.hold(), cfg: A.w.SPR_SYNC_TEST.cfg() }));
@@ -232,8 +232,9 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     const tbtn = E.d.querySelector('[data-action="ds-test"]');
     check(!!tbtn, 'Manage has a "Test cloud connection" button');
     if (tbtn) {
-      click(E, tbtn); await sleep(1200);
-      check(/Cloud connection/.test(txt(E) + dlgTxt(E)), 'button reports the connection in plain words');
+      click(E, tbtn);
+      const connTxt = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000) { if (/Cloud connection/.test(txt(E) + dlgTxt(E))) return true; await sleep(250); } return false; })();
+      check(connTxt, 'button reports the connection in plain words');
     }
     E.w.close();
 
@@ -311,7 +312,7 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
       click(A, A.d.querySelector('[data-action="acct-add"]'));
       let annaStored = false;
       for (let t = 0; t < 40; t++) { await sleep(250); if ((A.w.localStorage.getItem(AUTH_KEY) || '').includes('anna')) { annaStored = true; break; } }
-      await sleep(2500);   /* let the add flow finish its writes before snapshotting */
+      await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000) { try { const v2 = JSON.parse(A.w.localStorage.getItem('p4c4-markbook-v2') || '{}'); if (v2.wraps && v2.wraps.anna) return; } catch (e) {} await sleep(250); } })();   /* condition: the add flow's key wrap for anna is written */
       check(annaStored, 'teacher account stored');
     }
     /* pair anna to the class: the designed key-share path (wraps the class
@@ -415,7 +416,8 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(/not granted: the browser did not promise|not granted: download backups regularly/.test(built), 'Manage persistent-storage "not granted" wording present in the bundle');
     const cfgp = { on: false };
     const A = boot(await preSeed({ dsCfg: cfgp })); await sleep(300); await waitShell(A);
-    A.w.location.hash = '#/manage'; await sleep(3500);
+    A.w.location.hash = '#/manage';
+    await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000) { const m = (txt(A)).match(/Persistent storage:<\/b>\s*([^<.]+)/); if (m && !/checking/.test(m[1])) return; await sleep(250); } })();   /* condition: storage query settled */
     check(!/checking… download backups regularly/.test(txt(A)), 'persistent storage never sticks on "checking…"');
     check(/granted/.test(txt(A)), 'persistent storage shows its final state (granted / not granted)');
     A.w.close();

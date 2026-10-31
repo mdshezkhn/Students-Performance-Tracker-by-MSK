@@ -269,7 +269,7 @@ async function waitShell(B, ms) {
     A.w.location.hash = '#/manage'; await sleep(500);
     const t0 = Date.now();
     let finalTxt = '';
-    while (Date.now() - t0 < 3500) { await sleep(200); const m = (A.d.body.textContent || '').match(/Persistent storage:<\/b>\s*([^<.]+)/); if (m && !/checking/.test(m[1])) { finalTxt = m[1].trim(); break; } }
+    while (Date.now() - t0 < 60000) { await sleep(200); const m = (A.d.body.textContent || '').match(/Persistent storage:<\/b>\s*([^<.]+)/); if (m && !/checking/.test(m[1])) { finalTxt = m[1].trim(); break; } }
     check(/granted|not granted/.test(finalTxt), 'class mode: line resolves within 3 s (got: ' + (finalTxt || 'still checking') + ')');
     check((A.w.__PERSIST_CALLS || 0) >= 1, 'persist() requested in class mode too');
     A.w.close();

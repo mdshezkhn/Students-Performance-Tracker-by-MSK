@@ -3641,7 +3641,7 @@
              back on the row. If the immediate push cannot run (hold/read
              failure), the debounce retry still applies. */
           const pushedNow = await dsPushNow(false);
-          if (pushedNow !== true) scheduleSyncPush(pushedNow === 'held' ? 4000 : 0);   /* held: retry chain; failure: immediate retry on next event */
+          if (pushedNow !== true) scheduleSyncPush(pushedNow === 'held' ? 4000 : 0, 'account event: removal');   /* held: retry chain; failure: immediate retry on next event */
         }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
@@ -3692,7 +3692,7 @@
       if (!u || un === SESSION.user) return;
       u.disabled = !u.disabled;
       saveAuth(auth);
-      if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
+      if (dsCanPush()) scheduleSyncPush(0, 'account event: enable/disable');   /* account event: push promptly, not on the edit debounce */
       toast(un + (u.disabled ? ' disabled' : ' enabled') + ' \u2014 they cannot sign in while disabled');
       renderUsers();
       return;
@@ -3743,7 +3743,7 @@
         }
         closeDlg();
         const ptr = await dsWritePointer(un, pw);
-        if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
+        if (dsCanPush()) scheduleSyncPush(0, 'account event: sign-in created');   /* account event: push promptly, not on the edit debounce */
         toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + '): works on any system they sign in from'
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
@@ -3810,7 +3810,7 @@
         }
         if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
         const ptr = await dsWritePointer(un, nw);
-        if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
+        if (dsCanPush()) scheduleSyncPush(0, 'account event: password reset');   /* account event: push promptly, not on the edit debounce */
         closeDlg();
         toast((ptr === 'ok' ? 'Password updated for ' + un + ': sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
@@ -4857,10 +4857,14 @@
      humans see it in the console as [spr-sync] lines. */
   const DS_PUSH_LOG = [];
   window.__SPR_PUSH_LOG = DS_PUSH_LOG;
+  /* SPR_DS_TRACE: debug trace for push decisions. OFF by default; the flag is
+     set only by a test harness (window.__SPR_DS_TRACE) or a developer console.
+     Production users see nothing: the ring is silent, printing needs the flag. */
+  function dsTraceOn() { try { return window.__SPR_DS_TRACE === true; } catch (e) { return false; } }
   function dsLog(reason) {
-    const line = new Date().toISOString().slice(11, 19) + ' ' + reason;
+    const line = new Date().toISOString().slice(11, 23) + ' ' + reason;
     DS_PUSH_LOG.push(line); if (DS_PUSH_LOG.length > 40) DS_PUSH_LOG.shift();
-    try { console.warn('[spr-sync] ' + line); } catch (e2) {}
+    try { if (dsTraceOn()) console.warn('[spr-sync] ' + line); } catch (e2) {}
   }
   /* A wanted push is NEVER dropped (fix 2026-10-31). Until now, a push
      requested while a pull-check held the row, or while the device was signed
@@ -4870,6 +4874,9 @@
      onto the shared row. The want now survives in the sync cfg (so it even
      crosses a reload) and is retried until the row accepts it. */
   let dsWantedSeq = 0;   /* bumped on every request: lets the timer tell a stale completion from a fresh change */
+  /* R4: failed-push retry ladder 4 s → 8 s → 16 s, capped at 30 s (the count
+     lives in the cfg, so the ladder survives a reload too) */
+  function dsBackoffDelay(failCount) { return failCount <= 1 ? 4000 : failCount === 2 ? 8000 : failCount === 3 ? 16000 : 30000; }
   function dsPushWanted() { const c = dsCfg(); return !!(c && c.pendingPush); }
   function dsSetPushWanted(v) {
     const c = dsCfg(); if (!c) return;
@@ -5202,8 +5209,11 @@
     location.reload();
   }
   let dsTimerAt = 0;                           /* when the armed timer will fire */
-  function scheduleSyncPush(delay) {
+  let dsPushBusy = false, dsRerunAfterFlight = false;   /* in-flight coalescing (R1/R2) */
+  let dsWhy = 'timer';                         /* why the current push chain exists (trace + retries) */
+  function scheduleSyncPush(delay, why) {
     if (!dsOn()) return;
+    if (why) dsWhy = why;
     dsSetPushWanted(true);                     /* remembered across reloads */
     const at = Date.now() + (delay || 4000);
     if (dsTimer && dsTimerAt <= at) return;    /* already armed sooner: keep it (a 30s backoff never delays a fresh edit) */
@@ -5212,15 +5222,15 @@
     dsTimer = setTimeout(async function () {
       dsTimer = null; dsTimerAt = 0;
       if (!dsPushWanted()) { dsLog('timer: nothing pending'); return; }
-      if (!dsCanPush()) { dsLog('retry 4s: cannot push now (signed out / sync off)'); scheduleSyncPush(4000); return; }
-      if (dsHoldPush) { dsLog('retry 4s: held by a pull-check'); scheduleSyncPush(4000); return; }
+      if (!dsCanPush()) { dsLog('skip: signed out / sync off | why=' + dsWhy + ' → retry 4s'); scheduleSyncPush(4000, 'retry'); return; }
+      if (dsHoldPush) { dsLog('skip: held by pull-check | why=' + dsWhy + ' → retry 4s'); scheduleSyncPush(4000, 'retry'); return; }
       const seqAtStart = dsWantedSeq;   /* a change scheduled DURING this push must not be cleared by it */
       let okPush = false;
       try { okPush = await dsPushNow(false); } catch (e) { okPush = false; dsLog('push threw: ' + ((e && e.message) || e)); }
-      if (okPush === true && dsWantedSeq === seqAtStart) { dsLog('push done: pending cleared'); dsSetPushWanted(false); }
-      else if (okPush === true) { dsLog('push done, but a newer change arrived: pushing again'); scheduleSyncPush(0); }
-      else if (okPush === 'held') scheduleSyncPush(4000);   /* transient: retry soon, not dropped */
-      else scheduleSyncPush(30000);            /* read/save failed: back off, keep trying */
+      if (okPush === true && dsWantedSeq === seqAtStart) { dsLog('push done: pending cleared | why=' + dsWhy); dsSetPushWanted(false); }
+      else if (okPush === true) { dsLog('push done, but a newer change arrived: pushing again'); scheduleSyncPush(0, 'newer change'); }
+      else if (okPush === 'held') scheduleSyncPush(4000, 'retry');   /* transient: retry soon, not dropped */
+      else scheduleSyncPush(dsBackoffDelay(((dsCfg() || {}).failCount) || 1), 'backoff');   /* failed: ladder backoff, keep trying */
     }, Math.max(0, at - Date.now()));
   }
   function writeV2(v2) {
@@ -5229,7 +5239,7 @@
       KNOWN_STORE_TS = Math.max(KNOWN_STORE_TS, v2.ts || Date.now());
       saveOkBanner();
     } catch (e) { saveFailedBanner(); return false; }
-    scheduleSyncPush();
+    scheduleSyncPush(4000, 'content change');
     return true;
   }
   /* tombstone-first row removal (a DELETE the row policy ignores still says
@@ -5247,8 +5257,18 @@
     /* returns: true = sent or already current; 'held' = transient (pull-check
        in flight / signed out this second): retry in 4 s; false = real
        failure: back off 30 s. */
-    if (!dsCanPush()) { dsLog('held: cannot push (signed out / sync off)'); return 'held'; }
-    if (dsHoldPush) { dsLog('held: a pull-check is deciding local-vs-cloud'); return 'held'; }   /* never overwrite mid-decision */
+    if (!dsCanPush()) { dsLog('skip: cannot push (signed out / sync off) | why=' + dsWhy); return 'held'; }
+    if (dsHoldPush) { dsLog('skip: a pull-check is deciding local-vs-cloud (dialog open) | why=' + dsWhy); return 'held'; }   /* never overwrite mid-decision */
+    if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight — coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
+    dsPushBusy = true;
+    try {
+      return await dsPushNowInner(interactive);
+    } finally {
+      dsPushBusy = false;
+      if (dsRerunAfterFlight) { dsRerunAfterFlight = false; scheduleSyncPush(0, 'coalesced after in-flight'); }
+    }
+  }
+  async function dsPushNowInner(interactive) {
     let cfg = dsCfg();
     try {
       /* the cloud home is derived from the OWNER (admin) account, so every
@@ -5263,8 +5283,8 @@
       let rowReadErr = null;
       const row = await sbGet(chan).catch(function (e) { rowReadErr = (e && e.message) || 'read failed'; return null; });
       if (rowReadErr) {
-        dsLog('fail: row read error ' + rowReadErr);
-        cfg.lastResult = 'fail'; dsSaveCfg(cfg);
+        dsLog('fail: row read error ' + rowReadErr + ' | why=' + dsWhy);
+        cfg.lastResult = 'fail'; cfg.failCount = (cfg.failCount || 0) + 1; if (!cfg.failSince) cfg.failSince = new Date().toISOString(); dsSaveCfg(cfg);
         if (interactive) toast('Could not read the cloud copy (' + rowReadErr + '): not overwriting it blind; try again later.', true);
         return false;
       }
@@ -5301,35 +5321,43 @@
         }
       }
       if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && row.payload.wsig === env.wsig && !wrapRepair) {
-        dsLog('skip: row already has this exact state' + (wrapRepair ? ' (wrap repair pending)' : ''));
+        dsLog('skip: already current | env(sum=' + env.sum + ',asum=' + env.asum + ',wsig=' + env.wsig.slice(0, 8) + '…) row(sum=' + row.payload.sum + ',asum=' + row.payload.asum + ',wsig=' + String(row.payload.wsig || '-').slice(0, 8) + '…) | why=' + dsWhy);
         await dsAdoptChan(cfg, chan);
-        cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+        cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok';
+        cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
-      dsLog('send: state differs (content / accounts / wrap repair) or no row yet');
+      dsLog('send: state differs (content / accounts / wrap repair) or no row yet | env(sum=' + env.sum + ',asum=' + env.asum + ',wsig=' + env.wsig.slice(0, 8) + '…)' + (row && row.payload ? ' row(sum=' + row.payload.sum + ',asum=' + row.payload.asum + ',wsig=' + String(row.payload.wsig || '-').slice(0, 8) + '…)' : ' row=none') + ' | why=' + dsWhy);
       const at = new Date().toISOString();
       const who = (cfg && cfg.device ? cfg.device : 'device') + ': ' + SESSION.user;
       const sbOpts = { token: cfg.writeToken, keyProof: cfg.key };
       let r = await sbSave(chan, env, 'devicesync', who, at, !row, sbOpts);
       if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false, sbOpts);
       if (r !== 'ok') throw new Error('cloud save rejected');
+      dsLog('sent ok: row accepted the new copy | sum=' + env.sum + ' asum=' + env.asum + ' | why=' + dsWhy);
       await dsAdoptChan(cfg, chan);
       cfg = dsCfg() || cfg;
-      cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+      cfg.lastPush = at; cfg.lastResult = 'ok'; cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; dsSaveCfg(cfg);
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
       return true;
     } catch (e) {
       try { console.warn('cloud save failed:', (e && e.message) || e); } catch (e4) {}   /* silent failures here cost days to diagnose */
       const reason = String((e && e.message) || e || 'unknown error').replace(/\s+/g, ' ').slice(0, 160);
+      dsLog('fail: ' + reason + ' | why=' + dsWhy);
       const c2 = dsCfg();
-      if (c2) { c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.'; dsSaveCfg(c2); }
+      if (c2) {
+        c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.';
+        c2.failCount = (c2.failCount || 0) + 1;
+        if (!c2.failSince) c2.failSince = new Date().toISOString();   /* R4: the 2-minute quiet clock starts here */
+        dsSaveCfg(c2);
+      }
       if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
-      /* auto-retry a failed push after 30s — a flaky link shouldn't need a new
-         edit to get the data out; scheduleSyncPush keeps retrying (30s backoff)
-         until the row accepts it */
-      scheduleSyncPush(30000);
+      /* auto-retry via the ladder (4/8/16/30 s) — a flaky link shouldn't need
+         a new edit to get the data out; the want stays armed until it lands */
+      scheduleSyncPush(dsBackoffDelay((c2 && c2.failCount) || 1), 'retry after failure');
+      if (location.hash === '#/manage') renderManage();
       return false;
     }
   }
@@ -5358,10 +5386,12 @@
        otherwise the 4s-debounced push could overwrite the newer cloud copy
        while the user is still deciding whether to open it */
     dsHoldPush = true;
+    dsLog('pull-check: start (interactive=' + (interactive ? 1 : 0) + ') | pushes held');
     try { await dsPullCheckInner(interactive); }
     finally {
       dsHoldPush = false;
-      if (dsOn() && dsCanPush()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+      dsLog('pull-check: done | pushes released');
+      if (dsOn() && dsCanPush()) scheduleSyncPush(4000, 'pull-check resume');   /* resume: pushes local choice if user declined */
     }
   }
   function dsDeclined() { try { return JSON.parse(localStorage.getItem(DS_DECLINED_KEY)) || null; } catch (e) { return null; } }
@@ -5424,6 +5454,7 @@
         let hit = null;
         try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
         if (hit) {
+          if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: 'another device' }; dsSaveCfg(cfg); toast('This device\u2019s pairing is out of date: Manage \u2192 Device sync \u2192 Check for newer copy'); return; }
           const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
             'SPR found an <b>encrypted cloud copy</b> of this markbook for your account: saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
             'Open cloud copy');
@@ -5442,7 +5473,8 @@
          strictly newer: the copies have diverged. A flat "nothing to open"
          refusal here dead-ends a device whose local copy is broken (e.g. a
          class blob went missing), so offer the copy with honest wording. */
-      if (!interactive) return;
+      if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: row.pushed_by || 'another device' }; dsSaveCfg(cfg); toast('The cloud copy differs from this device: Manage \u2192 Device sync \u2192 Check for newer copy'); return; }
+      dsLog('pull-check: opening DIFFERS dialog (interactive only, pushes stay held)');
       const okD = await confirmDlg('The cloud copy differs from this device',
         'Neither copy is newer: this device last saved <b>' + new Date(DS_BOOT_TS).toLocaleString() + '</b>; the cloud copy was saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore.',
         'Open cloud copy');
@@ -5451,6 +5483,15 @@
       dsInstall(obj);
       return;
     }
+    /* R1 root cause: a BACKGROUND check must never park pushes on a modal
+       that may never be answered. Interactive checks keep the dialog. */
+    if (!interactive) {
+      dsLog('pull-check: newer cloud copy found — passive notice, NO dialog (R1) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
+      cfg.cloudAhead = { at: new Date().toISOString(), by: row.pushed_by || 'another device' }; dsSaveCfg(cfg);
+      toast('A newer cloud copy is waiting: Manage \u2192 Device sync \u2192 Check for newer copy');
+      return;
+    }
+    dsLog('pull-check: opening NEWER-COPY dialog (interactive, modal, pushes stay held) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>: newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsAuthDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account: use the password from the device that saved it.' : ''),
@@ -5659,9 +5700,14 @@
         '<span class="small muted" style="align-self:center">Optional: SPR works fully without it.</span></div></div>';
     }
     const when = function (iso) { return iso ? new Date(iso).toLocaleString() : '—'; };
+    /* R4: retries are silent for the first 2 minutes; after that, one honest
+       sentence. A waiting newer copy shows a passive notice (never a modal). */
+    const failing = cfg.lastResult === 'fail' && cfg.failSince && (Date.now() - Date.parse(cfg.failSince)) >= 120000;
+    const status = failing ? '<span style="color:#b45309">Cloud copy is behind. Your data on this device is safe.</span>'
+      : cfg.cloudAhead ? '<span style="color:#b45309">A newer cloud copy is waiting: press Check for newer copy.</span>'
+      : 'An encrypted copy of everything is updated after each change.';
     return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync is on.</b> ' +
-      (cfg.lastResult === 'fail' ? '<span style="color:#b45309">Last cloud save failed: it will retry automatically.</span>'
-                                  : 'An encrypted copy of everything is updated after each change.') + '</p>' +
+      status + '</p>' +
       '<table class="tbl"><tbody>' +
       '<tr><td style="width:180px">This device</td><td>' + U.esc(cfg.device || '—') + '</td></tr>' +
       '<tr><td>Last cloud save</td><td>' + U.esc(when(cfg.lastPush)) + '</td></tr>' +
@@ -5839,7 +5885,7 @@
     /* fresh sign-in with device sync on: push soon even without a data change,
        so a legacy channel migrates home and the owner's password wrap lands on
        the row (a fresh device cannot bootstrap until the wrap exists) */
-    if (SESSION.pw && dsCanPush()) scheduleSyncPush();
+    if (SESSION.pw && dsCanPush()) scheduleSyncPush(4000, 'sign-in repair');
     if (installedFromCloud) toast('Welcome back: your data arrived from the cloud');
     return { user: auth.session };
   }
@@ -6018,7 +6064,11 @@
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     try { DS_BOOT_TS = Math.max(DS_BOOT_TS, Number(localStorage.getItem('spr-ds-boot') || 0) || 0); } catch (e) {}
-    window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
+    window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(4000, 'back online'); });
+    /* R4: a push want that survived a reload must find its timer again — arm a
+       check shortly after boot; the timer itself retries until the session is
+       back, then pushes (or clears on an already-current row) */
+    setTimeout(function () { if (dsPushWanted() && dsOn()) scheduleSyncPush(4000, 'reload re-arm'); }, 2500);
     /* a push scheduled but not yet fired when the tab is hidden/closed would
        otherwise leave the cloud copy one edit behind: flush best effort */
     function dsFlushPending() {
