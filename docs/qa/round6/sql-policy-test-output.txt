@@ -2,7 +2,7 @@
 === A: old policy named exactly as the file guesses ("anon can update channels")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"h4QjVY34fWLLsAbuaF5R1WjQ9pJGl1WlaBBHq2fJCLme96DweKios   (intact)
+  row payload now: {"ct":"Il50opLgbBGj1QAqdAjLcYYNmp4bcuzYDVARvo8Y4YqWvQDL6BTfm   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
@@ -17,7 +17,7 @@ anon DELETE: REFUSED: permission denied for table spr_channels
 === B: old policy has a DIFFERENT name ("Enable update for anon users")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"h4QjVY34fWLLsAbuaF5R1WjQ9pJGl1WlaBBHq2fJCLme96DweKios   (intact)
+  row payload now: {"ct":"Il50opLgbBGj1QAqdAjLcYYNmp4bcuzYDVARvo8Y4YqWvQDL6BTfm   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected
@@ -32,7 +32,7 @@ anon DELETE: REFUSED: permission denied for table spr_channels
 === C: old policy is an ALL policy ("public full access")
 SQL file ran without error
 direct UPDATE by anon (attack): REFUSED: permission denied for table spr_channels
-  row payload now: {"ct":"h4QjVY34fWLLsAbuaF5R1WjQ9pJGl1WlaBBHq2fJCLme96DweKios   (intact)
+  row payload now: {"ct":"Il50opLgbBGj1QAqdAjLcYYNmp4bcuzYDVARvo8Y4YqWvQDL6BTfm   (intact)
 ping unknown row: OK rows=0 [{"spr_channel_ping":"no-row"}]
 write before enrol (null hash): REFUSED: spr_channel_write: channel has no token enrolled yet
 enrol with WRONG key: REFUSED: spr_channel_enrol: proof rejected

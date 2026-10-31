@@ -203,11 +203,25 @@ async function waitShell(B, ms) {
     /* jsdom only: fetch is bridged after the constructor, but the app fires
        maybeJoin during boot. Real browsers have fetch from birth; re-run the
        deferred join the way the browser would have. */
-    try { await J2.w.SPR_DEBUG_MAYBE_JOIN(); } catch (eJ) { console.log('    [dbg] maybeJoin threw:', eJ.message); }
-    await sleep(600);
-    const joinGo = J2.d.querySelector('#dlg [data-x="1"]');
-    if (joinGo) { joinGo.dispatchEvent(new J2.w.MouseEvent('click', { bubbles: true })); await sleep(1200); }
-    const joined = JSON.parse(J2.w.localStorage.getItem(SHARE_KEY) || '{}');
+    /* the app defers the join until the notice gate is agreed (the gate and
+       the join confirm share one dialog); a real co-teacher reads + agrees
+       first, and the join confirm appears right after */
+    const cbx = J2.d.getElementById('notice-read');
+    if (cbx && !cbx.checked) { cbx.checked = true; cbx.dispatchEvent(new J2.w.Event('change', { bubbles: true })); }
+    const ack = J2.d.querySelector('[data-action="privacy-gate-ack"]');
+    if (ack && !ack.disabled) ack.dispatchEvent(new J2.w.MouseEvent('click', { bubbles: true }));
+    /* wait for the JOIN dialog specifically (the gate also renders a
+       data-x=1 button; clicking that would swallow the wrong dialog) */
+    const joinGo = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 20000) { const dlg = J2.d.getElementById('dlg'); if (dlg && dlg.open && /Join shared class/.test(dlg.textContent)) return dlg.querySelector('[data-x="1"]'); await sleep(200); } return null; })();
+    if (joinGo) { joinGo.dispatchEvent(new J2.w.MouseEvent('click', { bubbles: true })); }
+    /* condition, not a sleep: the stored share config appears after the join fetch resolves */
+    const joined = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 15000) { const j = JSON.parse(J2.w.localStorage.getItem(SHARE_KEY) || '{}'); if (j.channel) return j; await sleep(200); } return JSON.parse(J2.w.localStorage.getItem(SHARE_KEY) || '{}'); })();
+    if (!(joined.channel === CHAN && joined.key === KEY && joined.writeToken === TOK)) {
+      const dlg = J2.d.getElementById('dlg');
+      console.log('    [jdbg] joinGo was clicked:', !!joinGo, '| dlg open:', !!(dlg && dlg.open), '| dlg text:', (dlg && dlg.textContent || '').slice(0, 90));
+      console.log('    [jdbg] toasts:', Array.from(J2.d.querySelectorAll('.toast, [class*=toast]')).map(function (t) { return t.textContent.slice(0, 60); }).join(' / '));
+      console.log('    [jdbg] stored:', JSON.stringify(joined).slice(0, 80), '| SB cfg:', (J2.w.localStorage.getItem('spr-sb-v1') || '').slice(0, 60));
+    }
     check(joined.channel === CHAN && joined.key === KEY && joined.writeToken === TOK, 'opening the share link stores channel + key + token');
     J2.w.close();
 

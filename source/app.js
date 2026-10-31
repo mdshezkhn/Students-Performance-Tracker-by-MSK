@@ -3295,6 +3295,8 @@
       try { if (!DB.settings) DB.settings = {}; if (!DB.settings.privacyAck) { DB.settings.privacyAck = Date.now(); } saveDB(true); } catch (e2) {}
       closeDlg();
       if (onAck) onAck();
+      /* a join/pair link that arrived while the gate was up runs now */
+      if (PENDING_JOIN) { const j = PENDING_JOIN; PENDING_JOIN = null; j(); }
     });
   }
 
@@ -3639,7 +3641,7 @@
              back on the row. If the immediate push cannot run (hold/read
              failure), the debounce retry still applies. */
           const pushedNow = await dsPushNow(false);
-          if (!pushedNow) scheduleSyncPush();
+          if (pushedNow !== true) scheduleSyncPush(pushedNow === 'held' ? 4000 : 0);   /* held: retry chain; failure: immediate retry on next event */
         }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
@@ -3690,7 +3692,7 @@
       if (!u || un === SESSION.user) return;
       u.disabled = !u.disabled;
       saveAuth(auth);
-      if (dsCanPush()) scheduleSyncPush();
+      if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
       toast(un + (u.disabled ? ' disabled' : ' enabled') + ' \u2014 they cannot sign in while disabled');
       renderUsers();
       return;
@@ -3741,7 +3743,7 @@
         }
         closeDlg();
         const ptr = await dsWritePointer(un, pw);
-        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new account hash in the data row */
+        if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
         toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + '): works on any system they sign in from'
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
@@ -3808,7 +3810,7 @@
         }
         if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
         const ptr = await dsWritePointer(un, nw);
-        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
+        if (dsCanPush()) scheduleSyncPush(0);   /* account event: push promptly, not on the edit debounce */
         closeDlg();
         toast((ptr === 'ok' ? 'Password updated for ' + un + ': sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
@@ -4810,15 +4812,28 @@
       toast('Joined: Save & Share now keeps this class in sync');
     } catch (e) {
       toast('Join failed: ' + e.message, true);
-      history.replaceState(null, '', location.pathname + location.search);
+      /* same cleanup as the success path: history can be absent (embedded
+         webviews, test DOMs) and this threw AFTER the toast, escaping as an
+         unhandled rejection */
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (eH) { try { location.hash = '/dashboard'; } catch (eH2) {} }
     }
   }
+  let PENDING_JOIN = null;   /* a share/pair link that arrived before the notice gate was agreed */
   function maybeJoin() {
     const h = location.hash || '';
     const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?(?:&t=([^&]+))?/);
-    if (m) { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); return; }
+    if (m) {
+      /* the gate and the join confirm share ONE dialog: if the notice gate is
+         still pending, the join confirm must wait, or the gate silently
+         replaces it and the share link dies */
+      if (!readNoticeAck()) { PENDING_JOIN = function () { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); }; return; }
+      shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); return;
+    }
     const p = h.match(/^#pair=([^&]+)&k=([^&]+)/);
-    if (p) dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+    if (p) {
+      if (!readNoticeAck()) { PENDING_JOIN = function () { dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2])); }; return; }
+      dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+    }
   }
 
   /* ============================ device sync (admin) ============================
@@ -4837,6 +4852,16 @@
   const DS_KEY = 'spr-devicesync-v1';
   const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* push-decision log: one line per attempt (held / retry / skip / send /
+     done) with the reason. Ring of 40; read via SPR_SYNC_TEST.pushLog(),
+     humans see it in the console as [spr-sync] lines. */
+  const DS_PUSH_LOG = [];
+  window.__SPR_PUSH_LOG = DS_PUSH_LOG;
+  function dsLog(reason) {
+    const line = new Date().toISOString().slice(11, 19) + ' ' + reason;
+    DS_PUSH_LOG.push(line); if (DS_PUSH_LOG.length > 40) DS_PUSH_LOG.shift();
+    try { console.warn('[spr-sync] ' + line); } catch (e2) {}
+  }
   /* A wanted push is NEVER dropped (fix 2026-10-31). Until now, a push
      requested while a pull-check held the row, or while the device was signed
      out, vanished silently: scheduleSyncPush() refused to schedule and the
@@ -4844,10 +4869,11 @@
      pre-deletion account list could then publish the deleted account back
      onto the shared row. The want now survives in the sync cfg (so it even
      crosses a reload) and is retried until the row accepts it. */
+  let dsWantedSeq = 0;   /* bumped on every request: lets the timer tell a stale completion from a fresh change */
   function dsPushWanted() { const c = dsCfg(); return !!(c && c.pendingPush); }
   function dsSetPushWanted(v) {
     const c = dsCfg(); if (!c) return;
-    if (v) c.pendingPush = true; else delete c.pendingPush;
+    if (v) { c.pendingPush = true; dsWantedSeq++; } else delete c.pendingPush;
     dsSaveCfg(c);
   }
   /* the pull-check must never treat the copy this device JUST installed as
@@ -5127,11 +5153,17 @@
        the content sum, or an accounts-only change (password reset, account
        removal) is never published and other devices keep the stale list. */
     const asum = await dsSum(JSON.stringify({ users: users, gone: gone }));
+    /* wraps signature, SEPARATE from asum: an admin password reset re-keys a
+       login wrap (v2.wraps[un]) with NO user/gone change, and the push
+       short-circuit must not skip that (a fresh browser bootstraps from the
+       row's wrap). Wraps are stable across plain sign-ins, so wsig does not
+       churn the way asum would if it included them. */
+    const wsig = await dsSum(JSON.stringify(v2.wraps || {}));
     const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    const env = { sprDS: 1, sum: sum, asum: asum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, asum: asum, wsig: wsig, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
     /* the wrap lets a fresh device unwrap this sync key with nothing but the
        admin username + password; refreshed on every push made during a fresh
        sign-in, carried forward unchanged otherwise */
@@ -5179,12 +5211,16 @@
     dsTimerAt = at;
     dsTimer = setTimeout(async function () {
       dsTimer = null; dsTimerAt = 0;
-      if (!dsPushWanted()) return;
-      if (!dsCanPush() || dsHoldPush) { scheduleSyncPush(4000); return; }   /* not now: retried, not dropped */
-      dsSetPushWanted(false);
+      if (!dsPushWanted()) { dsLog('timer: nothing pending'); return; }
+      if (!dsCanPush()) { dsLog('retry 4s: cannot push now (signed out / sync off)'); scheduleSyncPush(4000); return; }
+      if (dsHoldPush) { dsLog('retry 4s: held by a pull-check'); scheduleSyncPush(4000); return; }
+      const seqAtStart = dsWantedSeq;   /* a change scheduled DURING this push must not be cleared by it */
       let okPush = false;
-      try { okPush = await dsPushNow(false); } catch (e) { okPush = false; }
-      if (!okPush) scheduleSyncPush(30000);    /* read/save failed: back off, keep trying */
+      try { okPush = await dsPushNow(false); } catch (e) { okPush = false; dsLog('push threw: ' + ((e && e.message) || e)); }
+      if (okPush === true && dsWantedSeq === seqAtStart) { dsLog('push done: pending cleared'); dsSetPushWanted(false); }
+      else if (okPush === true) { dsLog('push done, but a newer change arrived: pushing again'); scheduleSyncPush(0); }
+      else if (okPush === 'held') scheduleSyncPush(4000);   /* transient: retry soon, not dropped */
+      else scheduleSyncPush(30000);            /* read/save failed: back off, keep trying */
     }, Math.max(0, at - Date.now()));
   }
   function writeV2(v2) {
@@ -5208,8 +5244,11 @@
     } catch (e) { return false; }
   }
   async function dsPushNow(interactive) {
-    if (!dsCanPush()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    /* returns: true = sent or already current; 'held' = transient (pull-check
+       in flight / signed out this second): retry in 4 s; false = real
+       failure: back off 30 s. */
+    if (!dsCanPush()) { dsLog('held: cannot push (signed out / sync off)'); return 'held'; }
+    if (dsHoldPush) { dsLog('held: a pull-check is deciding local-vs-cloud'); return 'held'; }   /* never overwrite mid-decision */
     let cfg = dsCfg();
     try {
       /* the cloud home is derived from the OWNER (admin) account, so every
@@ -5224,6 +5263,7 @@
       let rowReadErr = null;
       const row = await sbGet(chan).catch(function (e) { rowReadErr = (e && e.message) || 'read failed'; return null; });
       if (rowReadErr) {
+        dsLog('fail: row read error ' + rowReadErr);
         cfg.lastResult = 'fail'; dsSaveCfg(cfg);
         if (interactive) toast('Could not read the cloud copy (' + rowReadErr + '): not overwriting it blind; try again later.', true);
         return false;
@@ -5253,18 +5293,21 @@
         try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
+          dsLog('fail: row sealed under a different sync key (adopt first)');
           try { console.warn('row ownership check failed: adopting instead of overwriting (channel mismatch after adoption?)'); } catch (e5) {}
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
           if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup: open it from Manage → Device sync first.', true);
           return false;
         }
       }
-      if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && !wrapRepair) {
+      if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && row.payload.wsig === env.wsig && !wrapRepair) {
+        dsLog('skip: row already has this exact state' + (wrapRepair ? ' (wrap repair pending)' : ''));
         await dsAdoptChan(cfg, chan);
         cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
+      dsLog('send: state differs (content / accounts / wrap repair) or no row yet');
       const at = new Date().toISOString();
       const who = (cfg && cfg.device ? cfg.device : 'device') + ': ' + SESSION.user;
       const sbOpts = { token: cfg.writeToken, keyProof: cfg.key };
@@ -5545,7 +5588,7 @@
       cfg.key = cfg.key || b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
       cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
       dsSaveCfg(cfg);
-      const done = await dsPushNow(false);
+      const done = (await dsPushNow(false)) === true;   /* 'held' is not saved */
       toast(done ? 'Device sync is on: cloud copy saved. On other systems, just sign in with this account.'
                  : 'Device sync is on, but the first cloud save failed: it will retry on your next change.', !done);
       if (location.hash === '#/manage') renderManage();
@@ -6141,7 +6184,7 @@
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
   /* round5: sync internals for the mock-PostgREST regression suite */
-  window.SPR_SYNC_TEST = { push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex, sbSave: sbSave, sealSem: sealSem };
+  window.SPR_SYNC_TEST = { pushLog: function () { return (window.__SPR_PUSH_LOG || []).slice(); }, push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex, sbSave: sbSave, sealSem: sealSem };
   window.SPR_DEBUG_HUB = shareHubDlg;   /* round7: hub dialog is reachable */
   window.SPR_SYNC_TEST.sharePush = sharePush;   /* round7: conflict flow under test */
   window.SPR_DEBUG_PING = function (sbCfg, chan, tok) {

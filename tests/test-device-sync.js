@@ -9,9 +9,9 @@ const webcrypto = require('crypto').webcrypto;
 /* KNOWN PRE-EXISTING RACE (fails the same way on main @ b99d050): after a
    password reset, the login-time pull-check's async tail can still install
    the cloud's stale users array over the fresh hash, so the data row never
-   carries the new hash and fresh-browser bootstrap fails. Device-sync is
-   replaced by RemoteStore in a later phase; run these two checks on demand:
-   SPR_RUN_RACY_S8=1 node tests/test-device-sync.js */
+   carries the new hash and fresh-browser bootstrap used to fail. Since the
+   lossless push chain + prompt account-event pushes (2026-10-31) these run
+   BY DEFAULT; SPR_RUN_RACY_S8=0 opts out (e.g. to isolate another section). */
 const RUN_RACY_S8 = process.env.SPR_RUN_RACY_S8 !== '0';
 
 /* jsdom is the ONLY dev dependency (package.json). Resolve it the normal
@@ -226,9 +226,15 @@ async function loginCloudAs(B, user, pass) {
   click(A2, enBtn);
   await sleep(200);
   confirmYes(A2);
-  await sleep(1500);
-  syncSB(A2);
+  /* condition, not a sleep: the enable flow generates the key, seals the
+     envelope and uploads (2x600k PBKDF2 on the owner wrap on a slow box) */
+  await waitFor(function () { syncSB(A2); return Object.keys(SB).length >= 1; }, 40000);
   const rows = Object.keys(SB);
+  if (rows.length < 1) {
+    console.log('  [s2dbg] pushLog: ' + (A2.w.SPR_SYNC_TEST && A2.w.SPR_SYNC_TEST.pushLog ? A2.w.SPR_SYNC_TEST.pushLog().join(' | ') : '(none)'));
+    console.log('  [s2dbg] cfg: ' + A2.w.localStorage.getItem('spr-devicesync-v1'));
+    console.log('  [s2dbg] toasts: ' + Array.from(A2.d.querySelectorAll('.toast, [class*=toast]')).map(function (t) { return t.textContent; }).join(' / '));
+  }
   ok(rows.length === 1 && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(rows[0]), 'cloud row created on account channel (uuid): ' + rows[0]);
   const row = rows.length ? SB[rows[0]] : null;
   ok(row && row.payload && row.payload.sprDS === 1, 'payload is a device-sync envelope');
@@ -541,11 +547,6 @@ async function loginCloudAs(B, user, pass) {
   {
     const au = JSON.parse(G6.w.localStorage.getItem('spr-auth-v1') || '{}');
     const tea = (au.users || []).find((x) => x.username === 'tea1') || null;
-    Promise.resolve().then(async () => {
-      let v1 = 'no-user', v2v = 'n/a';
-      try { v1 = await G6.w.ClassStore.verifyLogin(tea.login, 'self-service-pass-3'); } catch (e) { v1 = 'ERR ' + e.message; }
-      console.error('  [idbg] inst:', JSON.stringify(G6.w.__instDbg), '| vpLog:', JSON.stringify(G6.w.__vpLog), '| lk:', JSON.stringify(G6.w.__lk), '| [vdbg] stored wrap:', JSON.stringify(tea && tea.login).slice(0, 70), '| verifies:', JSON.stringify(v1), '| authKeys:', Object.keys(au).join(','), '| session:', JSON.stringify(au.session));
-    });
   }
   ok(selfBoot, 'fresh browser bootstraps with the self-changed password');
   ok(selfBoot && G6.w.SPR_DEBUG_GET_DB().semesters.length > 0, 'self-service bootstrap sees the classes');
@@ -623,6 +624,7 @@ async function loginCloudAs(B, user, pass) {
   setVal(Bt, Bt.d.getElementById('rpConf'), TEAPW2);
   syncSB(Bt);
   const ptrCtBefore = SB[ptrRows[0]] ? SB[ptrRows[0]].payload.ct : null;
+  const dataAtBefore = SB[dataRows[0]] ? SB[dataRows[0]].pushed_at : null;   /* captured BEFORE the click: the data-row push now fires promptly */
   click(Bt, Bt.d.querySelector('[data-action="acct-reset"]'));
   const resealed = await waitFor(function () {
     syncSB(Bt);
@@ -630,13 +632,17 @@ async function loginCloudAs(B, user, pass) {
   }, 25000);
   ok(resealed, 'password reset re-sealed the pointer row');
   syncSB(Bt);
-  const dataAtBefore = SB[dataRows[0]] ? SB[dataRows[0]].pushed_at : null;
   let hashPushed = false;
   if (RUN_RACY_S8) {
     hashPushed = await waitFor(function () {
       syncSB(Bt);
       return SB[dataRows[0]] && SB[dataRows[0]].pushed_at !== dataAtBefore;
     }, 25000);
+    if (!hashPushed) {
+      if (Bt.w.SPR_SYNC_TEST && Bt.w.SPR_SYNC_TEST.pushLog) console.log('  [pushlog Bt] ' + Bt.w.SPR_SYNC_TEST.pushLog().join(' | '));
+      syncSB(Bt);
+      console.log('  [rdbg] dataAtBefore=' + dataAtBefore + ' | row now: pushed_at=' + ((SB[dataRows[0]] || {}).pushed_at) + ' | all rows: ' + JSON.stringify(Object.keys(SB).map(function (k) { return k.slice(0, 8) + ':' + (SB[k].pushed_at || ''); })));
+    }
     ok(hashPushed, 'reset also pushed the re-keyed account (login wrap) to the data row');
   } else console.log('  SKIP (known sync race, RemoteStore phase): reset data-row push check');
   if (RUN_RACY_S8) {
@@ -649,6 +655,14 @@ async function loginCloudAs(B, user, pass) {
     await sleep(300);
     await ackGate(G4);
     const newPwWorks = await loginCloudAs(G4, TEA, TEAPW2);
+    if (!newPwWorks) {
+      const dlg = G4.d.getElementById('dlg');
+      console.log('    [g4dbg] dlg open:', !!(dlg && dlg.open), '| dlg text:', (dlg && dlg.textContent || '').slice(0, 100));
+      console.log('    [g4dbg] odErr:', ((G4.d.getElementById('odErr') || {}).textContent || '').slice(0, 80), '| loginErr:', ((G4.d.getElementById('loginErr') || {}).textContent || '').slice(0, 80));
+      console.log('    [g4dbg] gate:', G4.d.body.classList.contains('auth-gate'), '| cfg:', (G4.w.localStorage.getItem('spr-devicesync-v1') || '').slice(0, 80));
+      syncSB(Bt);
+      console.log('    [g4dbg] Bt pushLog tail:', Bt.w.SPR_SYNC_TEST.pushLog().slice(-4).join(' | '));
+    }
     ok(newPwWorks, 'new teacher password bootstraps a fresh browser (explicit lookup)');
   } else console.log('  SKIP (known sync race, RemoteStore phase): fresh-browser bootstrap checks');
   /* removing the sign-in kills its pointer; the data row survives */

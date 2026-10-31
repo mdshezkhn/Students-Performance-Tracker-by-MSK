@@ -284,12 +284,29 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(krIn, 'admin holds the class key in their keyring (per-class access)');
     /* add a teacher (class-mode admin: the sign-ins live on the Users tab),
        then sign in as the teacher in a fresh window and check scope */
-    A.w.location.hash = '#/users'; await sleep(700);
+    A.w.location.hash = '#/users';
+    /* condition, not a sleep: the tab renders after the session restore */
+    await (async () => { for (let t = 0; t < 60; t++) { if (A.d.querySelector('[data-action="acct-add-open"]')) return; await sleep(250); } })();
+    /* the recovery-file nudge (round5 item 3) can steal the single dialog at
+       any moment; dismiss it whenever it shows, like a user clicking Later */
+    const drainNudge = async function () {
+      for (let t = 0; t < 12; t++) {
+        const d = A.d.getElementById('dlg');
+        if (d && d.open && /recovery file needs updating/.test(d.textContent)) {
+          const later = d.querySelector('[data-action="dlg-close"]');
+          if (later) later.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
+        }
+        await sleep(250);
+      }
+    };
+    drainNudge();
     const addBtn = A.d.querySelector('[data-action="acct-add-open"]');
     check(!!addBtn, 'Users tab offers Add account in class mode');
     if (addBtn) {
-      click(A, addBtn); await sleep(400);
-      if (!A.d.getElementById('naUser')) console.log('    [dbg] add dialog did not open. dlg:', dlgTxt(A).slice(0, 120), '| auth session:', String(A.w.localStorage.getItem(AUTH_KEY)).slice(-90));
+      click(A, addBtn);
+      /* condition, not a sleep: the nudge can still steal the dialog; reopen */
+      const naOpen = await (async () => { for (let t = 0; t < 40; t++) { if (A.d.getElementById('naUser')) return true; const d = A.d.getElementById('dlg'); if (d && d.open && /Add a sign-in/.test(d.textContent) === false && /recovery file needs updating/.test(d.textContent)) { const later = d.querySelector('[data-action="dlg-close"]'); if (later) later.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true })); click(A, addBtn); } await sleep(250); } return false; })();
+      if (!naOpen) console.log('    [dbg] add dialog did not open. dlg:', dlgTxt(A).slice(0, 120));
       set('naUser', 'anna'); set('naName', 'Anna'); set('naPass', 'anna-pass-12'); set('naConf', 'anna-pass-12');
       click(A, A.d.querySelector('[data-action="acct-add"]'));
       let annaStored = false;
