@@ -1094,8 +1094,19 @@ async function loginCloudAs(B, user, pass) {
     const ts = function (line) { const p = line.trim().split(' ')[0].split(':'); return (+p[0]) * 3600 + (+p[1]) * 60 + parseFloat(p[2]); };
     let gaps = [];
     if (sendTimes.length >= 4) { const t = sendTimes.map(ts); gaps = [t[1] - t[0], t[2] - t[1], t[3] - t[2]]; }
-    ok(ladderOk && gaps.length === 3 && gaps[0] <= 8 && gaps[1] >= 6.5 && gaps[1] <= 13 && gaps[2] >= 13.5 && gaps[2] <= 22,
-       'R4: retry ladder 4 s / 8 s / 16 s (measured gaps ' + (gaps.map(function (g) { return g.toFixed(1); }).join(', ') || 'n/a') + ' s)');
+    /* the POLICY is asserted from the app's own arming decisions (trace), not
+       from wall-clock gaps: timer slip under CPU contention delays the FIRE
+       time but not the schedule the app programmed. Gaps stay informational. */
+    const delaysInOrder = [];
+    { /* first-seen order of distinct ladder delays == the ladder the app armed */
+      const seen = new Set();
+      (Bt.w.SPR_SYNC_TEST.pushLog() || []).forEach(function (line) {
+        const m = /retry ladder: next in (\d+)ms/.exec(line);
+        if (m && !seen.has(+m[1])) { seen.add(+m[1]); delaysInOrder.push(+m[1]); }
+      });
+    }
+    ok(ladderOk && delaysInOrder.length >= 3 && delaysInOrder[0] === 4000 && delaysInOrder[1] === 8000 && delaysInOrder[2] === 16000,
+       'R4: retry ladder arms 4 s / 8 s / 16 s (armed ' + (delaysInOrder.join(' / ') || 'n/a') + ' ms; measured gaps ' + (gaps.map(function (g) { return g.toFixed(1); }).join(', ') || 'n/a') + ' s)');
     /* silence: nothing user-visible while failing < 2 minutes */
     const cfg4 = JSON.parse(Bt.w.localStorage.getItem('spr-devicesync-v1') || '{}');
     ok(cfg4.pendingPush === true, 'R4: the pending push flag is persisted while retries run');

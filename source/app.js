@@ -5356,6 +5356,7 @@
       if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
       /* auto-retry via the ladder (4/8/16/30 s) — a flaky link shouldn't need
          a new edit to get the data out; the want stays armed until it lands */
+      dsLog('retry ladder: next in ' + dsBackoffDelay((c2 && c2.failCount) || 1) + 'ms (failCount=' + ((c2 && c2.failCount) || 1) + ')');
       scheduleSyncPush(dsBackoffDelay((c2 && c2.failCount) || 1), 'retry after failure');
       if (location.hash === '#/manage') renderManage();
       return false;
