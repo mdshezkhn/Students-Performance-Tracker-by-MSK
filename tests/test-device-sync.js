@@ -150,6 +150,7 @@ function loginAs(B, user, pass) {
 }
 /* P1.2: the explicit cloud-copy lookup — the ONLY way a fresh browser now
    reaches the cloud at sign-in (no automatic lookup anymore) */
+let LAST_LOOKUP_FAIL = '';   /* diagnosis only: which internal step gave up */
 async function loginCloudAs(B, user, pass) {
   click(B, B.d.querySelector('[data-action="login-other-device"]'));
   await sleep(200);
@@ -159,10 +160,17 @@ async function loginCloudAs(B, user, pass) {
   const confirmed = await waitFor(function () {
     return /Open the cloud copy here/.test(dlgText(B));
   }, 60000);
-  if (!confirmed) return false;
+  if (!confirmed) {
+    LAST_LOOKUP_FAIL = 'confirm dialog never appeared; odErr="' +
+      String((B.d.getElementById('odErr') || {}).textContent || '').slice(0, 120) + '" dlg="' + dlgText(B).replace(/\s+/g, ' ').slice(0, 140) + '"';
+    return false;
+  }
   const okBtn = B.d.querySelector('#dlg .dlg-actions [data-x="1"]');
   click(B, okBtn);
-  return waitFor(function () { return !B.d.body.classList.contains('auth-gate'); }, 60000);
+  const fin = await waitFor(function () { return !B.d.body.classList.contains('auth-gate'); }, 60000);
+  if (!fin) LAST_LOOKUP_FAIL = 'confirmed, but install/auth-gate did not finish in 60 s';
+  else LAST_LOOKUP_FAIL = '';
+  return fin;
 }
 
 (async () => {
@@ -947,12 +955,34 @@ async function loginCloudAs(B, user, pass) {
     const tLand = Date.now() - tReset;
     ok(landed, 'R1(reset): re-keyed account reached the data row (not dropped by any hold)');
     ok(landed && tLand <= 15000, 'R5: reset landed in ' + tLand + ' ms (prompt push; one 4 s retry ceiling after a held check)');
+    if (landed && tLand > 15000) {
+      /* diagnosis only: prove WHERE the extra time went (app timers vs machine) */
+      console.log('    [r5diag] tLand=' + tLand + ' ms; push decisions since reset:');
+      (Bt.w.SPR_SYNC_TEST.pushLog() || []).slice(-10).forEach(function (l) { console.log('      ' + l); });
+    }
+    /* R5 latency proof: once the hold released, the resume push must fire
+       IMMEDIATELY (scheduleSyncPush(0)) — the pre-fix build debounced it 4 s
+       (measured 3.7 s in docs/qa/round8 evidence), stacking a second 4 s
+       miss-window under load (gate-b run 6: 18.7 s). */
+    {
+      const log = (Bt.w.SPR_SYNC_TEST.pushLog() || []);
+      const tsGap = function (l) { const p = l.trim().split(' ')[0].split(':'); return (+p[0]) * 3600 + (+p[1]) * 60 + parseFloat(p[2]); };
+      let gap = -1;
+      for (let i = log.length - 1; i >= 0; i--) {
+        if (/pull-check: done/.test(log[i])) {
+          for (let j = i + 1; j < log.length; j++) if (/sent ok|^.*skip:/.test(log[j])) { gap = tsGap(log[j]) - tsGap(log[i]); break; }
+          break;
+        }
+      }
+      ok(gap >= 0 && gap <= 3000, 'R5: resume push fired ' + (gap < 0 ? 'n/a' : Math.round(gap * 1000) + ' ms') + ' after the hold released (immediate resume, no 4 s debounce)');
+    }
     /* fresh browser bootstraps with the new password right away */
     const G8 = boot();
     await sleep(300);
     await ackGate(G8);
     const g8In = await loginCloudAs(G8, 'tea2', 'tea2-pass-2');
     ok(g8In, 'R5: fresh browser bootstraps via the explicit lookup with the reset password');
+    if (!g8In) console.log('    [r5diag] lookup failure mode: ' + LAST_LOOKUP_FAIL);
     if (bgModal) { const cb = Bt.d.querySelector('#dlg [data-x="0"]'); if (cb) click(Bt, cb); }   /* round7: release the stuck dialog for the sections below */
   }
 

@@ -5391,7 +5391,11 @@
     finally {
       dsHoldPush = false;
       dsLog('pull-check: done | pushes released');
-      if (dsOn() && dsCanPush()) scheduleSyncPush(4000, 'pull-check resume');   /* resume: pushes local choice if user declined */
+      /* resume IMMEDIATELY (not on a 4 s debounce): the check is finished and
+         its outcome is already applied, so a wanted push (e.g. the account
+         event that arrived mid-check) can go out now. scheduleSyncPush(0)
+         re-arms any later retry timer to fire at once (sooner wins). */
+      if (dsOn() && dsCanPush()) scheduleSyncPush(0, 'pull-check resume');
     }
   }
   function dsDeclined() { try { return JSON.parse(localStorage.getItem(DS_DECLINED_KEY)) || null; } catch (e) { return null; } }
