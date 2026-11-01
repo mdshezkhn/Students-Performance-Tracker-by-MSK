@@ -10,3 +10,4 @@ tests/_*.sh
 
 *.bundle
 __pycache__/
+qa-shots/

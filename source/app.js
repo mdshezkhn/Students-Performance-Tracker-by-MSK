@@ -124,6 +124,7 @@
     /* online: immediate plaintext mirror in sessionStorage (dies with the tab)
        + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
+    try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
     try { localStorage.setItem('spr-edits-since-backup', String((Number(localStorage.getItem('spr-edits-since-backup')) || 0) + 1)); } catch (e5) {}
     clearTimeout(saveTimer);
     if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
@@ -187,6 +188,7 @@
     if (CLS && CLS_KEY) { return classPersistNow(silent); }
     try {
       if (storedV2Ts() > KNOWN_STORE_TS) { showStaleOverlay(); return false; }   /* another tab wrote newer data */
+      try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
       const v2 = readV2() || { fmt: 2, wraps: {} };
       v2.fmt = 2;
       v2.data = await sealDB(DB, SESSION.dk);
@@ -612,7 +614,7 @@
   /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
      reachable from the dashboard buttons. Admin adds Users + Manage & setup;
      Ranking keeps its current role rules (admin + management). */
-  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
+  const NAV_T = [['dashboard', 'Dashboard'], ['live', 'Live board'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
     const r = classRole((currentUser() || {}).role);
     let list;
@@ -684,6 +686,18 @@
     return '<header class="page-head"><div><h1>' + title + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
       '<div class="actions">' + (actions || '') + '</div></header>';
   }
+  /* ---- Live board (#/live) — fitness-dashboard-styled real-time class view. ---- */
+  function renderLiveBoard() {
+    const host = $('#content');
+    if (host && window.SPRLiveBoard) {
+      window.SPRLiveBoard.render(host, { live: {
+        getDB: () => DB,
+        cur: () => cur(),
+        user: () => currentUser(),
+        setSem: (id) => { if (DB.semesters.find((s) => s.id === id)) { DB.currentSemesterId = id; saveDB(true); syncRailMeta(); buildShell(); route(); } }
+      } });
+    } else if (host) { renderDashboard(); }
+  }
   function route() {
     /* while the sign-in gate owns the screen, routing must do NOTHING — an
        async hashchange from an earlier redirect would otherwise closeDlg()
@@ -731,6 +745,7 @@
       case 'help': renderHelp(); break;
       case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
+      case 'live': renderLiveBoard(); break;
       default: renderDashboard();
     }
     railActive(navView);
