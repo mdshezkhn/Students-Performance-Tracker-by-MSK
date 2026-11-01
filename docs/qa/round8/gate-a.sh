@@ -11,7 +11,20 @@ echo "Machine: home laptop DESKTOP-FUMPBJ9, i5-6300U (2 cores / 4 threads), Wind
 echo "" >> $OUT
 printf "%-4s %-6s %-8s %s\n" run result secs first_fail >> $OUT
 pass=0; fail=0
+# daytime-use guard: this evidence must come from an idle box. Before each run,
+# wait (up to 10 min) until the OS reports <60% CPU for 3 consecutive samples.
+# This does not skip or weaken anything — it only avoids STARTING a run into a
+# busy minute (mid-afternoon user activity skewed runs 13-14 of a previous try).
+wait_idle() {
+  local ok=0 waited=0 l
+  while [ $ok -lt 3 ] && [ $waited -lt 600 ]; do
+    l=$(wmic cpu get loadpercentage 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    [ -n "$l" ] && [ "$l" -lt 60 ] && ok=$((ok+1)) || ok=0
+    sleep 2; waited=$((waited+2))
+  done
+}
 for i in $(seq 1 30); do
+  wait_idle
   t0=$(date +%s)
   timeout 900 node tests/test-device-sync.js > /tmp/r8-after-$i.log 2>&1
   rc=$?
