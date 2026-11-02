@@ -708,7 +708,7 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="5e78a4803a";</script>
+<script>window.SPR_BUILD="e6e49ed3ce";</script>
 <script>window.SPR_NOTICE={"version": "1", "date": "28 Oct 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
@@ -3710,11 +3710,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       }
     }
     if (!$('#content')) buildShell();   /* a self-contained page (Users/classes) may have wiped the shell: every switch view needs it back */
-    if (!DB.semesters.length) { renderWelcome(); return; }
-    if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let view = parts[0] || 'dashboard';
-    if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
+    if (sprMode() === 'class' && !CLS) { const v0 = view; if (v0 !== 'classes' && v0 !== 'help' && v0 !== 'users' && !(v0 === 'manage' && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; } }
+    if (!DB.semesters.length) {
+      /* round9: Users / Manage / Help work before any class exists (the very
+         first admin action is importing the owner's roster sheet) */
+      const v0 = view;
+      if (['users', 'help', 'manage'].indexOf(v0) === -1) { renderWelcome(); return; }
+      if (v0 === 'users') { renderUsers(); railActive('users'); window.scrollTo(0, 0); return; }
+      if (v0 === 'help') { renderHelp(); railActive('help'); window.scrollTo(0, 0); return; }
+      renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
+    }
+    if (DB.semesters.length && !cur()) DB.currentSemesterId = DB.semesters[0].id;
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
     if (view === 'users' && sprMode() === 'class' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users: class-mode admin-only (legacy mode has no class roles) */
@@ -4000,8 +4008,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const ix = classIndex(); const c = ix.find((x) => x.id === id);
     if (!c) return;
     const users = getAuth().users;
-    const sel = (role, cur) => '<select class="inp" id="pair-' + role + '"><option value="">(none yet)</option>' +
-      users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
+    /* round9: a person is ONE account — any teacher may take either slot
+       (EAL in one class, supporting in another). Same account in both slots
+       of the SAME class is still refused below. */
+    const teachers = users.filter((u) => { const r = classRole(u.role); return r === 'eal' || r === 'support'; });
+    const sel = (slot, cur) => '<select class="inp" id="pair-' + slot + '"><option value="">(none yet)</option>' +
+      teachers.map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
     openDlg(
       '<h3>Pair teachers: ' + U.esc(c.name) + '</h3>' +
       '<p class="small">The EAL teacher edits the class and approves observation changes; the support teacher edits spelling, daily assignments and tests. Newly paired teachers receive the class key with a fresh password (shown once).</p>' +
@@ -4013,12 +4025,30 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           if (!b) return;
           if (b.dataset.x === '0') { closeDlg(); return; }
           const eal = $('#pair-eal').value, sup = $('#pair-support').value;
+          if (eal && sup && eal.toLowerCase() === sup.toLowerCase()) { toast('One person cannot be both EAL and supporting in the same class.', true); return; }
           const ix2 = classIndex(); const c2 = ix2.find((x) => x.id === id);
+          const removed = [c2.eal, c2.support].filter(Boolean).filter((x) => x !== eal && x !== sup);
           const newly = [];
           if (eal && eal !== c2.eal) newly.push(eal);
           if (sup && sup !== c2.support) newly.push(sup);
           c2.eal = eal; c2.support = sup; setClassIndex(ix2);
           const key = (SESSION.keys || {})[id];
+          if (removed.length && key) {
+            /* round9: a removed teacher must lose access — rotate the class key */
+            closeDlg();
+            const kept = [eal, sup].filter(Boolean);
+            const okRk = await rekeyClass(id, kept);
+            if (okRk) {
+              try {
+                const wb2 = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(id))), (SESSION.keys || {})[id]);
+                wb2.eal = eal; wb2.support = sup;
+                localStorage.setItem(classBlobKey(id), JSON.stringify(await CS.sealClass(wb2, (SESSION.keys || {})[id])));
+              } catch (e3) {}
+            }
+            toast('Pairing saved: class key rotated' + (removed.length ? ' (' + removed.join(', ') + ' removed)' : ''));
+            try { if (document.getElementById('app')) renderUsers(); } catch (eClosed) {}   /* the window may be mid-close in tests */
+            return;
+          }
           if (key) {
             try {
               const wb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(id))), key);
@@ -4029,9 +4059,54 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           closeDlg();
           if (newly.length && key) await issueClassKeys(id, key, newly);
           toast('Pairing saved' + (newly.length ? ': key issued' : ''));
-          renderClasses();
+          renderUsers(); renderClasses();
         };
       });
+  }
+
+  /* ---- round9: rotate a class key; keepers are re-issued, everyone else loses access ---- */
+  async function rekeyClass(cid, keepers) {
+    const key = (SESSION.keys || {})[cid];
+    const blob = localStorage.getItem(classBlobKey(cid));
+    if (!key || !blob) return false;
+    let wb;
+    try { wb = await CS.openClass(JSON.parse(blob), key); } catch (e) { return false; }
+    CS.logAudit(wb, { by: myUser() ? myUser().username : '', action: 'rekey', note: 'class key rotated; keeps: ' + (keepers || []).join(', ') });
+    const nk = CS.genKey();
+    localStorage.setItem(classBlobKey(cid), JSON.stringify(await CS.sealClass(wb, nk)));
+    SESSION.keys[cid] = nk; classKeysToSession();
+    const keepSet = {};
+    (keepers || []).forEach((k) => { keepSet[k] = true; });
+    /* prune: a removed teacher's wrap is deleted, so the old key is unreadable */
+    const auth0 = getAuth();
+    let pruned = false;
+    for (const u of auth0.users) {
+      if (u.keyring && u.keyring[cid] && !keepSet[u.username] && u.username !== SESSION.user) { delete u.keyring[cid]; pruned = true; }
+    }
+    if (pruned) saveAuth(auth0);
+    /* re-issue: the admin does not know the keepers' passwords, so each keeper
+       gets a fresh one-time password (shown once) and the new key under it */
+    const fresh = {};
+    for (const un of Object.keys(keepSet)) {
+      if (un === SESSION.user) {
+        const a0 = getAuth();
+        const me0 = a0.users.find((x) => x.username === un);
+        if (me0 && SESSION.pw) { me0.keyring = me0.keyring || {}; me0.keyring[cid] = await CS.wrapKey(nk, SESSION.pw); saveAuth(a0); }
+        continue;
+      }
+      const pw = CS.genPassword();
+      const rErr = await rotateUserPassword(un, pw);
+      if (rErr) continue;
+      fresh[un] = pw;
+      const a2 = getAuth();
+      const ug2 = a2.users.find((x) => x.username === un);
+      if (!ug2) continue;
+      ug2.keyring = ug2.keyring || {};
+      ug2.keyring[cid] = await CS.wrapKey(nk, pw);
+      saveAuth(a2);
+    }
+    if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Class key rotated: new passwords (shown once)');
+    return true;
   }
 
   /* ---- admin: key + share link for a class (reuses the QR / DingTalk sheet) ---- */
@@ -4116,37 +4191,150 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   /* ---- roster CSV import (accounts) ---- */
+  /* ---- round9: import the owner's roster sheet (accounts + classes + keys) ---- */
   function rosterImportGo(file) {
     const fr = new FileReader();
-    fr.onload = () => {
-      const r = CS.parseRosterCsv(fr.result);
-      const preview = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name) + '</td><td>' + U.esc(CS.roleLabel(u.role)) + '</td><td>' + U.esc(u.paired_with) + '</td></tr>').join('');
+    fr.onload = async () => {
+      const r = CS.parseSheetCsv(fr.result);
+      const school = schoolName();
+      const schoolWarn = [];
+      for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
+      const picks = r.unpicked || [];
+      const rowsAcc = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name || u.username) + '</td><td>' + U.esc(roleLabel(u.role)) + '</td><td>' + U.esc((u.classes || []).join(', ')) + '</td></tr>').join('');
+      const pickRows = picks.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is EAL in each class?</b> The file does not say — pick below. SPR never guesses.</p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>EAL / Supporting</th></tr></thead><tbody>' +
+        picks.map((c, i) => {
+          const members = (r.users.filter((u) => (u.classes || []).indexOf(c) !== -1).map((u) => u.username));
+          const opts = members.map((m) => '<option value="' + U.esc(m) + '">' + U.esc(m) + '</option>').join('');
+          return '<tr><td>' + U.esc(c) + '</td><td><label>EAL <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="eal"><option value="">(pick)</option>' + opts + '</select></label> <label>Supporting <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="support"><option value="">(pick)</option>' + opts + '</select></label></td></tr>';
+        }).join('') + '</tbody></table></div>' : '';
       openDlg(
-        '<h3>Import roster: ' + r.users.length + ' account(s)</h3>' +
-        (r.errors.length ? '<div class="login-err">' + r.errors.map(U.esc).join('<br>') + '</div>' : '') +
-        (r.warnings.length ? '<p class="small" style="color:#b45309">' + r.warnings.map(U.esc).join('<br>') + '</p>' : '') +
-        (r.users.length ? '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Paired with</th></tr></thead><tbody>' + preview + '</tbody></table></div>' +
-        '<p class="small muted">Each account gets a fresh generated password (shown once, downloadable). Class keys are issued later via Pair.</p>' : '') +
-        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1" ' + (r.users.length ? '' : 'disabled') + '>Create accounts</button></div>',
-        (d) => {
+        '<h3>Import roster sheet: ' + r.users.length + ' account(s), ' + r.classes.length + ' class(es)</h3>' +
+        (r.errors.length ? '<div class="login-err">' + r.errors.map((e) => U.esc(e)).join('<br>') + '</div>' : '') +
+        (schoolWarn.length ? '<p class="small">School column differs from the Manage &amp; setup school setting ("' + U.esc(school) + '"): ' + U.esc(schoolWarn.join(', ')) + '. Imported anyway.</p>' : '') +
+        '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>username</th><th>display name</th><th>role</th><th>classes</th></tr></thead><tbody>' + rowsAcc + '</tbody></table></div>' +
+        pickRows +
+        '<p class="small">Check every class pair. Where the file says who is EAL it is pre-filled; otherwise pick — SPR never guesses. New accounts get a one-time password.</p>' +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1"' + ((r.errors.length || picks.length) ? ' disabled' : '') + '>Import</button></div>',
+        function (d) {
+          const apply = () => {
+            /* decisions: class -> {eal, support} from pickers where the file was silent */
+            const decided = {};
+            d.querySelectorAll('select[data-rolepick]').forEach((sel) => {
+              const c = sel.getAttribute('data-rolepick'), slot = sel.getAttribute('data-slot');
+              if (!decided[c]) decided[c] = {};
+              if (sel.value) decided[c][slot] = sel.value;
+            });
+            const stillOpen = picks.filter((c) => { const dd = decided[c] || {}; return !dd.eal || !dd.support; });
+            if (stillOpen.length) { toast('Pick EAL and Supporting for: ' + stillOpen.join(', '), true); return; }
+            applySheetImport(r, decided);
+          };
           d.onclick = async (e) => {
             const b = e.target.closest('[data-x]');
-            if (!b || b.dataset.x !== '1') { if (b) closeDlg(); return; }
-            const fresh = {};
-            for (const u of r.users) {
-              const pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
-              const err = await provisionUser(u.username, pw, u.display_name || u.username, u.role);
-              if (!err) fresh[u.username] = pw;
-            }
-            closeDlg();
-            if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
-            renderClasses();
+            if (!b) return;
+            if (b.getAttribute('data-x') === '0') { closeDlg(); return; }
+            if (b.disabled) return;
+            apply();
           };
+          d.addEventListener('change', (e) => {
+            /* enable Apply once every pick is made */
+            const btn = d.querySelector('[data-x="1"]');
+            if (!btn || !picks.length) return;
+            const sels = Array.from(d.querySelectorAll('select[data-rolepick]'));
+            btn.disabled = sels.some((sel) => !sel.value);
+          });
         });
     };
     fr.readAsText(file);
   }
 
+  async function applySheetImport(r, decided) {
+    if (!SESSION.pw) { closeDlg(); toast('Sign in again, then import once more: the key wrapping needs your password in memory.', true); return; }
+    const auth0 = getAuth();
+    const fresh = {};
+    const grant = {};   /* username -> [{id, key}] to wrap at the end */
+    const need = {};    /* username -> class count (keys awaiting their wrap) */
+    const rekeys = [];
+    const ix = classIndex();
+    const school = schoolName();
+    /* ---- accounts (skip existing; password only for new) ---- */
+    for (const u of r.users) {
+      const un = String(u.username || '').trim();
+      if (auth0.users.some((x) => String(x.username).toLowerCase() === un.toLowerCase())) continue;
+      const pw = CS.genPassword();
+      const err = await addUser(un, pw, u.display_name || un, u.role);
+      if (err) { toast(un + ': ' + err, true); continue; }
+      fresh[un] = pw;
+    }
+    /* ---- classes ---- */
+    for (const c of r.classes) {
+      let row = ix.find((x) => x.name === c.name);
+      if (row) {
+        /* existing class: merge assignments, rekey if someone lost access */
+        const before = [row.eal, row.support].filter(Boolean);
+        const dec = decided[c.name] || {};
+        const eal = c.teachers.find((t) => t.class_role === 'eal') || (dec.eal ? { username: dec.eal, class_role: 'eal' } : null);
+        const sup = c.teachers.find((t) => t.class_role === 'support') || (dec.support ? { username: dec.support, class_role: 'support' } : null);
+        const ealUn = eal ? eal.username : row.eal;
+        const supUn = sup ? sup.username : row.support;
+        if ((row.eal || '') !== (ealUn || '') || (row.support || '') !== (supUn || '')) {
+          const removed = before.filter((x) => x !== ealUn && x !== supUn);
+          if (removed.length) { rekeys.push({ id: row.id, keep: [ealUn, supUn].filter(Boolean) }); }
+          const key = (SESSION.keys || {})[row.id];
+          if (key) {
+            try {
+              const wb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(row.id))), key);
+              wb.eal = ealUn || ''; wb.support = supUn || '';
+              localStorage.setItem(classBlobKey(row.id), JSON.stringify(await CS.sealClass(wb, key)));
+            } catch (e2) {}
+          }
+          row.eal = ealUn || ''; row.support = supUn || '';
+          for (const h of [ealUn, supUn]) if (h) { (grant[h] = grant[h] || []).push({ id: row.id, key: key }); need[h] = (need[h] || 0) + 1; }
+        }
+        continue;
+      }
+      /* new class */
+      const dec = decided[c.name] || {};
+      const eal = (c.teachers.find((t) => t.class_role === 'eal') || {}).username || dec.eal || '';
+      const sup = (c.teachers.find((t) => t.class_role === 'support') || {}).username || dec.support || '';
+      const cid = 'c-' + String(c.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) + '-' + Math.random().toString(36).slice(2, 6);
+      const key = CS.genKey();
+      const wb = { sprClass: 1, id: cid, name: c.name, school: c.school || school || '', eal: eal, support: sup, settings: Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, (DB && DB.settings) || {}), currentSemesterId: null, semesters: [], pending: [], audit: [] };
+      CS.logAudit(wb, { by: myUser() ? myUser().username : '', action: 'create', note: 'created from roster sheet import' });
+      localStorage.setItem(classBlobKey(cid), JSON.stringify(await CS.sealClass(wb, key)));
+      ix.push({ id: cid, name: c.name, school: c.school || school || '', eal: eal, support: sup, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: 0, studentCount: 0 });
+      SESSION.keys[cid] = key; classKeysToSession();
+      for (const h of [eal, sup]) if (h) { (grant[h] = grant[h] || []).push({ id: cid, key: key }); need[h] = (need[h] || 0) + 1; }
+    }
+    /* ONE password rotation per teacher, then wrap every key under it */
+    for (const un of Object.keys(need)) {
+      let pwG = un === SESSION.user ? SESSION.pw : null;
+      if (!pwG) { pwG = fresh[un] || CS.genPassword(); if (!fresh[un]) fresh[un] = pwG; const rErr = await rotateUserPassword(un, pwG); if (rErr) { toast(un + ': ' + rErr, true); continue; } }
+      const authG = getAuth();
+      const ug = authG.users.find((x) => x.username === un);
+      if (!ug) continue;
+      ug.keyring = ug.keyring || {};
+      for (const g of (grant[un] || [])) { try { ug.keyring[g.id] = await CS.wrapKey(g.key, pwG); } catch (e4) {} }
+      saveAuth(authG);
+    }
+    /* the admin's own keyring: every class key on this device, wrapped under
+       this session (the owner's sheet: MSK sees everything) */
+    {
+      const authA2 = getAuth();
+      const mu2 = authA2.users.find((u) => u.username === SESSION.user);
+      if (mu2 && SESSION.pw) {
+        mu2.keyring = mu2.keyring || {};
+        for (const c of ix) { try { mu2.keyring[c.id] = await CS.wrapKey((SESSION.keys || {})[c.id], SESSION.pw); } catch (e5) {} }
+        saveAuth(authA2);
+      }
+    }
+    setClassIndex(ix);
+    if (sprMode() !== 'class') { try { localStorage.setItem(MODE_KEY, 'class'); } catch (eM) {} }
+    for (const rk of rekeys) await rekeyClass(rk.id, rk.keep);
+    closeDlg();
+    if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
+    else toast('Roster sheet imported: ' + r.classes.length + ' class(es) ready.');
+    renderUsers();
+  }
   /* ---- export / restore EVERYTHING (admin) ---- */
   /* nuke this device's app state and reload to the sign-in screen. The cloud
      copy and other devices are untouched; a full backup downloads first so
@@ -5444,56 +5632,80 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
   /* simple-ui admin Users tab: every account this device knows, plain words,
      no secrets (never render hashes, keyrings or wraps) */
-  function usersClassInfo(un, role) {
-    const r = classRole(role);
-    if (r === 'admin' || r === 'manager') return { classes: 'All classes', partner: '' };
-    const ix = classIndex();
-    const mine = ix.filter((c) => c.eal === un || c.support === un);
-    if (!mine.length) return { classes: 'Not paired yet', partner: '' };
-    const partner = mine.map((c) => (c.eal === un ? c.support : c.eal) || '').filter(Boolean).join(', ');
-    return { classes: mine.map((c) => c.name).join(', '), partner: partner };
+  function schoolName() {
+    try { return (JSON.parse(localStorage.getItem('spr-auth-v1') || '{}').settings || {}).school || 'Demo School'; } catch (e) { return 'Demo School'; }
+  }
+  /* ---- round9: one row per (person, partner) — pairing derived from classes ---- */
+  function usersSheetRows() {
+    const users = getAuth().users, ix = classIndex();
+    const school = schoolName() || 'All';
+    const rows = [];
+    for (const u of users) {
+      const r = classRole(u.role);
+      if (r === 'admin' || r === 'manager') { rows.push({ u: u, classes: 'All classes', school: 'All', partner: '', classRole: '' }); continue; }
+      const mine = ix.filter((c) => c.eal === u.username || c.support === u.username);
+      if (!mine.length) { rows.push({ u: u, classes: '', school: school, partner: '', classRole: '' }); continue; }
+      const byP = new Map();
+      for (const c of mine) {
+        const p = (c.eal === u.username ? c.support : c.eal) || '';
+        if (!byP.has(p)) byP.set(p, []);
+        byP.get(p).push(c);
+      }
+      for (const [p, cs] of byP) {
+        const roles = cs.map((c) => (c.eal === u.username ? 'eal' : 'support'));
+        const cr = roles.every((x) => x === roles[0]) ? roles[0] : '';
+        rows.push({ u: u, classes: cs.map((c) => c.name).sort().join(', '), school: school, partner: p, classRole: cr });
+      }
+    }
+    return rows;
   }
   function renderUsers() {
-    const f = ui.usersView || (ui.usersView = { q: '', role: 'all' });
-    const all = getAuth().users;
+    const f = ui.usersView || (ui.usersView = { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' });
     const q = f.q.trim().toLowerCase();
-    const rows = all.filter((u) => (f.role === 'all' || classRole(u.role) === f.role) &&
-      (!q || (u.username + ' ' + (u.name || '')).toLowerCase().includes(q)));
-    const cell = (v) => U.esc(v || '\u2014');
-    /* self-contained: reachable both from the shell (class open) and straight
-       from the chooser screen (no class open): so draw the whole page */
-    $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
-      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
-        '<a class="btn" href="' + (CLS || sprMode() !== 'class' ? '#/dashboard' : '#/classes') + '" style="font-size:11.5px;padding:5px 12px">&larr; Back to the app</a>' +
-        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
-      pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
-      '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
-      '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
-        '<label>Search <input class="inp" id="usersQ" placeholder="Name or username\u2026" value="' + U.esc(f.q) + '"></label>' +
-        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'EAL teacher'], ['support', 'Supporting teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+    const ix = classIndex();
+    const mine = (un) => ix.filter((c) => c.eal === un || c.support === un);
+    const tabBtn = (v, label) => '<button class="btn sm' + (f.view === v ? ' primary' : '') + '" data-action="users-view" data-view="' + v + '" style="margin-right:6px">' + label + '</button>';
+    const filters = '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
+        '<label>Search <input class="inp" id="usersQ" placeholder="Name, username or partner…" value="' + U.esc(f.q) + '"></label>' +
+        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'Teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        '<label>Class <select class="inp" id="usersClass"><option value="all">All classes</option>' + ix.map((c) => c.name).sort().map((n) => '<option value="' + U.esc(n) + '"' + (f.cls === n ? ' selected' : '') + '>' + U.esc(n) + '</option>').join('') + '</select></label>' +
+        '<label>Status <select class="inp" id="usersStatus">' + [['all', 'All'], ['active', 'Active'], ['disabled', 'Disabled']].map((o) => '<option value="' + o[0] + '"' + (f.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
         '<button class="btn" data-action="users-csv">Download list (CSV)</button>' +
         '<button class="btn" data-action="acct-add-open">Add account</button>' +
         '<button class="btn" data-action="class-roster-btn">Import roster CSV</button>' +
-      '</div></div>' +
-      (rows.length ? '<div class="sheet"><table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
-        rows.map((u) => {
-          const ci = usersClassInfo(u.username, u.role);
-          const selfNow = u.username === SESSION.user;
-          return '<tr><td data-l="Name">' + U.esc(u.name || u.username) + '</td>' +
-            '<td data-l="Username">' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
-            '<td data-l="Role">' + roleLabel(u.role) + '</td>' +
-            '<td data-l="Class">' + cell(ci.classes) + '</td>' +
-            '<td data-l="Paired with">' + cell(ci.partner) + '</td>' +
-            '<td data-l="Status">' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
-            '<td>' + (selfNow ? '' :
-              '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
-              '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
-        }).join('') + '</tbody></table></div>'
-        : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
-      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
-      '</main></div>';
+      '</div></div>';
+    let body = '';
+    if (f.view === 'byclass') {
+      body = filters + '<div class="sheet"><table class="tbl"><thead><tr><th scope="col">Class</th><th scope="col">EAL teacher</th><th scope="col">Supporting teacher</th><th scope="col" class="num">Students</th></tr></thead><tbody>' +
+        ix.slice().sort((a, b) => a.name < b.name ? -1 : 1).map((c) => {
+          const btn = (un, slot) => '<button class="btn sm" data-action="class-pair-open" data-pair="' + U.esc(c.name) + '" title="Change the ' + slot + ' teacher">' + U.esc(un || '(none)') + '</button>';
+          return '<tr><td><b>' + U.esc(c.name) + '</b></td><td>' + btn(c.eal, 'EAL') + '</td><td>' + btn(c.support, 'supporting') + '</td><td class="num">' + (c.studentCount || 0) + '</td></tr>';
+        }).join('') + '</tbody></table><p class="small muted" style="margin-top:8px">Click a teacher cell to change the assignment. One EAL + one supporting teacher per class; assigning a teacher gives them this class&rsquo;s key, removing it rotates the key.</p></div>';
+    } else {
+      const all = usersSheetRows().filter((r) => {
+        if (f.role !== 'all' && classRole(r.u.role) !== f.role) return false;
+        if (f.cls !== 'all' && mine(r.u.username).every((c) => c.name !== f.cls)) return false;
+        if (f.status === 'active' && r.u.disabled) return false;
+        if (f.status === 'disabled' && !r.u.disabled) return false;
+        if (q && !((r.u.username + ' ' + (r.u.name || '') + ' ' + r.partner).toLowerCase().includes(q))) return false;
+        return true;
+      });
+      const cell = (v) => U.esc(v || '—');
+      body = filters + '<div class="sheet" id="usersSheet"><table class="tbl"><thead><tr>' +
+        '<th scope="col">username</th><th scope="col">display name</th><th scope="col">role</th><th scope="col">class or grade</th><th scope="col">School</th><th scope="col">paired with</th><th scope="col">status</th>' +
+        '</tr></thead><tbody>' + all.map((r) =>
+          '<tr><td>' + U.esc(r.u.username) + '</td><td>' + U.esc(r.u.name || r.u.username) + '</td><td>' + U.esc(roleLabel(r.u.role)) + '</td><td>' + cell(r.classes) + '</td><td>' + cell(r.school) + '</td><td>' + cell(r.partner) + '</td><td>' + (r.u.disabled ? 'Disabled' : 'Active') + '</td></tr>'
+        ).join('') + '</tbody></table></div>' +
+        '<p class="small muted" style="margin-top:8px">Accounts on this device. A teacher sees exactly the classes assigned to them; the partner column is derived from the class assignments.</p>';
+    }
+    const host = $('#app');
+    host.innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
+      '<header class="page-head"><div><h1>Users</h1><div class="sub">who can sign in on this device, and which classes they see</div></div>' +
+      '<div class="actions"><button class="btn" data-action="go-back">Back</button></div></header>' +
+      '<div class="tabs" style="margin:12px 0">' + tabBtn('sheet', 'Sheet') + tabBtn('byclass', 'By class') + '</div>' + body +
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden></main></div>';
+    window.scrollTo(0, 0);
   }
-
   /* ============================== help & training ==============================
      One page for every role: training modules, the manual + video, and a
      request line to the owner (2026-10-27, owner request 3: replaces the
@@ -5707,7 +5919,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         : '') +
       (isAdmin() ? (function () {
         const a = (DB.settings && DB.settings.schoolApproval) || {};
-        return '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School approval</b>: records that the school has approved using SPR. It appears at the bottom of the notice and travels with the full backup.</p>' +
+        const schoolHtml = '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School</b>: the one school this device works for (the roster CSV School column is checked against it).</p>' +
+          '<div class="flex" style="gap:8px;flex-wrap:wrap"><input class="inp" id="mg-school" placeholder="School name" style="max-width:280px" value="' + U.esc(schoolName() || 'Demo School') + '"><button class="btn sm" data-action="school-save">Save</button></div></div>';
+        return schoolHtml + '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School approval</b>: records that the school has approved using SPR. It appears at the bottom of the notice and travels with the full backup.</p>' +
           '<div class="flex" style="gap:8px;flex-wrap:wrap">' +
           '<input class="inp" id="ap-by" placeholder="Approved by (name and title)" style="max-width:250px" value="' + U.esc(a.by || '') + '">' +
           '<input class="inp" id="ap-date" placeholder="Date (e.g. 2026-10-28)" style="max-width:150px" value="' + U.esc(a.date || '') + '">' +
@@ -6531,6 +6745,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'restore-all-btn') { const f = $('#file-restore-all'); if (f) f.click(); return; }
     if (a === 'class-migrate-open') { migrateOpen(); return; }
     if (a === 'class-pair') { pairClassDialog(el.dataset.id); return; }
+    if (a === 'class-pair-open') { const cP = classIndex().find((x) => x.name === el.dataset.pair); if (cP) pairClassDialog(cP.id); else toast('That class no longer exists here', true); return; }
     if (a === 'class-share') { classShareDialog(el.dataset.id); return; }
     if (a === 'class-export-file') { exportClassFile(el.dataset.id); return; }
     if (a === 'export-all') { exportEverything(); return; }
@@ -6662,21 +6877,24 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       if (location.hash === '#/manage') renderManage();
       return;
     }
+    if (a === 'users-view') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).view = el.dataset.view; renderUsers(); return; }
     if (a === 'users-csv') {
-      const head = 'username,display_name,role,class_or_grade,paired_with,status';
-      const lines = getAuth().users.map((u) => {
-        const ci = usersClassInfo(u.username, u.role);
+      /* round9: the Sheet view, in the owner's column order, UTF-8 + BOM so
+         Excel opens Chinese display names correctly */
+      const head = 'username,display_name,role,class_or_grade,School,paired_with,status,class_role';
+      const lines = usersSheetRows().map((r) => {
         const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-        return [u.username, u.name || u.username, roleLabel(u.role), ci.classes, ci.partner, u.disabled ? 'Disabled' : 'Active'].map(esc).join(',');
+        const cr = r.classRole === 'eal' ? 'eal' : r.classRole === 'support' ? 'supporting' : '';
+        return [r.u.username, r.u.name || r.u.username, roleLabel(r.u.role), r.classes, r.school, r.partner, r.u.disabled ? 'Disabled' : 'Active', cr].map(esc).join(',');
       });
-      const blob = new Blob([head + '\n' + lines.join('\n')], { type: 'text/csv' });
+      const NL2 = String.fromCharCode(10);
+      const blob = new Blob([String.fromCharCode(0xFEFF) + head + NL2 + lines.join(NL2)], { type: 'text/csv' });
       const a2 = document.createElement('a');
       a2.href = URL.createObjectURL(blob);
       a2.download = 'spr-accounts.csv';
       document.body.appendChild(a2); a2.click(); a2.remove();
       return;
-    }
-    if (a === 'user-toggle') {
+    }    if (a === 'user-toggle') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
       const auth = getAuth();
@@ -7127,6 +7345,17 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
     if (a === 'share-native') { shareNative($('#shareLink') ? $('#shareLink').value : ''); return; }
+    if (a === 'school-save') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
+      const nm = ($('#mg-school') ? $('#mg-school').value : '').trim() || 'Demo School';
+      const auth = getAuth();
+      auth.settings = auth.settings || {};
+      auth.settings.school = nm;
+      saveAuth(auth);
+      toast('School setting saved: ' + nm);
+      renderManage();
+      return;
+    }
     if (a === 'approval-save') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const by = ($('#ap-by') ? $('#ap-by').value : '').trim();
@@ -7305,7 +7534,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (t.id === 'stuSearch') { ui.q = t.value; const el = $('#stuList'); if (el && cur()) el.innerHTML = stuCards(cur()); return; }
     if (t.id === 'dashSearch') { (ui.dash = ui.dash || {}).q = t.value; const el = $('#dashEvBody'); if (el && cur()) el.innerHTML = dashEvidenceRows(cur()); return; }
     if (t.id === 'usersQ') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).q = t.value; renderUsers(); return; }
-    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).role = t.value; renderUsers(); return; }
+    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).role = t.value; renderUsers(); return; }
+    if (t.id === 'usersClass') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).cls = t.value; renderUsers(); return; }
+    if (t.id === 'usersStatus') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).status = t.value; renderUsers(); return; }
     if (t.dataset && t.dataset.rn) {
       const semRn = cur(); if (!semRn) return;
       semRn.reportNotes = semRn.reportNotes || {};

@@ -174,6 +174,7 @@ function snapshotSeed(B) {
 
   console.log('== C: Sheet view = the 13 rows, exact columns ==');
   A.w.location.hash = '#/users'; await sleep(600);
+  if (!A.d.querySelectorAll('#usersSheet th').length) console.log('  [dbg] C: h1=' + ((A.d.querySelector('#app h1') || {}).textContent || 'none') + ' | hash=' + A.w.location.hash + ' | sheet=' + !!A.d.getElementById('usersSheet') + ' | head=' + String((A.d.getElementById('app') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 140));
   const thead = Array.from(A.d.querySelectorAll('#usersSheet th')).map((t) => t.textContent.trim()).join(' ');
   check(/^username display name role class or grade School paired with status/.test(thead), 'sheet columns exactly: username, display name, role, class or grade, School, paired with, status (got: ' + thead + ')');
   const rowsC = A.d.querySelectorAll('#usersSheet tbody tr');
@@ -225,6 +226,13 @@ function snapshotSeed(B) {
   console.log('== F: unassign re-keys the class ==');
   const F = boot(DLG_POLY + CHART_STUB + stateSeed, '');
   await loginAs(F, 'MSK', PW);
+  await waitFor(() => String(F.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
+  { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
+    const d2 = F.d.getElementById('dlg');
+    if (d2 && d2.open && /recovery file needs updating/i.test(d2.textContent)) { const l2 = d2.querySelector('[data-action="dlg-close"]'); if (l2) click(F, l2); await sleep(250); }
+  }
+  
+  console.log('  [dbg] F: gate=' + F.d.body.classList.contains('auth-gate') + ' hash=' + F.w.location.hash + ' h1=' + ((F.d.querySelector('#app h1') || {}).textContent || 'none') + ' mode=' + F.w.localStorage.getItem('spr-mode-v1') + ' ix=' + JSON.parse(F.w.localStorage.getItem('spr-class-index-v1') || '[]').length + ' CLS=' + String(F.w.__SPR_OC || '').slice(0, 60));
   const p3c2id = (index(F).find((c) => c.name === 'P3C2') || {}).id;
   const blobKey = 'spr-class-' + p3c2id;
   const blobBefore = p3c2id ? F.w.localStorage.getItem(blobKey) : '__no-id__';
@@ -239,6 +247,7 @@ function snapshotSeed(B) {
   const cellBtn = p3c2row && p3c2row.querySelector('[data-pair="P3C2"], [data-action="class-pair-open"]');
   if (cellBtn) { click(F, cellBtn); await sleep(400); }
   const ealSel = F.d.getElementById('pair-eal');
+  if (!ealSel) console.log('  [dbg] F2: cellBtn=' + !!cellBtn + ' dlg=' + (((F.d.getElementById('dlg') || {}).open) ? String((F.d.getElementById('dlg') || {}).textContent).replace(/\s+/g, ' ').slice(0, 90) : 'closed') + ' hash=' + F.w.location.hash);
   check(!!ealSel, 'pairing editor opened from the By-class cell (kay is EAL in P3C2)');
   if (ealSel) { setVal(F, ealSel, ''); await sleep(200); const sv = F.d.querySelector('#dlg [data-x="1"]'); if (sv) click(F, sv); }
   /* rekey = seal new blob FIRST, then prune/re-wrap keyrings: wait for BOTH */
@@ -251,6 +260,7 @@ function snapshotSeed(B) {
   const users2 = auth(F).users;
   const kay2 = users2.find((u) => u.username === 'kay');
   check(!(kay2.keyring || {})[p3c2id], 'kay keyring no longer holds P3C2');
+  if (classesOf(F, 'kay') !== 'P2C3,P3C3') console.log('  [dbg] F3: kay sees ' + classesOf(F, 'kay') + ' | ix P3C2=' + JSON.stringify(index(F).find((c) => c.name === 'P3C2')));
   check(classesOf(F, 'kay') === 'P2C3,P3C3', 'kay now sees P2C3,P3C3 only');
   check(classesOf(F, 'sarah') === 'P3C2,P3C3', 'sarah (still assigned) keeps both her classes');
   const sarah2 = users2.find((u) => u.username === 'sarah');
@@ -270,6 +280,12 @@ function snapshotSeed(B) {
   shut(F);
   const G = boot(DLG_POLY + CHART_STUB + stateSeed, '');
   await loginAs(G, 'MSK', PW);
+  await waitFor(() => String(G.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
+  { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
+    const d2 = G.d.getElementById('dlg');
+    if (d2 && d2.open && /recovery file needs updating/i.test(d2.textContent)) { const l2 = d2.querySelector('[data-action="dlg-close"]'); if (l2) click(G, l2); await sleep(250); }
+  }
+  
   const CS = G.w.ClassStore;
   const kayU = { username: 'kay', role: 'teacher' }, moU = { username: 'mo', role: 'teacher' };
   check(CS.can(kayU, 'edit.obs', { id: 'P2C3', eal: 'tina', support: 'kay' }) === false, 'kay (supporting in P2C3) cannot edit EAL observations');
@@ -282,6 +298,12 @@ function snapshotSeed(B) {
   shut(G);
   const H = boot(DLG_POLY + CHART_STUB + stateSeed, '');
   await loginAs(H, 'MSK', PW);
+  await waitFor(() => String(H.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
+  { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
+    const d2 = H.d.getElementById('dlg');
+    if (d2 && d2.open && /recovery file needs updating/i.test(d2.textContent)) { const l2 = d2.querySelector('[data-action="dlg-close"]'); if (l2) click(H, l2); await sleep(250); }
+  }
+  
   H.w.location.hash = '#/users'; await sleep(500);
   giveFile(H, '#file-roster', noRole, 'norole.csv');
   await sleep(600);
@@ -296,6 +318,12 @@ function snapshotSeed(B) {
   shut(H);
   const I = boot(DLG_POLY + CHART_STUB + stateSeed, '');
   await loginAs(I, 'MSK', PW);
+  await waitFor(() => String(I.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
+  { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
+    const d2 = I.d.getElementById('dlg');
+    if (d2 && d2.open && /recovery file needs updating/i.test(d2.textContent)) { const l2 = d2.querySelector('[data-action="dlg-close"]'); if (l2) click(I, l2); await sleep(250); }
+  }
+  
   I.w.location.hash = '#/users'; await sleep(500);
   const before = auth(I).users.length;
   giveFile(I, '#file-roster', threeTeach, 'bad.csv');
