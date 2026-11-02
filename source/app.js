@@ -628,7 +628,7 @@
   /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
      reachable from the dashboard buttons. Admin adds Users + Manage & setup;
      Ranking keeps its current role rules (admin + management). */
-  const NAV_T = [['dashboard', 'Dashboard'], ['live', 'Live board'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
+  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
     const r = classRole((currentUser() || {}).role);
     let list;
@@ -705,18 +705,6 @@
     return '<header class="page-head"><div><h1>' + title + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
       '<div class="actions">' + (actions || '') + '</div></header>';
   }
-  /* ---- Live board (#/live) — fitness-dashboard-styled real-time class view. ---- */
-  function renderLiveBoard() {
-    const host = $('#content');
-    if (host && window.SPRLiveBoard) {
-      window.SPRLiveBoard.render(host, { live: {
-        getDB: () => DB,
-        cur: () => cur(),
-        user: () => currentUser(),
-        setSem: (id) => { if (DB.semesters.find((s) => s.id === id)) { DB.currentSemesterId = id; saveDB(true); syncRailMeta(); buildShell(); route(); } }
-      } });
-    } else if (host) { renderDashboard(); }
-  }
   function route() {
     /* while the sign-in gate owns the screen, routing must do NOTHING — an
        async hashchange from an earlier redirect would otherwise closeDlg()
@@ -764,7 +752,7 @@
       case 'help': renderHelp(); break;
       case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
-      case 'live': renderLiveBoard(); break;
+      case 'live': location.hash = '#/dashboard'; return;   /* round9: Live board retired - old bookmarks keep working */
       default: renderDashboard();
     }
     railActive(navView);
@@ -1578,12 +1566,20 @@
           '<div class="chart-box" style="height:' + Math.max(220, Math.min(gAll.filter(gateOk).length, 30) * 20) + 'px"><canvas id="ch-byStu" role="img" aria-label="Final score by student bar chart"></canvas></div></div>';
     }
 
+    /* round9: honest save stamp (was the Live-board Updated-at) - the app
+       saves on this device; it is not a live feed. Cloud-copy line appears
+       only when device sync is actually on (cfg.lastPush). */
     let upd = '';
     try {
       const at = Number(localStorage.getItem('spr-last-save-at') || 0);
       if (at) {
-        const d = new Date(at), mins = Math.round((Date.now() - at) / 60000);
-        upd = ' \u00b7 Updated ' + (mins < 1 ? 'just now' : ('at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')));
+        const mins = Math.round((Date.now() - at) / 60000);
+        upd = ' \u00b7 Saved ' + (mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : Math.round(mins / 60) + ' h ago');
+      }
+      const cfg = dsCfg();
+      if (cfg && cfg.lastPush) {
+        const d2 = new Date(cfg.lastPush);
+        upd += ' \u00b7 Cloud copy: ' + String(d2.getHours()).padStart(2, '0') + ':' + String(d2.getMinutes()).padStart(2, '0');
       }
     } catch (e0) {}
     $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students' + upd,
