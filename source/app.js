@@ -3948,17 +3948,6 @@
       (async () => {
         try {
           let res = await doLoginFull(u, p);
-          /* built-in owner account (see RECOVERY_PASS): only a device with no
-             accounts and no vault may self-create MSK — this can never touch
-             existing data, because both guards are checked right here */
-          if (res && res.error && isRecoveryLogin(u, p) && getAuth().users.length === 0 && !readV2()) {
-            const cr = await firstRunCreate(RECOVERY_USER, p);
-            if (cr && cr.user) {
-              res = { user: cr.user };
-              toast('Signed in with the built-in MSK account: a fresh markbook was created on this device. For privacy, change its password in Manage \u2192 Users.');
-              if (SESSION && SESSION.pw && dsCanPush()) scheduleSyncPush();   /* land the owner wrap in the cloud, like a normal sign-in */
-            }
-          }
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
           /* single-class auto-open then takes the landing: on success it points
@@ -5760,11 +5749,6 @@
      that already holds accounts or data this code never fires (the do-login
      path checks users.length === 0 && !readV2() before offering it), so real
      data stays wrapped under its own password at all times. */
-  const RECOVERY_USER = 'MSK';
-  const RECOVERY_PASS = 'ZhongFangYuan786$';
-  function isRecoveryLogin(u, p) {
-    return String(u || '').trim().toLowerCase() === RECOVERY_USER.toLowerCase() && p === RECOVERY_PASS;
-  }
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
   function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 
