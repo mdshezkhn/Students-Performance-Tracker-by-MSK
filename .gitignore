@@ -13,3 +13,4 @@ __pycache__/
 .pw/
 qa_root/
 qa-shots/
+.freshclone/
