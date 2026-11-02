@@ -325,6 +325,7 @@
         settings: Object.assign({}, db.settings || {}),
         currentSemesterId: grp.semesters.length ? grp.semesters[grp.semesters.length - 1].id : null,
         semesters: grp.semesters, pending: [], audit: [],
+        cellLog: {}, rosterLog: {}, exchanges: [],
       };
       logAudit(wb, { by: (opts.adminUser || ''), action: 'migrate', note: 'split from the single markbook (' + grp.semesters.length + ' semester(s))' });
       blobs[c.id] = await sealClass(wb, key);
@@ -424,6 +425,260 @@
     try { return { id: decodeURIComponent(m[1]), k: decodeURIComponent(m[2]) }; } catch (e) { return null; }
   }
 
+  /* ==================== two-teacher merge (2026-11-02) ====================
+     Offline class-file exchange between the two teachers of a class. Every
+     score edit stamps wb.cellLog[cellKey] = {t, by}; every import appends to
+     wb.exchanges. A cell CONFLICTS when both copies changed it after the last
+     exchange (both t > base) and now hold different values — those are listed
+     for the importing teacher to decide. One-sided edits are taken silently
+     (the newer edit wins), additions (students, semesters, months) merge in.
+
+     cellLog key shapes:
+       s/<semId>/<sid>/obs/<month>/<obsKey>     observation cell (number)
+       s/<semId>/<sid>/sp|da/<month>/<w>        spelling / daily week record {s,t}
+       s/<semId>/<sid>/tst/<tp>/<s|t>           test record field
+       n/<semId>/<sid>/<field>                  report-card note text
+     rosterLog: { [sid]: {t, by, rm?} } — rm:true stamps a removal. */
+  const CELL_LOG_MAX = 5000;
+  function cellKey(semId, sid, area, col, sub) {
+    if (area === 'note') return 'n/' + semId + '/' + sid + '/' + col;
+    return 's/' + semId + '/' + sid + '/' + area + '/' + col + (sub !== undefined && sub !== null && sub !== '' ? '/' + sub : '');
+  }
+  function stampCell(wb, key, by, t) {
+    if (!wb) return;
+    const log = (wb.cellLog = wb.cellLog || {});
+    log[key] = { t: t || Date.now(), by: by || '' };
+    const ks = Object.keys(log);
+    if (ks.length > CELL_LOG_MAX) {   /* oldest entries drop off first; a cell
+        with no entry on one side is treated as a conflict (safe side) */
+      ks.sort((a, b) => (log[a].t || 0) - (log[b].t || 0));
+      for (let i = 0; i < ks.length - CELL_LOG_MAX; i++) delete log[ks[i]];
+      wb.cellLogPruned = true;
+    }
+  }
+  function stampRoster(wb, semId, sid, by, removed) {
+    if (!wb) return;
+    const log = (wb.rosterLog = wb.rosterLog || {});
+    log[sid] = { t: Date.now(), by: by || '', semId: semId || '' };
+    if (removed) log[sid].rm = true; else delete log[sid].rm;
+  }
+  const AREAS = { obs: 'observations', sp: 'spelling', da: 'daily', tst: 'tests' };
+  /* canonical cell read/write so merge never has to know each area's shape.
+     Key shapes: s/<semId>/<sid>/obs/<month>/<obsKey>
+                 s/<semId>/<sid>/sp|da/<month>/<week>/<s|t>
+                 s/<semId>/<sid>/tst/<tp>/<s|t>
+                 n/<semId>/<sid>/<field> */
+  function cellGet(wb, key) {
+    if (!wb || !key) return undefined;
+    const p = key.split('/');
+    try {
+      if (p[0] === 'n') {
+        const sem = wb.semesters.find((s) => s.id === p[1]);
+        const v = sem && sem.reportNotes && sem.reportNotes[p[2]] && sem.reportNotes[p[2]][p[3]];
+        return (v === undefined || v === '') ? undefined : v;
+      }
+      const sem = wb.semesters.find((s) => s.id === p[1]);
+      if (!sem) return undefined;
+      const sid = p[2], area = p[3], col = p[4], sub = p[5], f = p[6];
+      if (area === 'obs') {
+        const o = sem.observations && sem.observations[sid] && sem.observations[sid][col];
+        if (!o) return undefined;
+        return sub === undefined ? o : o[sub];
+      }
+      if (area === 'sp' || area === 'da') {
+        const met = AREAS[area];
+        const wk = sem[met] && sem[met][sid] && sem[met][sid][col] && sem[met][sid][col][sub];
+        if (!wk) return undefined;
+        if (f === undefined) return (wk.s === null && wk.t === null) ? undefined : wk;
+        return (wk[f] === null || wk[f] === undefined) ? undefined : wk[f];
+      }
+      if (area === 'tst') {
+        const rec = sem.tests && sem.tests[sid] && sem.tests[sid][col];
+        if (!rec) return undefined;
+        return sub === undefined ? ((rec.s === null && rec.t === null) ? undefined : rec) : ((rec[sub] === null || rec[sub] === undefined) ? undefined : rec[sub]);
+      }
+      return undefined;
+    } catch (e) { return undefined; }
+  }
+  function cellSet(wb, key, value) {
+    if (!wb || !key) return;
+    const p = key.split('/');
+    try {
+      if (p[0] === 'n') {
+        const sem = wb.semesters.find((s) => s.id === p[1]);
+        if (sem) { sem.reportNotes = sem.reportNotes || {}; sem.reportNotes[p[2]] = sem.reportNotes[p[2]] || {}; if (value === undefined) delete sem.reportNotes[p[2]][p[3]]; else sem.reportNotes[p[2]][p[3]] = value; }
+        return;
+      }
+      const sem = wb.semesters.find((s) => s.id === p[1]);
+      if (!sem) return;
+      const sid = p[2], area = p[3], col = p[4], sub = p[5], f = p[6];
+      if (area === 'obs') {
+        sem.observations = sem.observations || {}; sem.observations[sid] = sem.observations[sid] || {}; sem.observations[sid][col] = sem.observations[sid][col] || {};
+        if (sub === undefined) { if (value === undefined) delete sem.observations[sid][col]; else sem.observations[sid][col] = value; }
+        else if (value === undefined) { delete sem.observations[sid][col][sub]; if (!Object.keys(sem.observations[sid][col]).length) delete sem.observations[sid][col]; }
+        else sem.observations[sid][col][sub] = value;
+        return;
+      }
+      if (area === 'sp' || area === 'da') {
+        const met = AREAS[area];
+        sem[met] = sem[met] || {}; sem[met][sid] = sem[met][sid] || {}; sem[met][sid][col] = sem[met][sid][col] || {};
+        sem[met][sid][col][sub] = sem[met][sid][col][sub] || { s: null, t: null };
+        if (value === undefined) { delete sem[met][sid][col][sub][f]; if (sem[met][sid][col][sub].s === null && sem[met][sid][col][sub].t === null) delete sem[met][sid][col][sub]; }
+        else sem[met][sid][col][sub][f] = value;
+        return;
+      }
+      if (area === 'tst') {
+        sem.tests = sem.tests || {}; sem.tests[sid] = sem.tests[sid] || {}; sem.tests[sid][col] = sem.tests[sid][col] || { s: null, t: null };
+        if (value === undefined) { delete sem.tests[sid][col][sub]; if (sem.tests[sid][col].s === null && sem.tests[sid][col].t === null) delete sem.tests[sid][col]; }
+        else sem.tests[sid][col][sub] = value;
+      }
+    } catch (e) {}
+  }
+  function lastExchangeAt(wb) {
+    const ex = (wb && wb.exchanges) || [];
+    return ex.length ? ex[ex.length - 1].at : 0;
+  }
+  function sameVal(a, b) { return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+
+  /* Merge colleague's workbook (incoming) into the local one. PURE: returns a
+     fresh merged workbook + a conflict list; never mutates the inputs. The
+     caller applies conflict decisions (keep mine = already in `merged`;
+     take theirs = cellSet(merged, key, remoteValue); proposal = requestChange). */
+  function mergeWorkbooks(local, incoming, opts) {
+    opts = opts || {};
+    const by = opts.by || 'colleague';
+    const now = opts.now || Date.now();
+    const base = Math.max(lastExchangeAt(local), lastExchangeAt(incoming));
+    const merged = JSON.parse(JSON.stringify(local));
+    const conflicts = [];
+    const stats = { taken: 0, kept: 0, addedSemesters: 0, addedStudents: 0, removedStudents: 0, addedNotes: 0 };
+
+    /* ---- semesters: add new ones, merge shared ones ---- */
+    for (const isem of (incoming && incoming.semesters) || []) {
+      if (!isem || !isem.id) continue;
+      let lsem = merged.semesters.find((s) => s.id === isem.id);
+      if (!lsem) {
+        merged.semesters.push(JSON.parse(JSON.stringify(isem)));
+        stats.addedSemesters++;
+        continue;
+      }
+      /* months: union, local order first */
+      for (const m of isem.months || []) if (lsem.months.indexOf(m) === -1) lsem.months.push(m);
+      /* students: additions + name conflicts + colleague removals */
+      const inIds = new Set((isem.students || []).map((s) => s.id));
+      for (const istu of isem.students || []) {
+        const lstu = lsem.students.find((s) => s.id === istu.id);
+        if (!lstu) { lsem.students.push(JSON.parse(JSON.stringify(istu))); stats.addedStudents++; continue; }
+        if (!sameVal({ n: lstu.nameEn, c: lstu.nameCn }, { n: istu.nameEn, c: istu.nameCn })) {
+          const rlog = (incoming.rosterLog || {})[istu.id] || {};
+          const llog = (local.rosterLog || {})[istu.id] || {};
+          if ((rlog.t || 0) > base && (llog.t || 0) > base) {
+            conflicts.push({ kind: 'student', semId: lsem.id, sid: istu.id,
+              local: { nameEn: lstu.nameEn, nameCn: lstu.nameCn, t: llog.t || 0, by: llog.by || '' },
+              remote: { nameEn: istu.nameEn, nameCn: istu.nameCn, t: rlog.t || 0, by: rlog.by || '' } });
+          } else if ((rlog.t || 0) > (llog.t || 0)) {
+            lstu.nameEn = istu.nameEn; lstu.nameCn = istu.nameCn; stats.taken++;
+          }
+        }
+      }
+      for (const lstu of lsem.students.slice()) {
+        if (inIds.has(lstu.id)) continue;
+        const rlog = (incoming.rosterLog || {})[lstu.id];
+        if (rlog && rlog.rm && rlog.t > base) {
+          /* guard (2026-11-02): if WE edited or re-added this student since the
+             last exchange, removing silently would eat our work — review first */
+          const weEdited = Object.keys((local.cellLog || {})).some(function (k) {
+            return k.split('/')[2] === lstu.id && (local.cellLog[k] || {}).t > base;
+          });
+          const lrl = ((local.rosterLog || {})[lstu.id] || {});
+          const weAdded = !lrl.rm && lrl.t > base;
+          if (weEdited || weAdded) {
+            conflicts.push({ kind: 'student-del', semId: lsem.id, sid: lstu.id,
+              local: { nameEn: lstu.nameEn, nameCn: lstu.nameCn, t: lrl.t || 0, by: lrl.by || '' },
+              remote: { removed: true, t: rlog.t, by: rlog.by || '' } });
+            stats.kept++;
+            continue;
+          }
+          lsem.students = lsem.students.filter((s) => s.id !== lstu.id);
+          for (const met of ['observations', 'spelling', 'daily', 'tests']) { if (lsem[met]) delete lsem[met][lstu.id]; }
+          stats.removedStudents++;
+        }
+      }
+    }
+
+    /* ---- cells + notes: walk the union of both logs ---- */
+    const keys = new Set([].concat(Object.keys((local && local.cellLog) || {}), Object.keys((incoming && incoming.cellLog) || {})));
+    for (const key of keys) {
+      const lv = cellGet(merged, key);
+      const rv = cellGet(incoming, key);
+      if (sameVal(lv, rv)) continue;
+      const ll = (local.cellLog || {})[key];
+      const rl = (incoming.cellLog || {})[key];
+      const lchg = !!(ll && ll.t > base);
+      const rchg = !!(rl && rl.t > base);
+      if (lchg && rchg) {
+        conflicts.push({ kind: key.charAt(0) === 'n' ? 'note' : 'cell', key: key,
+          local: { v: lv, t: (ll && ll.t) || 0, by: (ll && ll.by) || '' },
+          remote: { v: rv, t: (rl && rl.t) || 0, by: (rl && rl.by) || '' } });
+      } else if (rchg && !ll) {
+        /* our copy has no edit recorded for this cell: take the colleague's */
+        cellSet(merged, key, rv); (merged.cellLog = merged.cellLog || {})[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else if (rchg && !lchg) {
+        cellSet(merged, key, rv); merged.cellLog[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else if (!rl && ll) {
+        /* colleague's copy never logged an edit but holds a different value
+           (pre-log history): let a human decide */
+        conflicts.push({ kind: key.charAt(0) === 'n' ? 'note' : 'cell', key: key,
+          local: { v: lv, t: ll.t || 0, by: ll.by || '' }, remote: { v: rv, t: 0, by: '' } });
+      } else if ((rl.t || 0) > (ll.t || 0)) {
+        cellSet(merged, key, rv); merged.cellLog[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else stats.kept++;
+    }
+
+    /* ---- pending proposals + audit: union, no duplicates ---- */
+    const haveP = new Set((merged.pending || []).map((p) => p.id));
+    for (const p of (incoming.pending || []) || []) if (!haveP.has(p.id)) (merged.pending = merged.pending || []).push(JSON.parse(JSON.stringify(p)));
+    const haveR = new Set((merged.review || []).map((r) => JSON.stringify(r)));
+    for (const r of (incoming.review || []) || []) { const j = JSON.stringify(r); if (!haveR.has(j)) { merged.review.push(JSON.parse(JSON.stringify(r))); haveR.add(j); } }
+    merged.audit = merged.audit || [];
+    const auditSeen = new Set(merged.audit.map((a) => (a.t || 0) + '|' + (a.action || '') + '|' + (a.cell || '') + '|' + (a.note || '')));
+    for (const a of (incoming.audit || []) || []) { const k = (a.t || 0) + '|' + (a.action || '') + '|' + (a.cell || '') + '|' + (a.note || ''); if (!auditSeen.has(k)) { merged.audit.push(a); auditSeen.add(k); } }
+    if (merged.audit.length > AUDIT_MAX) merged.audit = merged.audit.slice(merged.audit.length - AUDIT_MAX);
+
+    /* ---- pairing metadata: take the newer non-empty values ---- */
+    if (incoming.eal && incoming.eal !== merged.eal) merged.eal = incoming.eal;
+    if (incoming.support && incoming.support !== merged.support) merged.support = incoming.support;
+
+    /* ---- the exchange point: both sides now share this base ---- */
+    (merged.exchanges = merged.exchanges || []).push({ at: now, by: by, kind: 'file-merge' });
+    logAudit(merged, { by: by, action: 'merge', note: 'merged a colleague class file: ' + stats.taken + ' cell(s) taken, ' + conflicts.length + ' conflict(s) found, +' + stats.addedStudents + ' student(s)' });
+    return { merged: merged, conflicts: conflicts, base: base, stats: stats };
+  }
+  /* apply one conflict decision to a merged workbook (kept local by default) */
+  function applyConflict(wb, c, decision, by) {
+    if (!wb || !c) return;
+    if (decision === 'theirs') {
+      if (c.kind === 'student') {
+        const sem = wb.semesters.find((s) => s.id === c.semId);
+        const stu = sem && sem.students.find((s) => s.id === c.sid);
+        if (stu) { stu.nameEn = c.remote.nameEn; stu.nameCn = c.remote.nameCn; }
+      } else if (c.kind === 'student-del') {
+        const sem = wb.semesters.find((s) => s.id === c.semId);
+        if (sem) {
+          sem.students = sem.students.filter((s) => s.id !== c.sid);
+          for (const met of ['observations', 'spelling', 'daily', 'tests']) { if (sem[met]) delete sem[met][c.sid]; }
+        }
+      } else { cellSet(wb, c.key, c.remote.v); if (c.key) { (wb.cellLog = wb.cellLog || {})[c.key] = { t: Date.now(), by: by || 'merge' }; } }
+    } else if (decision === 'proposal') {
+      if (c.key && c.key.split('/')[3] === 'obs' && c.remote && typeof c.remote.v === 'number') {
+        const p = c.key.split('/');
+        requestChange(wb, { semId: p[1], sid: p[2], month: p[4], key: p[5], newValue: c.remote.v, by: by || 'merge', note: 'colleague value kept as a proposal during merge' });
+      }
+    }
+    /* 'mine' = nothing to do: merged already holds the local value */
+  }
+
+
   return {
     b64uFromBytes: b64uFromBytes, bytesFromB64u: bytesFromB64u,
     genKey: genKey, wrapKey: wrapKey, unwrapKey: unwrapKey,
@@ -438,5 +693,7 @@
     planMigration: planMigration, applyMigration: applyMigration, countCells: countCells,
     parseRosterCsv: parseRosterCsv, csvRows: csvRows,
     classFile: classFile, parseClassFile: parseClassFile, classLink: classLink, parseClassHash: parseClassHash,
+    cellKey: cellKey, stampCell: stampCell, stampRoster: stampRoster, cellGet: cellGet, cellSet: cellSet,
+    mergeWorkbooks: mergeWorkbooks, applyConflict: applyConflict, lastExchangeAt: lastExchangeAt,
   };
 });

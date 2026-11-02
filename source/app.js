@@ -39,6 +39,58 @@
   let DB = null, saveTimer = null;
   let SESSION = { user: null, dk: null, pw: null };   // raw 256-bit master key, memory only (online mode); pw = signed-in password, memory only: used to re-wrap the device-sync key so fresh devices can bootstrap by sign-in alone
   function cryptoOK() { return !!(window.crypto && window.crypto.subtle); }
+  /* ---- P1 (2026-11-02): secure-storage gate --------------------------------
+     Student data (names + scores of minors) is NEVER written to localStorage
+     in plaintext. Encrypted storage needs WebCrypto, which needs a secure
+     context (https:, file:, localhost). On anything else we refuse to persist,
+     say so plainly, and keep working in memory. ---- */
+  function secureContextOK() {
+    try {
+      if (location.protocol === 'https:' || location.protocol === 'file:') return true;
+      if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return true;
+      if (window.isSecureContext === true) return true;
+    } catch (e) {}
+    return false;
+  }
+  function insecureBanner() {
+    if (document.getElementById('spr-insecure')) return;
+    const b = document.createElement('div'); b.id = 'spr-insecure';
+    b.setAttribute('role', 'alert');
+    b.style.cssText = 'position:sticky;top:0;z-index:900;background:#8a6d1f;color:#fff;padding:10px 16px;font-size:14px';
+    b.innerHTML = '<b>Secure storage requires HTTPS.</b> This connection is not secure, so SPR cannot save here and cloud sync is off. ' +
+      'Open <b>https://my-spr-with-mo.duckdns.org</b> (or a downloaded copy) and use a backup file to move data.';
+    document.body.insertBefore(b, document.body.firstChild);
+  }
+  let PLAIN_SAVE_WARNED = false;   /* toast once; the banner itself persists */
+  function refusePlaintextSave() {
+    insecureBanner();
+    if (!PLAIN_SAVE_WARNED) { PLAIN_SAVE_WARNED = true; toast('Secure storage unavailable on this connection.', true); }
+  }
+  /* ---- P1 (2026-11-02): storage-quota watch — warn at ~80% before the
+     browser starts refusing writes (typical localStorage quota 5 MB) ---- */
+  const LS_QUOTA_ASSUME = 5 * 1024 * 1024, LS_QUOTA_WARN = 0.8;
+  function lsBytesUsed() {
+    try {
+      let n = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        n += (k.length + (localStorage.getItem(k) || '').length) * 2;   /* UTF-16 */
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
+  function quotaBanner() {
+    if (document.getElementById('spr-quota')) return;
+    const b = document.createElement('div'); b.id = 'spr-quota';
+    b.setAttribute('role', 'status');
+    b.style.cssText = 'position:sticky;top:0;z-index:900;background:#8a6d1f;color:#fff;padding:8px 16px;font-size:13.5px';
+    b.innerHTML = '<b>Storage nearly full — download a backup.</b> This browser is close to its storage limit; new scores may stop being saved. ' +
+      '<button class="btn sm" data-action="dl-backup" style="margin-left:8px">Download backup</button>';
+    document.body.insertBefore(b, document.body.firstChild);
+  }
+  function checkStorageQuota() {
+    try { if (lsBytesUsed() / LS_QUOTA_ASSUME >= LS_QUOTA_WARN) quotaBanner(); } catch (e) {}
+  }
   const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null, anMode: 'class', anStu: null };
 
   function acadRank(m) { const i = U.MONTHS.indexOf(m); return i < 0 ? 99 : ((i - 8 + 12) % 12) + 1; }
@@ -122,17 +174,19 @@
   }
   function saveDB(silent) {
     /* online: immediate plaintext mirror in sessionStorage (dies with the tab)
-       + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
+       + debounced ENCRYPTED write to localStorage; P1 (2026-11-02): without
+       WebCrypto we refuse to persist at all — no plaintext fallback. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
     try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
     try { localStorage.setItem('spr-edits-since-backup', String((Number(localStorage.getItem('spr-edits-since-backup')) || 0) + 1)); } catch (e5) {}
     clearTimeout(saveTimer);
     if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
     else if (cryptoOK() && SESSION.dk) saveTimer = setTimeout(() => persistNow(silent), 300);
-    else saveTimer = setTimeout(() => {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { toast('Could not save: storage full?', true); }
-      flashSaved(silent);
-    }, 300);
+    else if (!cryptoOK() || !secureContextOK()) saveTimer = setTimeout(() => { refusePlaintextSave(); }, 300);
+    /* else: crypto available but not signed in yet (first-run moment, sign-in
+       screen) — nothing persistable, stay quiet; the store write happens the
+       instant the key exists (P1 2026-11-02). */
+    checkStorageQuota();
   }
   function flashSaved(silent) {
     const dot = $('#savedDot');
@@ -260,9 +314,8 @@
     validateDB(db);
     normalizeDB(db);
     DB = db;
-    if (cryptoOK() && SESSION.dk) persistNow(true);
-    else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
-    location.reload();
+    if (cryptoOK() && SESSION.dk) { persistNow(true); location.reload(); }
+    else { refusePlaintextSave(); }   /* P1: never re-store plaintext; the teacher keeps this tab + can download a backup */
   }
   /* ---- encryption core (online mode): PBKDF2-SHA256 310k -> AES-GCM.
      Random master key, wrapped per user with their login password; the key
@@ -762,14 +815,44 @@
     const mine = c.eal === me.username ? 'EAL teacher' : c.support === me.username ? 'Supporting teacher' : (me.role === 'manager' ? 'Read-only' : me.role === 'admin' ? 'Admin' : '');
     const pend = (c.pendingCount || 0) && (me.role === 'admin' || c.eal === me.username) ? '<span class="pend-badge">' + c.pendingCount + ' to review</span>' : '';
     const when = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '';
+    /* P2 (2026-11-02): key holders who may export see a small Share button —
+       the two teachers of a class exchange files without the admin */
+    const canShare = (SESSION.keys && SESSION.keys[c.id]) && CS.can(myUser(), 'export.class', c);
     return '<div class="class-card">' +
       '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
       '<span class="cc-school">' + U.esc(c.school || '') + '</span>' +
       '<div class="cc-pair small">' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</div>' +
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
+      (canShare ? '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Share</button>' : '') +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
       '</div></div>';
+  }
+
+  /* P2 (2026-11-02): cloud reachability dot. Probes ONLY when device sync is
+     on (a sync-off browser must stay at ZERO network requests). */
+  let CLOUD_STATE = null;   /* null unknown | true reachable | false unreachable */
+  function probeCloudOnce() {
+    if (CLOUD_STATE !== null || !dsOn() || !secureContextOK()) return;
+    try {
+      const sb = SB();
+      fetch(sb.url + '/rest/v1/', { headers: { apikey: sb.key } })
+        .then(() => { CLOUD_STATE = true; paintCloudDot(); })
+        .catch(() => { CLOUD_STATE = false; paintCloudDot(); });
+    } catch (e) { CLOUD_STATE = false; }
+  }
+  function paintCloudDot() {
+    const el = document.getElementById('cloudDot');
+    if (!el) return;
+    const ok = CLOUD_STATE === true;
+    el.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (ok ? '#10b981' : '#b45309') + ';margin-right:6px;vertical-align:middle"></span>' +
+      (ok ? 'Cloud reachable' : 'Cloud unreachable — working offline');
+    el.title = ok ? 'The encrypted cloud copy (Supabase) answered.' : 'The encrypted cloud copy cannot be reached. Everything still works offline; exchange class files with your colleague instead.';
+  }
+  function cloudDotHtml() {
+    if (!dsOn()) return '';
+    probeCloudOnce();
+    return '<span id="cloudDot" class="small muted" style="font-size:11.5px;align-self:center">checking cloud…</span>';
   }
 
   function renderClasses() {
@@ -788,16 +871,23 @@
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+        cloudDotHtml() +
       '</div>' +
       pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
         (me.role === 'manager' ? ': whole school, read-only' : me.role === 'support' ? ': you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ': you edit your class and approve observation changes from your support partner' : '')) +
       (me.role === 'manager' ? '<p class="small muted" style="margin:0 0 14px">Manager view: every class, read-only. Printing and on-screen review are open; editing stays with each class&rsquo;s teachers.</p>' : '') +
+      schoolApprovalReminderHtml() +
       (mine.length ? '<div class="class-grid">' + mine.map(classCard).join('') + '</div>'
         : '<div class="empty" style="padding:44px 24px"><div class="big">' + (admin ? 'No classes yet' : 'No class yet: ask your admin') + '</div>' +
           '<p class="small">' + (admin ? 'Create a class to get started.' : 'Your administrator sets up your class: it appears here the moment they do.') + '</p>' +
           (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button></div>' : '') +
           '</div>') +
+      /* P2 (2026-11-02): teachers exchange encrypted class files directly —
+         import no longer lives only in the admin Advanced panel */
+      ((me.role === 'eal' || me.role === 'support') ?
+        '<div class="flex" style="gap:10px;align-items:center;margin:14px 0 0;flex-wrap:wrap"><button class="btn" data-action="class-import-btn">Import class from colleague</button>' +
+        '<span class="small muted">Open a class file your colleague exported (encrypted). Merging keeps both teachers&rsquo; work and asks about cells you both changed.</span></div>' : '') +
 
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
@@ -1093,10 +1183,12 @@
       const existing = classIndex().find((c) => c.id === f.id);
       openDlg(
         '<h3>Import class: ' + U.esc(f.name) + '</h3>' +
-        '<p class="small">' + (existing ? 'A class with this id already exists here; importing replaces its data (a safety copy is kept first).' : 'New class on this device.') + ' The file is encrypted: paste the class share link (or its key) to open it.</p>' +
+        '<p class="small">' + (existing
+          ? 'A class with this id already exists here. <b>Merge</b> keeps both teachers&rsquo; work and lists any cell both of you changed; <b>Replace</b> overwrites this device&rsquo;s copy with the file (a safety copy is kept first).'
+          : 'New class on this device.') + ' The file is encrypted: paste the class share link (or its key) to open it.</p>' +
         '<input class="inp" id="cf-link" style="width:100%" placeholder="https://…#class=…&k=… or just the key">' +
         '<div class="login-err" id="cf-err"></div>' +
-        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Import</button></div>',
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' + (existing ? '' : '<button class="btn primary" data-x="1">Import</button>') + '</div>',
         (d) => {
           d.onclick = async (e) => {
             const b = e.target.closest('[data-x]');
@@ -1109,21 +1201,129 @@
             let wb = null;
             try { wb = await CS.openClass(f.blob, bytesFromB64u(keyB64)); }
             catch (e2) { $('#cf-err').textContent = 'That key does not open this class file.'; return; }
-            stashSafetyBackup('before importing class ' + f.name);
+            /* P1.3: every import path sanitizes — invalid scores quarantine
+               into the review list instead of silently counting */
+            try {
+              validateDB(wb);
+              (wb.semesters || []).forEach((sm) => { normalizeSemester(sm); });
+            } catch (e3) { $('#cf-err').textContent = 'Not usable: ' + e3.message; return; }
             const key = bytesFromB64u(keyB64);
-            localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(wb, key)));
-            const ix = classIndex().filter((c) => c.id !== f.id);
-            ix.push({ id: f.id, name: f.name, school: f.school, eal: f.eal, support: f.support, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: (wb.pending || []).length });
-            setClassIndex(ix);
-            try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}
-            closeDlg();
-            await issueClassKeys(f.id, key, [SESSION.user]);
-            SESSION.keys[f.id] = key; classKeysToSession();
-            toast('Class ' + f.name + ' imported'); renderClasses();
+            if (!existing) { installImportedClass(f, wb, key); return; }
+            /* two paths for an existing class: merge (default) or replace */
+            openDlg(
+              '<h3>Merge or replace: ' + U.esc(f.name) + '</h3>' +
+              '<p class="small"><b>Merge</b> (recommended): keeps every change from both sides — new students and semesters are added, one-sided edits are taken automatically, and any cell <b>both</b> teachers changed is listed for you to decide. Nothing is overwritten silently.<br><br><b>Replace</b>: this device&rsquo;s copy is overwritten by the file (a safety copy is kept first).</p>' +
+              '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn" data-x="2">Replace</button><button class="btn primary" data-x="1">Merge</button></div>',
+              (d2) => {
+                d2.onclick = async (e4) => {
+                  const b2 = e4.target.closest('[data-x]');
+                  if (!b2) return;
+                  if (b2.dataset.x === '0') { closeDlg(); return; }
+                  if (b2.dataset.x === '2') { installImportedClass(f, wb, key); return; }
+                  try {
+                    const localWb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(f.id))), key);
+                    const r = CS.mergeWorkbooks(localWb, wb, { by: SESSION.user || 'teacher' });
+                    if (r.conflicts.length) { conflictReviewDialog(f, key, r); return; }
+                    await applyMergedClass(f, key, r.merged, r.stats, 0);
+                  } catch (e5) { toast('Merge failed: ' + e5.message, true); }
+                };
+              });
           };
         });
     };
     fr.readAsText(file);
+  }
+  async function installImportedClass(f, wb, key) {
+    stashSafetyBackup('before importing class ' + f.name);
+    localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(wb, key)));
+    const ix = classIndex().filter((c) => c.id !== f.id);
+    ix.push({ id: f.id, name: f.name, school: f.school, eal: f.eal, support: f.support, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: (wb.pending || []).length });
+    setClassIndex(ix);
+    try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}
+    closeDlg();
+    await issueClassKeys(f.id, key, [SESSION.user]);
+    SESSION.keys[f.id] = key; classKeysToSession();
+    const quarantined = (wb.semesters || []).reduce((n, sm) => n + (sm.__movedInvalid || 0), 0);
+    toast('Class ' + f.name + ' imported' + (quarantined ? ': ' + quarantined + ' invalid score(s) moved to the review list' : ''));
+    renderClasses();
+  }
+  /* human description of one merged conflict (used by the review dialog) */
+  function conflictRowHtml(c, incoming, i) {
+    const p = c.key ? c.key.split('/') : [];
+    let who = 'Your colleague', stuName = c.sid || '';
+    let what = c.kind === 'student' ? 'Student details' : c.kind === 'note' ? 'Report note (' + U.esc(p[3] || '') + ')' : 'Score';
+    let lv = '', rv = '';
+    if (c.kind === 'student') {
+      const sem = (incoming.semesters || []).find((s) => s.id === c.semId);
+      const stu = sem && (sem.students || []).find((s) => s.id === c.sid);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || c.sid;
+      lv = U.esc((c.local.nameEn || '') + ' ' + (c.local.nameCn || ''));
+      rv = U.esc((c.remote.nameEn || '') + ' ' + (c.remote.nameCn || ''));
+      who = (c.remote.by || 'Your colleague');
+    } else if (c.kind === 'student-del') {
+      const sem = (incoming.semesters || []).find((s) => s.id === c.semId);
+      const stu = sem && (sem.students || []).find((s) => s.id === c.sid);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || c.sid;
+      what = 'Student removed by colleague — you edited this student';
+      lv = U.esc((c.local.nameEn || '') + ' ' + (c.local.nameCn || '')) + ' + their scores';
+      rv = '(removed from the class)';
+      who = (c.remote.by || 'Your colleague');
+    } else {
+      const semL = (incoming.semesters || []).find((s) => s.id === p[1]) || {};
+      const stu = (semL.students || []).find((s) => s.id === p[2]);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || p[2];
+      const AREA_LABEL = { obs: 'Observation', sp: 'Spelling', da: 'Daily assignments', tst: 'Test' };
+      if (p[0] === 's') what = (AREA_LABEL[p[3]] || p[3]) + ' \u00b7 ' + U.esc(String(p[4])) + (p[5] ? ' \u00b7 ' + U.esc(String(p[5])) : '');
+      const show = (v) => (v === undefined || v === null ? '(empty)' : U.esc(String(v).slice(0, 60)));
+      lv = show(c.local.v); rv = show(c.remote.v);
+      who = (c.remote.by || 'Your colleague');
+    }
+    const dt = (t) => (t ? new Date(t).toLocaleDateString() : 'earlier');
+    return '<tr><td>' + U.esc(stuName) + '<br><span class="small muted">' + what + '</span></td>' +
+      '<td class="small"><b>' + lv + '</b><br><span class="muted">you' + (c.local.t ? ' \u00b7 ' + dt(c.local.t) : '') + '</span></td>' +
+      '<td class="small"><b>' + rv + '</b><br><span class="muted">' + U.esc(who) + (c.remote.t ? ' \u00b7 ' + dt(c.remote.t) : '') + '</span></td>' +
+      '<td class="c" style="white-space:nowrap">' +
+      (c.kind === 'student-del'
+        ? '<button class="btn sm" data-cf="mine" data-i="' + i + '">Keep student</button> <button class="btn sm" data-cf="theirs" data-i="' + i + '">Remove student</button>'
+        : '<button class="btn sm" data-cf="mine" data-i="' + i + '">Keep mine</button> ' +
+          '<button class="btn sm" data-cf="theirs" data-i="' + i + '">Take theirs</button>' +
+          (c.key && p[3] === 'obs' ? ' <button class="btn sm" data-cf="proposal" data-i="' + i + '">Both: proposal</button>' : '')) +
+      '</td></tr>';
+  }
+  function conflictReviewDialog(f, key, r) {
+    const decisions = r.conflicts.map(() => 'mine');   /* keep mine = default */
+    openDlg(
+      '<h3>' + r.conflicts.length + ' change(s) need your decision</h3>' +
+      '<p class="small">Both you and your colleague changed these since the last exchange. Pick what to keep — <b>Keep mine</b> is preselected for all, so just fix the rows you care about and finish.</p>' +
+      '<div class="sheet" style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Student</th><th>Your value</th><th>Colleague&rsquo;s value</th><th></th></tr></thead><tbody>' +
+      r.conflicts.map((c, i) => conflictRowHtml(c, r.merged, i)).join('') + '</tbody></table></div>' +
+      '<div class="dlg-actions"><button class="btn primary" data-x="1">Finish merge</button></div>',
+      (d) => {
+        d.onclick = async (e) => {
+          const b = e.target.closest('[data-cf]');
+          if (b) {
+            decisions[Number(b.dataset.i)] = b.dataset.cf;
+            const tr = b.closest('tr'); if (tr) tr.style.background = 'rgba(201,151,59,.12)';
+            b.closest('td').innerHTML = '<span class="small">' + (b.dataset.cf === 'mine' ? 'keeping mine' : b.dataset.cf === 'theirs' ? 'taking theirs' : 'added as proposal') + '</span>';
+            return;
+          }
+          if (!e.target.closest('[data-x="1"]')) return;
+          for (let i = 0; i < r.conflicts.length; i++) CS.applyConflict(r.merged, r.conflicts[i], decisions[i], SESSION.user);
+          await applyMergedClass(f, key, r.merged, r.stats, decisions.filter((x) => x !== 'mine').length);
+        };
+      });
+  }
+  async function applyMergedClass(f, key, merged, stats, decided) {
+    stashSafetyBackup('before merging class ' + f.name);
+    localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(merged, key)));
+    const ix = classIndex(); const row = ix.find((c) => c.id === f.id);
+    if (row) { row.name = merged.name || row.name; row.eal = merged.eal || row.eal; row.support = merged.support || row.support; row.updatedAt = Date.now(); row.pendingCount = (merged.pending || []).length; }
+    setClassIndex(ix);
+    closeDlg();
+    const s = stats || {};
+    toast('Merged ' + f.name + ': ' + [s.taken ? s.taken + ' colleague edit(s) taken' : '', s.addedStudents ? '+' + s.addedStudents + ' student(s)' : '', s.addedSemesters ? '+' + s.addedSemesters + ' semester(s)' : '', s.removedStudents ? s.removedStudents + ' student(s) removed (colleague)' : '', decided ? decided + ' conflict(s) decided' : ''].filter(Boolean).join(' · ') || 'no changes needed');
+    if (CLS && CLS.id === f.id) { location.reload(); return; }   /* refresh the open class */
+    renderClasses();
   }
 
   /* ---- roster CSV import (accounts) ---- */
@@ -2110,6 +2310,21 @@
   }
 
   /* ---- cell mutations & input handling ---- */
+  /* P2 (2026-11-02): every score edit also stamps the class workbook's cellLog
+     so a later merge with the colleague's copy can tell WHO changed WHAT and
+     WHEN. Cheap (one object entry), pure bookkeeping — never shown to users. */
+  function stampEdit(sem, sid, area, col, sub) {
+    try {
+      const by = (SESSION.user || (currentUser() || {}).username || 'teacher');
+      CS.stampCell(DB, CS.cellKey(sem && sem.id, sid, area, col, sub), by);
+    } catch (e) {}
+  }
+  function stampRosterEdit(sem, sid, removed) {
+    try {
+      const by = (SESSION.user || (currentUser() || {}).username || 'teacher');
+      CS.stampRoster(DB, sem && sem.id, sid, by, removed);
+    } catch (e) {}
+  }
   function setObsCell(sem, sid, month, key, v) {
     sem.observations[sid] = sem.observations[sid] || {};
     sem.observations[sid][month] = sem.observations[sid][month] || {};
@@ -2118,6 +2333,7 @@
       delete cell[key];
       if (!Object.keys(cell).length) delete sem.observations[sid][month];
     } else cell[key] = v;
+    stampEdit(sem, sid, 'obs', month, key);
   }
   function setWeekCell(sem, sid, met, month, w, f, v) {
     sem[met][sid] = sem[met][sid] || {};
@@ -2127,6 +2343,7 @@
     rec[w][f] = v;
     if (rec[w].s === null && rec[w].t === null) delete rec[w];
     if (!Object.keys(rec).length) delete sem[met][sid][month];
+    stampEdit(sem, sid, met === 'spelling' ? 'sp' : 'da', month, w + '/' + f);
   }
   function setTestCell(sem, sid, tp, f, v) {
     sem.tests[sid] = sem.tests[sid] || {};
@@ -2134,6 +2351,7 @@
     sem.tests[sid][tp][f] = v;
     if (sem.tests[sid][tp].s === null && sem.tests[sid][tp].t === null) delete sem.tests[sid][tp];
     if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
+    stampEdit(sem, sid, 'tst', tp, f);
   }
   function getWeek(sem, sid, met, month, w) {
     return sem[met][sid] && sem[met][sid][month] && sem[met][sid][month][w];
@@ -2789,6 +3007,7 @@
     if (!cn && !en) { toast('Enter at least one name', true); return; }
     if (sem.students.some((s) => s.id === id)) { toast('ID already used: ' + id, true); return; }
     sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: U.normGender($('#ro-g').value) });
+    stampRosterEdit(sem, id);
     saveDB(); renderManage(); toast((en || cn) + ' added');
   }
   function rosterBulk() {
@@ -2796,7 +3015,7 @@
     const list = parseRosterPaste($('#ro-paste').value);
     if (!list.length) { toast('Nothing to add', true); return; }
     let added = 0;
-    for (const s of list) if (!sem.students.some((x) => x.id === s.id)) { sem.students.push(s); added++; }
+    for (const s of list) if (!sem.students.some((x) => x.id === s.id)) { sem.students.push(s); stampRosterEdit(sem, s.id); added++; }
     saveDB(); renderManage(); toast(added + ' students added');
   }
 
@@ -3223,7 +3442,7 @@
   /* ---- the notice itself: one text, two languages, three places (2026-10-28).
      window.SPR_NOTICE is injected at build time from source/notice.en.html and
      source/notice.zh.html; the same files render the standalone notice.html. ---- */
-  const NOTICE = window.SPR_NOTICE || { version: '1', date: '28 Oct 2026', en: '<p>Notice text missing from this build.</p>', zh: '<p>Notice text missing from this build.</p>' };
+  const NOTICE = window.SPR_NOTICE || { version: '2', date: '02 Nov 2026', en: '<p>Notice text missing from this build.</p>', zh: '<p>Notice text missing from this build.</p>' };
   let noticeLang = 'en';
   function noticeBodyHtml() {
     const en = noticeLang === 'en';
@@ -3240,6 +3459,19 @@
       (a.date ? ' on ' + U.esc(a.date) : '') + (a.ref ? ' (ref: ' + U.esc(a.ref) + ')' : '') + '.';
     if (isAdmin()) return 'No school approval recorded yet. Admins can add it in Manage &amp; setup.';
     return 'The school approval record is kept by the administrator.';
+  }
+  /* P5 (2026-11-02): PIPL — real student data needs recorded school approval.
+     Persistent (non-blocking) reminder on the class screens + import paths. */
+  function schoolApprovalMissing() {
+    const a = (DB.settings && DB.settings.schoolApproval) || {};
+    return !a.by;
+  }
+  function schoolApprovalReminderHtml() {
+    if (!schoolApprovalMissing()) return '';
+    const me = myUser() || {};
+    if (me.role === 'manager') return '';
+    return '<p class="small" style="margin:0 0 14px;color:#8a6d1f"><b>School approval not recorded yet.</b> Before entering real student data, the school&rsquo;s written approval must be saved' +
+      (isAdmin() ? ' (open the class &rarr; Manage &amp; setup &rarr; School approval)' : ' — ask your administrator to record it in Manage &amp; setup') + '. The demo class is synthetic; approval concerns real students only.</p>';
   }
   function noticeSummaryHtml() {
     return '<h3>About SPR and your student data</h3>' +
@@ -3426,6 +3658,7 @@
       listed +
       (dupNames ? '<br><br>' + (dupNames === 1 ? 'A semester with' : dupNames + ' semesters with') + ' a matching name already exist in this browser: both will be kept; you can rename or delete either one in Manage &amp; setup.' : '') +
       (failed.length ? '<br><br><b>Not imported:</b><br>' + failed.map(U.esc).join('<br>') : '') +
+      (schoolApprovalMissing() ? '<br><br><b>Reminder:</b> no school approval is recorded yet — save the school&rsquo;s written approval (Manage &amp; setup &rarr; School approval) before entering real student data.' : '') +
       '<br><br>Nothing is overwritten: your existing classes stay exactly as they are.',
       'Add');
     if (!okGo) { toast('Import cancelled: nothing was changed'); return; }
@@ -3443,6 +3676,19 @@
     const wb = EB.exportWorkbook(sem, CLS ? (DB.audit || []) : null);
     XLSX.writeFile(wb, sanitizeFn(sem.school + '-' + (sem.className || 'class') + '-SPR-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
     toast('Excel exported: check your downloads');
+  }
+  /* P1.4 (2026-11-02): one confirmation before a full backup leaves the device,
+     saying exactly what downloads and where it may be stored. */
+  async function fullBackupGo() {
+    const enc = !!(CLS && CLS_KEY);
+    const okGo = await confirmDlg('Download full backup?',
+      'This downloads ' + (enc
+        ? '<b>two files</b>: the <b>encrypted class file</b> (safe to carry — it only opens with the class key) and the <b>unencrypted JSON backup</b> (a readable copy: every semester + settings)'
+        : 'the <b>unencrypted JSON backup</b> (a readable copy: every semester + settings)') +
+      '.<br><br>Keep backup files only on <b>school-approved storage</b>, and delete them when they are no longer needed.', 'Download backup');
+    if (!okGo) { toast('Backup cancelled: nothing was downloaded'); return; }
+    backupJSON();
+    if (enc) exportClassFile(CLS.id);
   }
   function backupJSON() {
     const out = Object.assign({}, DB, {
@@ -4031,7 +4277,10 @@
       return;
     }
     if (a === 'ds-enable') { dsEnable(); return; }
-    if (a === 'ds-now') { dsPullCheck(true); return; }
+    if (a === 'ds-now') {
+      if (!secureContextOK()) { refusePlaintextSave(); toast('Cloud sync needs HTTPS: SPR is working offline.', true); return; }
+      dsPullCheck(true); return;
+    }
     if (a === 'ds-link') { dsLinkModal(); return; }
     if (a === 'stale-reload') { location.reload(); return; }
     if (a === 'dl-backup') { downloadBackup(); toast('Backup downloaded. Keep it somewhere safe outside this device.'); return; }
@@ -4154,6 +4403,7 @@
         const stuIdx = sem.students.findIndex((s) => s.id === sid);
         sem.students = sem.students.filter((s) => s.id !== sid);
         delete sem.observations[sid]; delete sem.spelling[sid]; delete sem.daily[sid]; delete sem.tests[sid];
+        stampRosterEdit(sem, sid, true);
         saveDB(); route();
         toastAction('Student removed', 'Undo', () => {
           sem.students.splice(Math.min(stuIdx, sem.students.length), 0, stu);
@@ -4170,7 +4420,7 @@
     if (a === 'roster-paste') { rosterBulk(); return; }
     if (a === 'import-xlsx') { const f = $('#file-xlsx'); if (f) f.click(); return; }
     if (a === 'export-xlsx') { exportXlsx(); return; }
-    if (a === 'backup') { backupJSON(); return; }
+    if (a === 'backup') { fullBackupGo(); return; }
     if (a === 'restore') {
       if (CLS) { toast('In class mode use "Restore everything" (Classes screen) or import a class file: a single-markbook backup cannot replace a class workbook.', true); return; } const f = $('#file-json'); if (f) f.click(); return; }
     if (a === 'load-sample') {
@@ -4184,7 +4434,7 @@
         stashSafetyBackup('before reset to sample data');
         DB = seedFromWindow();
         if (cryptoOK() && SESSION.dk) { await persistNow(true); }
-        else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
+        else { refusePlaintextSave(); }   /* P1: no plaintext write on insecure connections */
         location.reload();
       })();
       return;
@@ -4238,6 +4488,7 @@
       semRn.reportNotes = semRn.reportNotes || {};
       semRn.reportNotes[t.dataset.sid] = semRn.reportNotes[t.dataset.sid] || {};
       semRn.reportNotes[t.dataset.sid][t.dataset.rn] = t.value;
+      stampEdit(semRn, t.dataset.sid, 'note', t.dataset.rn);
       saveDB();
       const card = document.getElementById('rc-sec-' + t.dataset.rn);
       if (card) card.innerHTML = t.value ? '<p>' + U.esc(t.value) + '</p>' : '<p class="muted small">\u2014</p>';
@@ -4299,11 +4550,9 @@
     }
     onGridKey(e);
   });
-  window.addEventListener('beforeunload', function() {
-    /* offline/legacy mode only: online mode keeps data encrypted at rest
-       (plaintext mirror in localStorage would contradict that promise) */
-    if (DB && !cryptoOK()) { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {} }
-  });
+  /* P1 (2026-11-02): the beforeunload plaintext mirror is gone — student data
+     is never written to localStorage unencrypted. Encrypted persistence runs
+     on the debounced save path + the pagehide flush below. */
   document.addEventListener('paste', onGridPaste);
 
   /* =================================== init =================================== */
@@ -5675,7 +5924,7 @@
       : '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Student\u2019s Performance Report (SPR)</h2>' +
-          '<p>' + (cryptoOK() ? 'Sign in: your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') +
+          '<p>' + (cryptoOK() ? 'Sign in: your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. <b>This connection has no secure storage</b>: SPR works in this tab but cannot save — open the HTTPS address or a downloaded copy.') +
           (cryptoOK() && freshBrowser ? '<br><b>New device?</b> If you already use SPR elsewhere, use <b>I use SPR on another device</b> below: your data arrives from the encrypted cloud copy.' :
            (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b>: sign in and your data arrives from the cloud.' : '')) + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
@@ -5719,6 +5968,7 @@
 
   async function init() {
     chartTheme();
+    if (!secureContextOK()) insecureBanner();   /* P1 (2026-11-02): plain-HTTP loads get one clear banner up front */
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
@@ -5734,7 +5984,7 @@
       clearTimeout(saveTimer); saveTimer = null;
       if (CLS && CLS_KEY) classPersistNow(true);
       else if (cryptoOK() && SESSION.dk) persistNow(true);
-      else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
+      else refusePlaintextSave();   /* P1: no plaintext fallback */
     }
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { flushPendingSave(); dsFlushPending(); } });
     window.addEventListener('pagehide', function () { flushPendingSave(); dsFlushPending(); });

@@ -62,7 +62,7 @@ function setupAdmin(B) {
     await acceptGate(A);
     let raw = null;
     for (let t = 0; t < 20 && !raw; t++) { await sleep(250); raw = A.w.localStorage.getItem('spr-privacy-ack-v1'); }
-    check(!!raw && JSON.parse(raw).v === '1' && !!JSON.parse(raw).date, 'acceptance stored as {version, date}');
+    check(!!raw && JSON.parse(raw).v === '2' && !!JSON.parse(raw).date, 'acceptance stored as {version, date}');
     await setupAdmin(A);
     const set = (id, v) => { const e = A.d.getElementById(id); if (e) { e.value = v; e.dispatchEvent(new A.w.Event('input', { bubbles: true })); } };
     set('suUser', 'Mo'); set('suPass', 'good-pass-77'); set('suConf', 'good-pass-77');
@@ -82,7 +82,7 @@ function setupAdmin(B) {
     }
     check(!A.d.body.classList.contains('auth-gate'), 'admin signed in');
     const db = A.w.SPR_DEBUG_GET_DB();
-    check(!!(db.settings && db.settings.noticeAccept && db.settings.noticeAccept.v === '1'), 'acceptance is in the workbook settings (rides in the full backup)');
+    check(!!(db.settings && db.settings.noticeAccept && db.settings.noticeAccept.v === '2'), 'acceptance is in the workbook settings (rides in the full backup)');
     A.w.close();
   }
 
@@ -92,8 +92,8 @@ function setupAdmin(B) {
     const B = boot(pre); await sleep(700);
     check(await settleGate(B), 'an older accepted version re-opens the gate');
     B.w.close();
-    const C = boot(pre.replace('"0"', '"1"')); await sleep(900);
-    check(!C.d.getElementById('notice-read'), 'the current version does not re-ask');
+    const C = boot(pre.replace('"0"', '"2"')); await sleep(900);
+    check(!C.d.getElementById('notice-read'), 'the current version (v2) does not re-ask');
     C.w.close();
   }
 
@@ -105,11 +105,11 @@ function setupAdmin(B) {
     if (open) {
       click(D, open); await sleep(400);
       check(/About SPR and your student data/.test(dlgTxt(D)), 'full notice (EN) shown');
-      check(/Notice v1, 28 Oct 2026/.test(dlgTxt(D)), 'version + date line shown');
+      check(/Notice v2, 02 Nov 2026/.test(dlgTxt(D)), 'version + date line shown');
       const zh = D.d.querySelector('[data-action="notice-lang"][data-lang="zh"]');
       click(D, zh); await sleep(400);
       check(/关于 SPR 和学生数据/.test(dlgTxt(D)), '中文 version of the notice shown');
-      check(/Notice v1, 28 Oct 2026/.test(dlgTxt(D)), 'version line survives the toggle');
+      check(/Notice v2, 02 Nov 2026/.test(dlgTxt(D)), 'version line survives the toggle');
     }
     D.w.close();
   }

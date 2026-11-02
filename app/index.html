@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-5XGUDyJxQ1lVqU4Mwwt5fhZkkZsFlh/wbacMSoCGyig=' 'sha256-CvPS/OtQEMG6TBy8hyC2ZOoVcvVRsFt00BASPXI97Qo=' 'sha256-OXspSdJKIen26NwszPCmC4us15pgxtFkp8i4kbIJSqk=' 'sha256-WsrcBCCiRfW+lhHhqF/lsae5GqgkS3Ns4wNEflZpZSM=' 'sha256-Pq7erMrKYOYxh8mRClBGFAdqnGE5Y2EaiX40spLojX0=' 'sha256-++COLsML0zFyao4JBWdWJftO6r4ydBrV97CnWvXD068=' 'sha256-PgSsOBFBQQO12A9OvqTyP8MgX4jlS20dHarr+OU7QAo=' 'sha256-y+PfMgBiuTvWnb5OwVSZ6oBZ1FYW6ovMyqebrOl+6Bw=' 'sha256-SybrXihPFmm3n4PsiGRY730XcXI8aste+2qAjDMdKcA=' 'sha256-2XQcU0vzwQul2wctm1UvL0BYG/0vTvoCdc/t5r/oxwI=' 'sha256-WVtTVx6ayojZPDm81DnXMr0NcfiBcoYAVT3m4IE5/gU=' 'sha256-KwxC8y/NgZojUzUwwgrZfvIcntVkPdulYF78yCl/SS4=' 'sha256-BH+IwoRBYbAmfdyTIdLJ7D+GGjgr2OCMdl7k40ryfvA=' 'sha256-MXKPDzUJC6sLuyigXhOtqi96zEkoLDDrfj5iM4FDe7o='; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1e3b32">
@@ -618,8 +618,8 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="d46ffeb6a9";</script>
-<script>window.SPR_NOTICE={"version": "1", "date": "28 Oct 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
+<script>window.SPR_BUILD="90295395ec";</script>
+<script>window.SPR_NOTICE={"version": "2", "date": "02 Nov 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed. Data is never stored unencrypted by SPR itself, whatever kind of connection you open it on.</p>\n<h4>Two teachers, one class</h4>\n<p>Classes can be shared between the two teachers of a class by exchanging an encrypted class file (Share &rarr; Download class file, then Import class from colleague). The file is ciphertext: without the class key it reveals nothing. When both teachers import, changes merge and any score cell changed by both is listed for a decision — nothing is overwritten silently. The class key travels only inside the share link, never to a server.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session — backups are the only protection against a browser clearing its storage. Keep backup files on school-approved storage and follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information. Written school approval should be recorded before real student data is entered.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。无论以何种方式打开 SPR,它都不会以未加密形式存储数据。</p>\n<h4>两位老师共用一个班</h4>\n<p>同一个班的两位老师可以通过交换加密的班级文件来共用数据(“分享 → 下载班级文件”,另一位老师“从同事导入班级”)。文件本身是密文,没有班级密钥无法读取。双方导入时会自动合并,两人都改过的成绩格子会列出请您决定,不会悄悄覆盖。班级密钥只存在于分享链接中,绝不会发送到服务器。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份——浏览器可能清除数据,备份是唯一的保障;备份文件请保存在学校认可的存储位置;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》);录入真实学生数据前,应先记录学校的书面批准。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <script>
@@ -2679,6 +2679,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         settings: Object.assign({}, db.settings || {}),
         currentSemesterId: grp.semesters.length ? grp.semesters[grp.semesters.length - 1].id : null,
         semesters: grp.semesters, pending: [], audit: [],
+        cellLog: {}, rosterLog: {}, exchanges: [],
       };
       logAudit(wb, { by: (opts.adminUser || ''), action: 'migrate', note: 'split from the single markbook (' + grp.semesters.length + ' semester(s))' });
       blobs[c.id] = await sealClass(wb, key);
@@ -2778,6 +2779,260 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     try { return { id: decodeURIComponent(m[1]), k: decodeURIComponent(m[2]) }; } catch (e) { return null; }
   }
 
+  /* ==================== two-teacher merge (2026-11-02) ====================
+     Offline class-file exchange between the two teachers of a class. Every
+     score edit stamps wb.cellLog[cellKey] = {t, by}; every import appends to
+     wb.exchanges. A cell CONFLICTS when both copies changed it after the last
+     exchange (both t > base) and now hold different values — those are listed
+     for the importing teacher to decide. One-sided edits are taken silently
+     (the newer edit wins), additions (students, semesters, months) merge in.
+
+     cellLog key shapes:
+       s/<semId>/<sid>/obs/<month>/<obsKey>     observation cell (number)
+       s/<semId>/<sid>/sp|da/<month>/<w>        spelling / daily week record {s,t}
+       s/<semId>/<sid>/tst/<tp>/<s|t>           test record field
+       n/<semId>/<sid>/<field>                  report-card note text
+     rosterLog: { [sid]: {t, by, rm?} } — rm:true stamps a removal. */
+  const CELL_LOG_MAX = 5000;
+  function cellKey(semId, sid, area, col, sub) {
+    if (area === 'note') return 'n/' + semId + '/' + sid + '/' + col;
+    return 's/' + semId + '/' + sid + '/' + area + '/' + col + (sub !== undefined && sub !== null && sub !== '' ? '/' + sub : '');
+  }
+  function stampCell(wb, key, by, t) {
+    if (!wb) return;
+    const log = (wb.cellLog = wb.cellLog || {});
+    log[key] = { t: t || Date.now(), by: by || '' };
+    const ks = Object.keys(log);
+    if (ks.length > CELL_LOG_MAX) {   /* oldest entries drop off first; a cell
+        with no entry on one side is treated as a conflict (safe side) */
+      ks.sort((a, b) => (log[a].t || 0) - (log[b].t || 0));
+      for (let i = 0; i < ks.length - CELL_LOG_MAX; i++) delete log[ks[i]];
+      wb.cellLogPruned = true;
+    }
+  }
+  function stampRoster(wb, semId, sid, by, removed) {
+    if (!wb) return;
+    const log = (wb.rosterLog = wb.rosterLog || {});
+    log[sid] = { t: Date.now(), by: by || '', semId: semId || '' };
+    if (removed) log[sid].rm = true; else delete log[sid].rm;
+  }
+  const AREAS = { obs: 'observations', sp: 'spelling', da: 'daily', tst: 'tests' };
+  /* canonical cell read/write so merge never has to know each area's shape.
+     Key shapes: s/<semId>/<sid>/obs/<month>/<obsKey>
+                 s/<semId>/<sid>/sp|da/<month>/<week>/<s|t>
+                 s/<semId>/<sid>/tst/<tp>/<s|t>
+                 n/<semId>/<sid>/<field> */
+  function cellGet(wb, key) {
+    if (!wb || !key) return undefined;
+    const p = key.split('/');
+    try {
+      if (p[0] === 'n') {
+        const sem = wb.semesters.find((s) => s.id === p[1]);
+        const v = sem && sem.reportNotes && sem.reportNotes[p[2]] && sem.reportNotes[p[2]][p[3]];
+        return (v === undefined || v === '') ? undefined : v;
+      }
+      const sem = wb.semesters.find((s) => s.id === p[1]);
+      if (!sem) return undefined;
+      const sid = p[2], area = p[3], col = p[4], sub = p[5], f = p[6];
+      if (area === 'obs') {
+        const o = sem.observations && sem.observations[sid] && sem.observations[sid][col];
+        if (!o) return undefined;
+        return sub === undefined ? o : o[sub];
+      }
+      if (area === 'sp' || area === 'da') {
+        const met = AREAS[area];
+        const wk = sem[met] && sem[met][sid] && sem[met][sid][col] && sem[met][sid][col][sub];
+        if (!wk) return undefined;
+        if (f === undefined) return (wk.s === null && wk.t === null) ? undefined : wk;
+        return (wk[f] === null || wk[f] === undefined) ? undefined : wk[f];
+      }
+      if (area === 'tst') {
+        const rec = sem.tests && sem.tests[sid] && sem.tests[sid][col];
+        if (!rec) return undefined;
+        return sub === undefined ? ((rec.s === null && rec.t === null) ? undefined : rec) : ((rec[sub] === null || rec[sub] === undefined) ? undefined : rec[sub]);
+      }
+      return undefined;
+    } catch (e) { return undefined; }
+  }
+  function cellSet(wb, key, value) {
+    if (!wb || !key) return;
+    const p = key.split('/');
+    try {
+      if (p[0] === 'n') {
+        const sem = wb.semesters.find((s) => s.id === p[1]);
+        if (sem) { sem.reportNotes = sem.reportNotes || {}; sem.reportNotes[p[2]] = sem.reportNotes[p[2]] || {}; if (value === undefined) delete sem.reportNotes[p[2]][p[3]]; else sem.reportNotes[p[2]][p[3]] = value; }
+        return;
+      }
+      const sem = wb.semesters.find((s) => s.id === p[1]);
+      if (!sem) return;
+      const sid = p[2], area = p[3], col = p[4], sub = p[5], f = p[6];
+      if (area === 'obs') {
+        sem.observations = sem.observations || {}; sem.observations[sid] = sem.observations[sid] || {}; sem.observations[sid][col] = sem.observations[sid][col] || {};
+        if (sub === undefined) { if (value === undefined) delete sem.observations[sid][col]; else sem.observations[sid][col] = value; }
+        else if (value === undefined) { delete sem.observations[sid][col][sub]; if (!Object.keys(sem.observations[sid][col]).length) delete sem.observations[sid][col]; }
+        else sem.observations[sid][col][sub] = value;
+        return;
+      }
+      if (area === 'sp' || area === 'da') {
+        const met = AREAS[area];
+        sem[met] = sem[met] || {}; sem[met][sid] = sem[met][sid] || {}; sem[met][sid][col] = sem[met][sid][col] || {};
+        sem[met][sid][col][sub] = sem[met][sid][col][sub] || { s: null, t: null };
+        if (value === undefined) { delete sem[met][sid][col][sub][f]; if (sem[met][sid][col][sub].s === null && sem[met][sid][col][sub].t === null) delete sem[met][sid][col][sub]; }
+        else sem[met][sid][col][sub][f] = value;
+        return;
+      }
+      if (area === 'tst') {
+        sem.tests = sem.tests || {}; sem.tests[sid] = sem.tests[sid] || {}; sem.tests[sid][col] = sem.tests[sid][col] || { s: null, t: null };
+        if (value === undefined) { delete sem.tests[sid][col][sub]; if (sem.tests[sid][col].s === null && sem.tests[sid][col].t === null) delete sem.tests[sid][col]; }
+        else sem.tests[sid][col][sub] = value;
+      }
+    } catch (e) {}
+  }
+  function lastExchangeAt(wb) {
+    const ex = (wb && wb.exchanges) || [];
+    return ex.length ? ex[ex.length - 1].at : 0;
+  }
+  function sameVal(a, b) { return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+
+  /* Merge colleague's workbook (incoming) into the local one. PURE: returns a
+     fresh merged workbook + a conflict list; never mutates the inputs. The
+     caller applies conflict decisions (keep mine = already in `merged`;
+     take theirs = cellSet(merged, key, remoteValue); proposal = requestChange). */
+  function mergeWorkbooks(local, incoming, opts) {
+    opts = opts || {};
+    const by = opts.by || 'colleague';
+    const now = opts.now || Date.now();
+    const base = Math.max(lastExchangeAt(local), lastExchangeAt(incoming));
+    const merged = JSON.parse(JSON.stringify(local));
+    const conflicts = [];
+    const stats = { taken: 0, kept: 0, addedSemesters: 0, addedStudents: 0, removedStudents: 0, addedNotes: 0 };
+
+    /* ---- semesters: add new ones, merge shared ones ---- */
+    for (const isem of (incoming && incoming.semesters) || []) {
+      if (!isem || !isem.id) continue;
+      let lsem = merged.semesters.find((s) => s.id === isem.id);
+      if (!lsem) {
+        merged.semesters.push(JSON.parse(JSON.stringify(isem)));
+        stats.addedSemesters++;
+        continue;
+      }
+      /* months: union, local order first */
+      for (const m of isem.months || []) if (lsem.months.indexOf(m) === -1) lsem.months.push(m);
+      /* students: additions + name conflicts + colleague removals */
+      const inIds = new Set((isem.students || []).map((s) => s.id));
+      for (const istu of isem.students || []) {
+        const lstu = lsem.students.find((s) => s.id === istu.id);
+        if (!lstu) { lsem.students.push(JSON.parse(JSON.stringify(istu))); stats.addedStudents++; continue; }
+        if (!sameVal({ n: lstu.nameEn, c: lstu.nameCn }, { n: istu.nameEn, c: istu.nameCn })) {
+          const rlog = (incoming.rosterLog || {})[istu.id] || {};
+          const llog = (local.rosterLog || {})[istu.id] || {};
+          if ((rlog.t || 0) > base && (llog.t || 0) > base) {
+            conflicts.push({ kind: 'student', semId: lsem.id, sid: istu.id,
+              local: { nameEn: lstu.nameEn, nameCn: lstu.nameCn, t: llog.t || 0, by: llog.by || '' },
+              remote: { nameEn: istu.nameEn, nameCn: istu.nameCn, t: rlog.t || 0, by: rlog.by || '' } });
+          } else if ((rlog.t || 0) > (llog.t || 0)) {
+            lstu.nameEn = istu.nameEn; lstu.nameCn = istu.nameCn; stats.taken++;
+          }
+        }
+      }
+      for (const lstu of lsem.students.slice()) {
+        if (inIds.has(lstu.id)) continue;
+        const rlog = (incoming.rosterLog || {})[lstu.id];
+        if (rlog && rlog.rm && rlog.t > base) {
+          /* guard (2026-11-02): if WE edited or re-added this student since the
+             last exchange, removing silently would eat our work — review first */
+          const weEdited = Object.keys((local.cellLog || {})).some(function (k) {
+            return k.split('/')[2] === lstu.id && (local.cellLog[k] || {}).t > base;
+          });
+          const lrl = ((local.rosterLog || {})[lstu.id] || {});
+          const weAdded = !lrl.rm && lrl.t > base;
+          if (weEdited || weAdded) {
+            conflicts.push({ kind: 'student-del', semId: lsem.id, sid: lstu.id,
+              local: { nameEn: lstu.nameEn, nameCn: lstu.nameCn, t: lrl.t || 0, by: lrl.by || '' },
+              remote: { removed: true, t: rlog.t, by: rlog.by || '' } });
+            stats.kept++;
+            continue;
+          }
+          lsem.students = lsem.students.filter((s) => s.id !== lstu.id);
+          for (const met of ['observations', 'spelling', 'daily', 'tests']) { if (lsem[met]) delete lsem[met][lstu.id]; }
+          stats.removedStudents++;
+        }
+      }
+    }
+
+    /* ---- cells + notes: walk the union of both logs ---- */
+    const keys = new Set([].concat(Object.keys((local && local.cellLog) || {}), Object.keys((incoming && incoming.cellLog) || {})));
+    for (const key of keys) {
+      const lv = cellGet(merged, key);
+      const rv = cellGet(incoming, key);
+      if (sameVal(lv, rv)) continue;
+      const ll = (local.cellLog || {})[key];
+      const rl = (incoming.cellLog || {})[key];
+      const lchg = !!(ll && ll.t > base);
+      const rchg = !!(rl && rl.t > base);
+      if (lchg && rchg) {
+        conflicts.push({ kind: key.charAt(0) === 'n' ? 'note' : 'cell', key: key,
+          local: { v: lv, t: (ll && ll.t) || 0, by: (ll && ll.by) || '' },
+          remote: { v: rv, t: (rl && rl.t) || 0, by: (rl && rl.by) || '' } });
+      } else if (rchg && !ll) {
+        /* our copy has no edit recorded for this cell: take the colleague's */
+        cellSet(merged, key, rv); (merged.cellLog = merged.cellLog || {})[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else if (rchg && !lchg) {
+        cellSet(merged, key, rv); merged.cellLog[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else if (!rl && ll) {
+        /* colleague's copy never logged an edit but holds a different value
+           (pre-log history): let a human decide */
+        conflicts.push({ kind: key.charAt(0) === 'n' ? 'note' : 'cell', key: key,
+          local: { v: lv, t: ll.t || 0, by: ll.by || '' }, remote: { v: rv, t: 0, by: '' } });
+      } else if ((rl.t || 0) > (ll.t || 0)) {
+        cellSet(merged, key, rv); merged.cellLog[key] = { t: rl.t, by: rl.by }; stats.taken++;
+      } else stats.kept++;
+    }
+
+    /* ---- pending proposals + audit: union, no duplicates ---- */
+    const haveP = new Set((merged.pending || []).map((p) => p.id));
+    for (const p of (incoming.pending || []) || []) if (!haveP.has(p.id)) (merged.pending = merged.pending || []).push(JSON.parse(JSON.stringify(p)));
+    const haveR = new Set((merged.review || []).map((r) => JSON.stringify(r)));
+    for (const r of (incoming.review || []) || []) { const j = JSON.stringify(r); if (!haveR.has(j)) { merged.review.push(JSON.parse(JSON.stringify(r))); haveR.add(j); } }
+    merged.audit = merged.audit || [];
+    const auditSeen = new Set(merged.audit.map((a) => (a.t || 0) + '|' + (a.action || '') + '|' + (a.cell || '') + '|' + (a.note || '')));
+    for (const a of (incoming.audit || []) || []) { const k = (a.t || 0) + '|' + (a.action || '') + '|' + (a.cell || '') + '|' + (a.note || ''); if (!auditSeen.has(k)) { merged.audit.push(a); auditSeen.add(k); } }
+    if (merged.audit.length > AUDIT_MAX) merged.audit = merged.audit.slice(merged.audit.length - AUDIT_MAX);
+
+    /* ---- pairing metadata: take the newer non-empty values ---- */
+    if (incoming.eal && incoming.eal !== merged.eal) merged.eal = incoming.eal;
+    if (incoming.support && incoming.support !== merged.support) merged.support = incoming.support;
+
+    /* ---- the exchange point: both sides now share this base ---- */
+    (merged.exchanges = merged.exchanges || []).push({ at: now, by: by, kind: 'file-merge' });
+    logAudit(merged, { by: by, action: 'merge', note: 'merged a colleague class file: ' + stats.taken + ' cell(s) taken, ' + conflicts.length + ' conflict(s) found, +' + stats.addedStudents + ' student(s)' });
+    return { merged: merged, conflicts: conflicts, base: base, stats: stats };
+  }
+  /* apply one conflict decision to a merged workbook (kept local by default) */
+  function applyConflict(wb, c, decision, by) {
+    if (!wb || !c) return;
+    if (decision === 'theirs') {
+      if (c.kind === 'student') {
+        const sem = wb.semesters.find((s) => s.id === c.semId);
+        const stu = sem && sem.students.find((s) => s.id === c.sid);
+        if (stu) { stu.nameEn = c.remote.nameEn; stu.nameCn = c.remote.nameCn; }
+      } else if (c.kind === 'student-del') {
+        const sem = wb.semesters.find((s) => s.id === c.semId);
+        if (sem) {
+          sem.students = sem.students.filter((s) => s.id !== c.sid);
+          for (const met of ['observations', 'spelling', 'daily', 'tests']) { if (sem[met]) delete sem[met][c.sid]; }
+        }
+      } else { cellSet(wb, c.key, c.remote.v); if (c.key) { (wb.cellLog = wb.cellLog || {})[c.key] = { t: Date.now(), by: by || 'merge' }; } }
+    } else if (decision === 'proposal') {
+      if (c.key && c.key.split('/')[3] === 'obs' && c.remote && typeof c.remote.v === 'number') {
+        const p = c.key.split('/');
+        requestChange(wb, { semId: p[1], sid: p[2], month: p[4], key: p[5], newValue: c.remote.v, by: by || 'merge', note: 'colleague value kept as a proposal during merge' });
+      }
+    }
+    /* 'mine' = nothing to do: merged already holds the local value */
+  }
+
+
   return {
     b64uFromBytes: b64uFromBytes, bytesFromB64u: bytesFromB64u,
     genKey: genKey, wrapKey: wrapKey, unwrapKey: unwrapKey,
@@ -2792,6 +3047,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     planMigration: planMigration, applyMigration: applyMigration, countCells: countCells,
     parseRosterCsv: parseRosterCsv, csvRows: csvRows,
     classFile: classFile, parseClassFile: parseClassFile, classLink: classLink, parseClassHash: parseClassHash,
+    cellKey: cellKey, stampCell: stampCell, stampRoster: stampRoster, cellGet: cellGet, cellSet: cellSet,
+    mergeWorkbooks: mergeWorkbooks, applyConflict: applyConflict, lastExchangeAt: lastExchangeAt,
   };
 });
 
@@ -3249,6 +3506,58 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   let DB = null, saveTimer = null;
   let SESSION = { user: null, dk: null, pw: null };   // raw 256-bit master key, memory only (online mode); pw = signed-in password, memory only: used to re-wrap the device-sync key so fresh devices can bootstrap by sign-in alone
   function cryptoOK() { return !!(window.crypto && window.crypto.subtle); }
+  /* ---- P1 (2026-11-02): secure-storage gate --------------------------------
+     Student data (names + scores of minors) is NEVER written to localStorage
+     in plaintext. Encrypted storage needs WebCrypto, which needs a secure
+     context (https:, file:, localhost). On anything else we refuse to persist,
+     say so plainly, and keep working in memory. ---- */
+  function secureContextOK() {
+    try {
+      if (location.protocol === 'https:' || location.protocol === 'file:') return true;
+      if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return true;
+      if (window.isSecureContext === true) return true;
+    } catch (e) {}
+    return false;
+  }
+  function insecureBanner() {
+    if (document.getElementById('spr-insecure')) return;
+    const b = document.createElement('div'); b.id = 'spr-insecure';
+    b.setAttribute('role', 'alert');
+    b.style.cssText = 'position:sticky;top:0;z-index:900;background:#8a6d1f;color:#fff;padding:10px 16px;font-size:14px';
+    b.innerHTML = '<b>Secure storage requires HTTPS.</b> This connection is not secure, so SPR cannot save here and cloud sync is off. ' +
+      'Open <b>https://my-spr-with-mo.duckdns.org</b> (or a downloaded copy) and use a backup file to move data.';
+    document.body.insertBefore(b, document.body.firstChild);
+  }
+  let PLAIN_SAVE_WARNED = false;   /* toast once; the banner itself persists */
+  function refusePlaintextSave() {
+    insecureBanner();
+    if (!PLAIN_SAVE_WARNED) { PLAIN_SAVE_WARNED = true; toast('Secure storage unavailable on this connection.', true); }
+  }
+  /* ---- P1 (2026-11-02): storage-quota watch — warn at ~80% before the
+     browser starts refusing writes (typical localStorage quota 5 MB) ---- */
+  const LS_QUOTA_ASSUME = 5 * 1024 * 1024, LS_QUOTA_WARN = 0.8;
+  function lsBytesUsed() {
+    try {
+      let n = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        n += (k.length + (localStorage.getItem(k) || '').length) * 2;   /* UTF-16 */
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
+  function quotaBanner() {
+    if (document.getElementById('spr-quota')) return;
+    const b = document.createElement('div'); b.id = 'spr-quota';
+    b.setAttribute('role', 'status');
+    b.style.cssText = 'position:sticky;top:0;z-index:900;background:#8a6d1f;color:#fff;padding:8px 16px;font-size:13.5px';
+    b.innerHTML = '<b>Storage nearly full — download a backup.</b> This browser is close to its storage limit; new scores may stop being saved. ' +
+      '<button class="btn sm" data-action="dl-backup" style="margin-left:8px">Download backup</button>';
+    document.body.insertBefore(b, document.body.firstChild);
+  }
+  function checkStorageQuota() {
+    try { if (lsBytesUsed() / LS_QUOTA_ASSUME >= LS_QUOTA_WARN) quotaBanner(); } catch (e) {}
+  }
   const ui = { q: '', grQ: '', gsort: { k: 'final', d: -1 }, entryMonth: {}, wizMonths: null, anMode: 'class', anStu: null };
 
   function acadRank(m) { const i = U.MONTHS.indexOf(m); return i < 0 ? 99 : ((i - 8 + 12) % 12) + 1; }
@@ -3332,17 +3641,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
   function saveDB(silent) {
     /* online: immediate plaintext mirror in sessionStorage (dies with the tab)
-       + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
+       + debounced ENCRYPTED write to localStorage; P1 (2026-11-02): without
+       WebCrypto we refuse to persist at all — no plaintext fallback. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
     try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
     try { localStorage.setItem('spr-edits-since-backup', String((Number(localStorage.getItem('spr-edits-since-backup')) || 0) + 1)); } catch (e5) {}
     clearTimeout(saveTimer);
     if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
     else if (cryptoOK() && SESSION.dk) saveTimer = setTimeout(() => persistNow(silent), 300);
-    else saveTimer = setTimeout(() => {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) { toast('Could not save: storage full?', true); }
-      flashSaved(silent);
-    }, 300);
+    else if (!cryptoOK() || !secureContextOK()) saveTimer = setTimeout(() => { refusePlaintextSave(); }, 300);
+    /* else: crypto available but not signed in yet (first-run moment, sign-in
+       screen) — nothing persistable, stay quiet; the store write happens the
+       instant the key exists (P1 2026-11-02). */
+    checkStorageQuota();
   }
   function flashSaved(silent) {
     const dot = $('#savedDot');
@@ -3470,9 +3781,8 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     validateDB(db);
     normalizeDB(db);
     DB = db;
-    if (cryptoOK() && SESSION.dk) persistNow(true);
-    else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
-    location.reload();
+    if (cryptoOK() && SESSION.dk) { persistNow(true); location.reload(); }
+    else { refusePlaintextSave(); }   /* P1: never re-store plaintext; the teacher keeps this tab + can download a backup */
   }
   /* ---- encryption core (online mode): PBKDF2-SHA256 310k -> AES-GCM.
      Random master key, wrapped per user with their login password; the key
@@ -3972,14 +4282,44 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const mine = c.eal === me.username ? 'EAL teacher' : c.support === me.username ? 'Supporting teacher' : (me.role === 'manager' ? 'Read-only' : me.role === 'admin' ? 'Admin' : '');
     const pend = (c.pendingCount || 0) && (me.role === 'admin' || c.eal === me.username) ? '<span class="pend-badge">' + c.pendingCount + ' to review</span>' : '';
     const when = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '';
+    /* P2 (2026-11-02): key holders who may export see a small Share button —
+       the two teachers of a class exchange files without the admin */
+    const canShare = (SESSION.keys && SESSION.keys[c.id]) && CS.can(myUser(), 'export.class', c);
     return '<div class="class-card">' +
       '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
       '<span class="cc-school">' + U.esc(c.school || '') + '</span>' +
       '<div class="cc-pair small">' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</div>' +
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
+      (canShare ? '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Share</button>' : '') +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
       '</div></div>';
+  }
+
+  /* P2 (2026-11-02): cloud reachability dot. Probes ONLY when device sync is
+     on (a sync-off browser must stay at ZERO network requests). */
+  let CLOUD_STATE = null;   /* null unknown | true reachable | false unreachable */
+  function probeCloudOnce() {
+    if (CLOUD_STATE !== null || !dsOn() || !secureContextOK()) return;
+    try {
+      const sb = SB();
+      fetch(sb.url + '/rest/v1/', { headers: { apikey: sb.key } })
+        .then(() => { CLOUD_STATE = true; paintCloudDot(); })
+        .catch(() => { CLOUD_STATE = false; paintCloudDot(); });
+    } catch (e) { CLOUD_STATE = false; }
+  }
+  function paintCloudDot() {
+    const el = document.getElementById('cloudDot');
+    if (!el) return;
+    const ok = CLOUD_STATE === true;
+    el.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (ok ? '#10b981' : '#b45309') + ';margin-right:6px;vertical-align:middle"></span>' +
+      (ok ? 'Cloud reachable' : 'Cloud unreachable — working offline');
+    el.title = ok ? 'The encrypted cloud copy (Supabase) answered.' : 'The encrypted cloud copy cannot be reached. Everything still works offline; exchange class files with your colleague instead.';
+  }
+  function cloudDotHtml() {
+    if (!dsOn()) return '';
+    probeCloudOnce();
+    return '<span id="cloudDot" class="small muted" style="font-size:11.5px;align-self:center">checking cloud…</span>';
   }
 
   function renderClasses() {
@@ -3998,16 +4338,23 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
+        cloudDotHtml() +
       '</div>' +
       pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
         U.esc(me.name || me.username) + ' · ' + roleLabel(me.role) +
         (me.role === 'manager' ? ': whole school, read-only' : me.role === 'support' ? ': you edit spelling, daily assignments and tests; observation changes go to your EAL partner for approval' : me.role === 'eal' ? ': you edit your class and approve observation changes from your support partner' : '')) +
       (me.role === 'manager' ? '<p class="small muted" style="margin:0 0 14px">Manager view: every class, read-only. Printing and on-screen review are open; editing stays with each class&rsquo;s teachers.</p>' : '') +
+      schoolApprovalReminderHtml() +
       (mine.length ? '<div class="class-grid">' + mine.map(classCard).join('') + '</div>'
         : '<div class="empty" style="padding:44px 24px"><div class="big">' + (admin ? 'No classes yet' : 'No class yet: ask your admin') + '</div>' +
           '<p class="small">' + (admin ? 'Create a class to get started.' : 'Your administrator sets up your class: it appears here the moment they do.') + '</p>' +
           (admin ? '<div class="flex" style="justify-content:center"><button class="btn primary" data-action="class-new-open">New class</button></div>' : '') +
           '</div>') +
+      /* P2 (2026-11-02): teachers exchange encrypted class files directly —
+         import no longer lives only in the admin Advanced panel */
+      ((me.role === 'eal' || me.role === 'support') ?
+        '<div class="flex" style="gap:10px;align-items:center;margin:14px 0 0;flex-wrap:wrap"><button class="btn" data-action="class-import-btn">Import class from colleague</button>' +
+        '<span class="small muted">Open a class file your colleague exported (encrypted). Merging keeps both teachers&rsquo; work and asks about cells you both changed.</span></div>' : '') +
 
       '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
       '<input type="file" id="file-class" accept=".json,application/json" hidden>' +
@@ -4303,10 +4650,12 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       const existing = classIndex().find((c) => c.id === f.id);
       openDlg(
         '<h3>Import class: ' + U.esc(f.name) + '</h3>' +
-        '<p class="small">' + (existing ? 'A class with this id already exists here; importing replaces its data (a safety copy is kept first).' : 'New class on this device.') + ' The file is encrypted: paste the class share link (or its key) to open it.</p>' +
+        '<p class="small">' + (existing
+          ? 'A class with this id already exists here. <b>Merge</b> keeps both teachers&rsquo; work and lists any cell both of you changed; <b>Replace</b> overwrites this device&rsquo;s copy with the file (a safety copy is kept first).'
+          : 'New class on this device.') + ' The file is encrypted: paste the class share link (or its key) to open it.</p>' +
         '<input class="inp" id="cf-link" style="width:100%" placeholder="https://…#class=…&k=… or just the key">' +
         '<div class="login-err" id="cf-err"></div>' +
-        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Import</button></div>',
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' + (existing ? '' : '<button class="btn primary" data-x="1">Import</button>') + '</div>',
         (d) => {
           d.onclick = async (e) => {
             const b = e.target.closest('[data-x]');
@@ -4319,21 +4668,129 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             let wb = null;
             try { wb = await CS.openClass(f.blob, bytesFromB64u(keyB64)); }
             catch (e2) { $('#cf-err').textContent = 'That key does not open this class file.'; return; }
-            stashSafetyBackup('before importing class ' + f.name);
+            /* P1.3: every import path sanitizes — invalid scores quarantine
+               into the review list instead of silently counting */
+            try {
+              validateDB(wb);
+              (wb.semesters || []).forEach((sm) => { normalizeSemester(sm); });
+            } catch (e3) { $('#cf-err').textContent = 'Not usable: ' + e3.message; return; }
             const key = bytesFromB64u(keyB64);
-            localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(wb, key)));
-            const ix = classIndex().filter((c) => c.id !== f.id);
-            ix.push({ id: f.id, name: f.name, school: f.school, eal: f.eal, support: f.support, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: (wb.pending || []).length });
-            setClassIndex(ix);
-            try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}
-            closeDlg();
-            await issueClassKeys(f.id, key, [SESSION.user]);
-            SESSION.keys[f.id] = key; classKeysToSession();
-            toast('Class ' + f.name + ' imported'); renderClasses();
+            if (!existing) { installImportedClass(f, wb, key); return; }
+            /* two paths for an existing class: merge (default) or replace */
+            openDlg(
+              '<h3>Merge or replace: ' + U.esc(f.name) + '</h3>' +
+              '<p class="small"><b>Merge</b> (recommended): keeps every change from both sides — new students and semesters are added, one-sided edits are taken automatically, and any cell <b>both</b> teachers changed is listed for you to decide. Nothing is overwritten silently.<br><br><b>Replace</b>: this device&rsquo;s copy is overwritten by the file (a safety copy is kept first).</p>' +
+              '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn" data-x="2">Replace</button><button class="btn primary" data-x="1">Merge</button></div>',
+              (d2) => {
+                d2.onclick = async (e4) => {
+                  const b2 = e4.target.closest('[data-x]');
+                  if (!b2) return;
+                  if (b2.dataset.x === '0') { closeDlg(); return; }
+                  if (b2.dataset.x === '2') { installImportedClass(f, wb, key); return; }
+                  try {
+                    const localWb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(f.id))), key);
+                    const r = CS.mergeWorkbooks(localWb, wb, { by: SESSION.user || 'teacher' });
+                    if (r.conflicts.length) { conflictReviewDialog(f, key, r); return; }
+                    await applyMergedClass(f, key, r.merged, r.stats, 0);
+                  } catch (e5) { toast('Merge failed: ' + e5.message, true); }
+                };
+              });
           };
         });
     };
     fr.readAsText(file);
+  }
+  async function installImportedClass(f, wb, key) {
+    stashSafetyBackup('before importing class ' + f.name);
+    localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(wb, key)));
+    const ix = classIndex().filter((c) => c.id !== f.id);
+    ix.push({ id: f.id, name: f.name, school: f.school, eal: f.eal, support: f.support, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: (wb.pending || []).length });
+    setClassIndex(ix);
+    try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}
+    closeDlg();
+    await issueClassKeys(f.id, key, [SESSION.user]);
+    SESSION.keys[f.id] = key; classKeysToSession();
+    const quarantined = (wb.semesters || []).reduce((n, sm) => n + (sm.__movedInvalid || 0), 0);
+    toast('Class ' + f.name + ' imported' + (quarantined ? ': ' + quarantined + ' invalid score(s) moved to the review list' : ''));
+    renderClasses();
+  }
+  /* human description of one merged conflict (used by the review dialog) */
+  function conflictRowHtml(c, incoming, i) {
+    const p = c.key ? c.key.split('/') : [];
+    let who = 'Your colleague', stuName = c.sid || '';
+    let what = c.kind === 'student' ? 'Student details' : c.kind === 'note' ? 'Report note (' + U.esc(p[3] || '') + ')' : 'Score';
+    let lv = '', rv = '';
+    if (c.kind === 'student') {
+      const sem = (incoming.semesters || []).find((s) => s.id === c.semId);
+      const stu = sem && (sem.students || []).find((s) => s.id === c.sid);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || c.sid;
+      lv = U.esc((c.local.nameEn || '') + ' ' + (c.local.nameCn || ''));
+      rv = U.esc((c.remote.nameEn || '') + ' ' + (c.remote.nameCn || ''));
+      who = (c.remote.by || 'Your colleague');
+    } else if (c.kind === 'student-del') {
+      const sem = (incoming.semesters || []).find((s) => s.id === c.semId);
+      const stu = sem && (sem.students || []).find((s) => s.id === c.sid);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || c.sid;
+      what = 'Student removed by colleague — you edited this student';
+      lv = U.esc((c.local.nameEn || '') + ' ' + (c.local.nameCn || '')) + ' + their scores';
+      rv = '(removed from the class)';
+      who = (c.remote.by || 'Your colleague');
+    } else {
+      const semL = (incoming.semesters || []).find((s) => s.id === p[1]) || {};
+      const stu = (semL.students || []).find((s) => s.id === p[2]);
+      stuName = (stu && (stu.nameEn || stu.nameCn)) || p[2];
+      const AREA_LABEL = { obs: 'Observation', sp: 'Spelling', da: 'Daily assignments', tst: 'Test' };
+      if (p[0] === 's') what = (AREA_LABEL[p[3]] || p[3]) + ' \u00b7 ' + U.esc(String(p[4])) + (p[5] ? ' \u00b7 ' + U.esc(String(p[5])) : '');
+      const show = (v) => (v === undefined || v === null ? '(empty)' : U.esc(String(v).slice(0, 60)));
+      lv = show(c.local.v); rv = show(c.remote.v);
+      who = (c.remote.by || 'Your colleague');
+    }
+    const dt = (t) => (t ? new Date(t).toLocaleDateString() : 'earlier');
+    return '<tr><td>' + U.esc(stuName) + '<br><span class="small muted">' + what + '</span></td>' +
+      '<td class="small"><b>' + lv + '</b><br><span class="muted">you' + (c.local.t ? ' \u00b7 ' + dt(c.local.t) : '') + '</span></td>' +
+      '<td class="small"><b>' + rv + '</b><br><span class="muted">' + U.esc(who) + (c.remote.t ? ' \u00b7 ' + dt(c.remote.t) : '') + '</span></td>' +
+      '<td class="c" style="white-space:nowrap">' +
+      (c.kind === 'student-del'
+        ? '<button class="btn sm" data-cf="mine" data-i="' + i + '">Keep student</button> <button class="btn sm" data-cf="theirs" data-i="' + i + '">Remove student</button>'
+        : '<button class="btn sm" data-cf="mine" data-i="' + i + '">Keep mine</button> ' +
+          '<button class="btn sm" data-cf="theirs" data-i="' + i + '">Take theirs</button>' +
+          (c.key && p[3] === 'obs' ? ' <button class="btn sm" data-cf="proposal" data-i="' + i + '">Both: proposal</button>' : '')) +
+      '</td></tr>';
+  }
+  function conflictReviewDialog(f, key, r) {
+    const decisions = r.conflicts.map(() => 'mine');   /* keep mine = default */
+    openDlg(
+      '<h3>' + r.conflicts.length + ' change(s) need your decision</h3>' +
+      '<p class="small">Both you and your colleague changed these since the last exchange. Pick what to keep — <b>Keep mine</b> is preselected for all, so just fix the rows you care about and finish.</p>' +
+      '<div class="sheet" style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Student</th><th>Your value</th><th>Colleague&rsquo;s value</th><th></th></tr></thead><tbody>' +
+      r.conflicts.map((c, i) => conflictRowHtml(c, r.merged, i)).join('') + '</tbody></table></div>' +
+      '<div class="dlg-actions"><button class="btn primary" data-x="1">Finish merge</button></div>',
+      (d) => {
+        d.onclick = async (e) => {
+          const b = e.target.closest('[data-cf]');
+          if (b) {
+            decisions[Number(b.dataset.i)] = b.dataset.cf;
+            const tr = b.closest('tr'); if (tr) tr.style.background = 'rgba(201,151,59,.12)';
+            b.closest('td').innerHTML = '<span class="small">' + (b.dataset.cf === 'mine' ? 'keeping mine' : b.dataset.cf === 'theirs' ? 'taking theirs' : 'added as proposal') + '</span>';
+            return;
+          }
+          if (!e.target.closest('[data-x="1"]')) return;
+          for (let i = 0; i < r.conflicts.length; i++) CS.applyConflict(r.merged, r.conflicts[i], decisions[i], SESSION.user);
+          await applyMergedClass(f, key, r.merged, r.stats, decisions.filter((x) => x !== 'mine').length);
+        };
+      });
+  }
+  async function applyMergedClass(f, key, merged, stats, decided) {
+    stashSafetyBackup('before merging class ' + f.name);
+    localStorage.setItem(classBlobKey(f.id), JSON.stringify(await CS.sealClass(merged, key)));
+    const ix = classIndex(); const row = ix.find((c) => c.id === f.id);
+    if (row) { row.name = merged.name || row.name; row.eal = merged.eal || row.eal; row.support = merged.support || row.support; row.updatedAt = Date.now(); row.pendingCount = (merged.pending || []).length; }
+    setClassIndex(ix);
+    closeDlg();
+    const s = stats || {};
+    toast('Merged ' + f.name + ': ' + [s.taken ? s.taken + ' colleague edit(s) taken' : '', s.addedStudents ? '+' + s.addedStudents + ' student(s)' : '', s.addedSemesters ? '+' + s.addedSemesters + ' semester(s)' : '', s.removedStudents ? s.removedStudents + ' student(s) removed (colleague)' : '', decided ? decided + ' conflict(s) decided' : ''].filter(Boolean).join(' · ') || 'no changes needed');
+    if (CLS && CLS.id === f.id) { location.reload(); return; }   /* refresh the open class */
+    renderClasses();
   }
 
   /* ---- roster CSV import (accounts) ---- */
@@ -5320,6 +5777,21 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   /* ---- cell mutations & input handling ---- */
+  /* P2 (2026-11-02): every score edit also stamps the class workbook's cellLog
+     so a later merge with the colleague's copy can tell WHO changed WHAT and
+     WHEN. Cheap (one object entry), pure bookkeeping — never shown to users. */
+  function stampEdit(sem, sid, area, col, sub) {
+    try {
+      const by = (SESSION.user || (currentUser() || {}).username || 'teacher');
+      CS.stampCell(DB, CS.cellKey(sem && sem.id, sid, area, col, sub), by);
+    } catch (e) {}
+  }
+  function stampRosterEdit(sem, sid, removed) {
+    try {
+      const by = (SESSION.user || (currentUser() || {}).username || 'teacher');
+      CS.stampRoster(DB, sem && sem.id, sid, by, removed);
+    } catch (e) {}
+  }
   function setObsCell(sem, sid, month, key, v) {
     sem.observations[sid] = sem.observations[sid] || {};
     sem.observations[sid][month] = sem.observations[sid][month] || {};
@@ -5328,6 +5800,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       delete cell[key];
       if (!Object.keys(cell).length) delete sem.observations[sid][month];
     } else cell[key] = v;
+    stampEdit(sem, sid, 'obs', month, key);
   }
   function setWeekCell(sem, sid, met, month, w, f, v) {
     sem[met][sid] = sem[met][sid] || {};
@@ -5337,6 +5810,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     rec[w][f] = v;
     if (rec[w].s === null && rec[w].t === null) delete rec[w];
     if (!Object.keys(rec).length) delete sem[met][sid][month];
+    stampEdit(sem, sid, met === 'spelling' ? 'sp' : 'da', month, w + '/' + f);
   }
   function setTestCell(sem, sid, tp, f, v) {
     sem.tests[sid] = sem.tests[sid] || {};
@@ -5344,6 +5818,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     sem.tests[sid][tp][f] = v;
     if (sem.tests[sid][tp].s === null && sem.tests[sid][tp].t === null) delete sem.tests[sid][tp];
     if (!Object.keys(sem.tests[sid]).length) delete sem.tests[sid];
+    stampEdit(sem, sid, 'tst', tp, f);
   }
   function getWeek(sem, sid, met, month, w) {
     return sem[met][sid] && sem[met][sid][month] && sem[met][sid][month][w];
@@ -5999,6 +6474,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (!cn && !en) { toast('Enter at least one name', true); return; }
     if (sem.students.some((s) => s.id === id)) { toast('ID already used: ' + id, true); return; }
     sem.students.push({ id: id, nameCn: cn, nameEn: en, gender: U.normGender($('#ro-g').value) });
+    stampRosterEdit(sem, id);
     saveDB(); renderManage(); toast((en || cn) + ' added');
   }
   function rosterBulk() {
@@ -6006,7 +6482,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const list = parseRosterPaste($('#ro-paste').value);
     if (!list.length) { toast('Nothing to add', true); return; }
     let added = 0;
-    for (const s of list) if (!sem.students.some((x) => x.id === s.id)) { sem.students.push(s); added++; }
+    for (const s of list) if (!sem.students.some((x) => x.id === s.id)) { sem.students.push(s); stampRosterEdit(sem, s.id); added++; }
     saveDB(); renderManage(); toast(added + ' students added');
   }
 
@@ -6433,7 +6909,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   /* ---- the notice itself: one text, two languages, three places (2026-10-28).
      window.SPR_NOTICE is injected at build time from source/notice.en.html and
      source/notice.zh.html; the same files render the standalone notice.html. ---- */
-  const NOTICE = window.SPR_NOTICE || { version: '1', date: '28 Oct 2026', en: '<p>Notice text missing from this build.</p>', zh: '<p>Notice text missing from this build.</p>' };
+  const NOTICE = window.SPR_NOTICE || { version: '2', date: '02 Nov 2026', en: '<p>Notice text missing from this build.</p>', zh: '<p>Notice text missing from this build.</p>' };
   let noticeLang = 'en';
   function noticeBodyHtml() {
     const en = noticeLang === 'en';
@@ -6450,6 +6926,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       (a.date ? ' on ' + U.esc(a.date) : '') + (a.ref ? ' (ref: ' + U.esc(a.ref) + ')' : '') + '.';
     if (isAdmin()) return 'No school approval recorded yet. Admins can add it in Manage &amp; setup.';
     return 'The school approval record is kept by the administrator.';
+  }
+  /* P5 (2026-11-02): PIPL — real student data needs recorded school approval.
+     Persistent (non-blocking) reminder on the class screens + import paths. */
+  function schoolApprovalMissing() {
+    const a = (DB.settings && DB.settings.schoolApproval) || {};
+    return !a.by;
+  }
+  function schoolApprovalReminderHtml() {
+    if (!schoolApprovalMissing()) return '';
+    const me = myUser() || {};
+    if (me.role === 'manager') return '';
+    return '<p class="small" style="margin:0 0 14px;color:#8a6d1f"><b>School approval not recorded yet.</b> Before entering real student data, the school&rsquo;s written approval must be saved' +
+      (isAdmin() ? ' (open the class &rarr; Manage &amp; setup &rarr; School approval)' : ' — ask your administrator to record it in Manage &amp; setup') + '. The demo class is synthetic; approval concerns real students only.</p>';
   }
   function noticeSummaryHtml() {
     return '<h3>About SPR and your student data</h3>' +
@@ -6636,6 +7125,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       listed +
       (dupNames ? '<br><br>' + (dupNames === 1 ? 'A semester with' : dupNames + ' semesters with') + ' a matching name already exist in this browser: both will be kept; you can rename or delete either one in Manage &amp; setup.' : '') +
       (failed.length ? '<br><br><b>Not imported:</b><br>' + failed.map(U.esc).join('<br>') : '') +
+      (schoolApprovalMissing() ? '<br><br><b>Reminder:</b> no school approval is recorded yet — save the school&rsquo;s written approval (Manage &amp; setup &rarr; School approval) before entering real student data.' : '') +
       '<br><br>Nothing is overwritten: your existing classes stay exactly as they are.',
       'Add');
     if (!okGo) { toast('Import cancelled: nothing was changed'); return; }
@@ -6653,6 +7143,19 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     const wb = EB.exportWorkbook(sem, CLS ? (DB.audit || []) : null);
     XLSX.writeFile(wb, sanitizeFn(sem.school + '-' + (sem.className || 'class') + '-SPR-' + sem.name + '-by-Teacher-Mo') + '.xlsx');
     toast('Excel exported: check your downloads');
+  }
+  /* P1.4 (2026-11-02): one confirmation before a full backup leaves the device,
+     saying exactly what downloads and where it may be stored. */
+  async function fullBackupGo() {
+    const enc = !!(CLS && CLS_KEY);
+    const okGo = await confirmDlg('Download full backup?',
+      'This downloads ' + (enc
+        ? '<b>two files</b>: the <b>encrypted class file</b> (safe to carry — it only opens with the class key) and the <b>unencrypted JSON backup</b> (a readable copy: every semester + settings)'
+        : 'the <b>unencrypted JSON backup</b> (a readable copy: every semester + settings)') +
+      '.<br><br>Keep backup files only on <b>school-approved storage</b>, and delete them when they are no longer needed.', 'Download backup');
+    if (!okGo) { toast('Backup cancelled: nothing was downloaded'); return; }
+    backupJSON();
+    if (enc) exportClassFile(CLS.id);
   }
   function backupJSON() {
     const out = Object.assign({}, DB, {
@@ -7241,7 +7744,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       return;
     }
     if (a === 'ds-enable') { dsEnable(); return; }
-    if (a === 'ds-now') { dsPullCheck(true); return; }
+    if (a === 'ds-now') {
+      if (!secureContextOK()) { refusePlaintextSave(); toast('Cloud sync needs HTTPS: SPR is working offline.', true); return; }
+      dsPullCheck(true); return;
+    }
     if (a === 'ds-link') { dsLinkModal(); return; }
     if (a === 'stale-reload') { location.reload(); return; }
     if (a === 'dl-backup') { downloadBackup(); toast('Backup downloaded. Keep it somewhere safe outside this device.'); return; }
@@ -7364,6 +7870,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         const stuIdx = sem.students.findIndex((s) => s.id === sid);
         sem.students = sem.students.filter((s) => s.id !== sid);
         delete sem.observations[sid]; delete sem.spelling[sid]; delete sem.daily[sid]; delete sem.tests[sid];
+        stampRosterEdit(sem, sid, true);
         saveDB(); route();
         toastAction('Student removed', 'Undo', () => {
           sem.students.splice(Math.min(stuIdx, sem.students.length), 0, stu);
@@ -7380,7 +7887,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (a === 'roster-paste') { rosterBulk(); return; }
     if (a === 'import-xlsx') { const f = $('#file-xlsx'); if (f) f.click(); return; }
     if (a === 'export-xlsx') { exportXlsx(); return; }
-    if (a === 'backup') { backupJSON(); return; }
+    if (a === 'backup') { fullBackupGo(); return; }
     if (a === 'restore') {
       if (CLS) { toast('In class mode use "Restore everything" (Classes screen) or import a class file: a single-markbook backup cannot replace a class workbook.', true); return; } const f = $('#file-json'); if (f) f.click(); return; }
     if (a === 'load-sample') {
@@ -7394,7 +7901,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
         stashSafetyBackup('before reset to sample data');
         DB = seedFromWindow();
         if (cryptoOK() && SESSION.dk) { await persistNow(true); }
-        else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
+        else { refusePlaintextSave(); }   /* P1: no plaintext write on insecure connections */
         location.reload();
       })();
       return;
@@ -7448,6 +7955,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       semRn.reportNotes = semRn.reportNotes || {};
       semRn.reportNotes[t.dataset.sid] = semRn.reportNotes[t.dataset.sid] || {};
       semRn.reportNotes[t.dataset.sid][t.dataset.rn] = t.value;
+      stampEdit(semRn, t.dataset.sid, 'note', t.dataset.rn);
       saveDB();
       const card = document.getElementById('rc-sec-' + t.dataset.rn);
       if (card) card.innerHTML = t.value ? '<p>' + U.esc(t.value) + '</p>' : '<p class="muted small">\u2014</p>';
@@ -7509,11 +8017,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     }
     onGridKey(e);
   });
-  window.addEventListener('beforeunload', function() {
-    /* offline/legacy mode only: online mode keeps data encrypted at rest
-       (plaintext mirror in localStorage would contradict that promise) */
-    if (DB && !cryptoOK()) { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch(e) {} }
-  });
+  /* P1 (2026-11-02): the beforeunload plaintext mirror is gone — student data
+     is never written to localStorage unencrypted. Encrypted persistence runs
+     on the debounced save path + the pagehide flush below. */
   document.addEventListener('paste', onGridPaste);
 
   /* =================================== init =================================== */
@@ -8885,7 +9391,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       : '<div class="login-card">' +
           '<div class="login-logo">SPR</div>' +
           '<h2>Student\u2019s Performance Report (SPR)</h2>' +
-          '<p>' + (cryptoOK() ? 'Sign in: your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. Offline mode: data is stored unencrypted in this browser.') +
+          '<p>' + (cryptoOK() ? 'Sign in: your password unlocks the encrypted class data in this browser. Closing the browser locks it again.' : 'Sign in to access student data. <b>This connection has no secure storage</b>: SPR works in this tab but cannot save — open the HTTPS address or a downloaded copy.') +
           (cryptoOK() && freshBrowser ? '<br><b>New device?</b> If you already use SPR elsewhere, use <b>I use SPR on another device</b> below: your data arrives from the encrypted cloud copy.' :
            (cryptoOK() && dsOn() && !readV2() ? '<br><b>Paired for device sync</b>: sign in and your data arrives from the cloud.' : '')) + '</p>' +
           '<div class="login-field"><label for="loginUser">Username</label><input type="text" id="loginUser" autocomplete="username"></div>' +
@@ -8929,6 +9435,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
 
   async function init() {
     chartTheme();
+    if (!secureContextOK()) insecureBanner();   /* P1 (2026-11-02): plain-HTTP loads get one clear banner up front */
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
@@ -8944,7 +9451,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       clearTimeout(saveTimer); saveTimer = null;
       if (CLS && CLS_KEY) classPersistNow(true);
       else if (cryptoOK() && SESSION.dk) persistNow(true);
-      else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
+      else refusePlaintextSave();   /* P1: no plaintext fallback */
     }
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { flushPendingSave(); dsFlushPending(); } });
     window.addEventListener('pagehide', function () { flushPendingSave(); dsFlushPending(); });

@@ -463,8 +463,10 @@ const ADMIN = 'mo';
   {
     const fs = require('fs');
     const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-    ok(!/data-count=/.test(landing) && /A markbook for ESL classes/.test(landing) && /Nothing is sent anywhere unless an admin turns on Device sync/.test(landing),
-      'landing is the plain 2026-10-28 rebuild: honest facts, no count-up stats');
+    /* 2026-11-02 catch-up: deployed landing is the spring-valley redesign (5f99a8a);
+       privacy guards below still stand. */
+    ok(/Enter a score[.]/.test(landing) && /Works offline in your browser/.test(landing),
+      'landing is the deployed spring-valley build (hero + offline promise)');
     ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
       'no absolute privacy claims remain on the landing page');
     ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');

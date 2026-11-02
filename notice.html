@@ -27,11 +27,13 @@ button.on{background:#1e3b32;border-color:#1e3b32;color:#fff}
 <h4>Whose data this is</h4>
 <p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>
 <h4>Where data is kept</h4>
-<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>
+<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed. Data is never stored unencrypted by SPR itself, whatever kind of connection you open it on.</p>
+<h4>Two teachers, one class</h4>
+<p>Classes can be shared between the two teachers of a class by exchanging an encrypted class file (Share &rarr; Download class file, then Import class from colleague). The file is ciphertext: without the class key it reveals nothing. When both teachers import, changes merge and any score cell changed by both is listed for a decision — nothing is overwritten silently. The class key travels only inside the share link, never to a server.</p>
 <h4>When data leaves the device</h4>
 <p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>
 <h4>Your part</h4>
-<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>
+<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session — backups are the only protection against a browser clearing its storage. Keep backup files on school-approved storage and follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information. Written school approval should be recorded before real student data is entered.</p>
 <h4>No warranty</h4>
 <p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>
 <h4>Questions or problems</h4>
@@ -41,16 +43,18 @@ button.on{background:#1e3b32;border-color:#1e3b32;color:#fff}
 <h4>数据归属</h4>
 <p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>
 <h4>数据存放位置</h4>
-<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>
+<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。无论以何种方式打开 SPR,它都不会以未加密形式存储数据。</p>
+<h4>两位老师共用一个班</h4>
+<p>同一个班的两位老师可以通过交换加密的班级文件来共用数据(“分享 → 下载班级文件”,另一位老师“从同事导入班级”)。文件本身是密文,没有班级密钥无法读取。双方导入时会自动合并,两人都改过的成绩格子会列出请您决定,不会悄悄覆盖。班级密钥只存在于分享链接中,绝不会发送到服务器。</p>
 <h4>数据何时离开设备</h4>
 <p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>
 <h4>您的责任</h4>
-<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>
+<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份——浏览器可能清除数据,备份是唯一的保障;备份文件请保存在学校认可的存储位置;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》);录入真实学生数据前,应先记录学校的书面批准。</p>
 <h4>免责声明</h4>
 <p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>
 <h4>问题反馈</h4>
 <p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p></div>
-<p class="meta">Notice v1, 28 Oct 2026.</p>
+<p class="meta">Notice v2, 02 Nov 2026.</p>
 <p class="meta"><a href="app/">Open the app</a></p>
 </div>
 <script>

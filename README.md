@@ -58,6 +58,19 @@ accounts, pairing and migration. Agreed-rule control between colleagues —
 see `docs/CLASS-MODE.md` for the full role matrix, the key model, the audit
 log, the migration wizard and the honest-security notes.
 
+## Two-teacher class exchange (offline, no server)
+
+EAL and CET can keep one class current from two different computers without
+any cloud being reachable: the class home card offers **Share class** (share
+link + QR + encrypted `.sprclass.json` download) and **Import class file**.
+The file is sealed with the class key; the key travels only inside the share
+link fragment (`#k=…`) — never to a server. Importing an existing class
+**merges** instead of overwriting: one-sided edits are taken, and any cell
+both teachers changed since the last exchange is listed for review
+(keep mine / take theirs / keep as proposal) — no silent last-write-wins.
+See `GOVERNANCE.md` for backup cadence, restore drill, retention and the
+PIPL (minors' data) notes.
+
 ## Development & tests
 
 Everything runs from a clean clone — no build tools beyond Python 3 and Node:

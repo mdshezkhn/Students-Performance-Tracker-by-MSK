@@ -75,6 +75,23 @@ assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed inje
 for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__CLASSSTORE__', '__LIVE__', '__APP__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
+# ---------- CSP: hash every inline <script> (no 'unsafe-inline' for scripts) ----
+# P4 (2026-11-02): the app is a single self-contained file, so instead of
+# externalising scripts we pin each inline script with its exact sha256.
+# style-src keeps 'unsafe-inline': the app sets style="" attributes and the
+# live board injects a <style> element at runtime — both are part of the
+# shipped design and cannot be pre-hashed. Everything else stays locked down.
+# NOTE: hashing MUST run after every other app_html mutation (SW build marker,
+# notice injection) or the hashes go stale and browsers block the scripts.
+import base64 as _b64
+def _script_hashes(html):
+    hs = []
+    for m in _re2.finditer(r'<script(?![^>]*src=)[^>]*>(.*?)</script>', html, flags=_re2.S):
+        hs.append("'sha256-" + _b64.b64encode(hashlib.sha256(m.group(1).encode('utf-8')).digest()).decode('ascii') + "'")
+    assert hs, 'no inline scripts found to hash'
+    return hs
+import re as _re2
+
 # ---------- service worker: version = content hash of the app HTML ----------
 sw_version = hashlib.sha256(app_html.encode('utf-8')).hexdigest()[:10]
 sw = read(SRC / 'sw-template.js').replace('__SW_VERSION__', sw_version, 1)
@@ -87,7 +104,7 @@ assert '__SPR_BUILD__' not in app_html, 'build marker unreplaced'
 # They are (a) injected into the app as window.SPR_NOTICE and (b) rendered into
 # the standalone notice.html linked from the landing footer.
 import json as _json
-NOTICE_VERSION, NOTICE_DATE = '1', '28 Oct 2026'
+NOTICE_VERSION, NOTICE_DATE = '2', '02 Nov 2026'
 def _notice(src):
     t = read(SRC / src)
     # strip the leading build comment (lines starting with <!-- up to -->)
@@ -100,6 +117,15 @@ notices_js = _json.dumps(notices, ensure_ascii=False)
 app_html = app_html.replace('window.SPR_NOTICE=/*__NOTICES__*/null;',
                             'window.SPR_NOTICE=' + notices_js + ';', 1)
 assert '__NOTICES__' not in app_html, 'notice injection failed'
+
+# ---------- app CSP: computed on the FINAL html (all mutations done) ----------
+APP_CSP = ("default-src 'none'; script-src " + ' '.join(_script_hashes(app_html)) +
+           "; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; "
+           "connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'")
+app_html = app_html.replace('__APP_CSP__', APP_CSP, 1)
+assert '__APP_CSP__' not in app_html, 'CSP replacement failed'
+assert 'unsafe-inline' not in APP_CSP.split('script-src')[1].split(';')[0], 'script-src must stay hash-only'
+
 
 def notice_page_html():
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
@@ -136,6 +162,11 @@ landing = read(SRC / 'landing.template.html')
 landing = landing.replace('/*__FONTS__*/', read(SRC / 'landing-fonts.css'))
 landing = landing.replace('/*__LANDING_CSS__*/', read(SRC / 'landing.css'))
 assert '__FONTS__' not in landing and '__LANDING_CSS__' not in landing, 'landing injection failed'
+# P4: same script-hash pinning for the landing (external vendor scripts are
+# covered by 'self'; each inline script gets its own sha256)
+assert '__LANDING_SCRIPT_HASHES__' in landing, 'landing CSP placeholder missing'
+landing = landing.replace('__LANDING_SCRIPT_HASHES__', ' '.join(_script_hashes(landing)), 1)
+assert '__LANDING_SCRIPT_HASHES__' not in landing, 'landing CSP replacement failed'
 
 # ---------- write dist + deploy ----------
 if DIST.exists(): shutil.rmtree(DIST)

@@ -11,3 +11,5 @@ tests/_*.sh
 *.bundle
 __pycache__/
 qa-shots/
+spr-baseline/
+qa/visual-diff/
