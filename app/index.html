@@ -708,7 +708,7 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="de3604b483";</script>
+<script>window.SPR_BUILD="a6c8356ae4";</script>
 <script>window.SPR_NOTICE={"version": "1", "date": "28 Oct 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
@@ -2630,10 +2630,13 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     if (action === 'manage.accounts' || action === 'manage.classes' || action === 'migrate' || action === 'export.all') return false;
     if (r === 'manager') return action === 'view' || action === 'audit.view';
     if (!isClassOf(user, cls)) return false;
-    if (r === 'eal') {
+    /* round9: a plain teacher's rights come from the CLASS assignment
+       (eal vs support), not from the account role — one person can be EAL
+       in one class and Supporting in another. Admin/manager decided above. */
+    if (cls.eal === user.username) {
       return ['view', 'edit.obs', 'edit.scores', 'edit.roster', 'review', 'export.class', 'audit.view'].indexOf(action) !== -1;
     }
-    if (r === 'support') {
+    if (cls.support === user.username) {
       return ['view', 'edit.scores', 'request.obs', 'audit.view'].indexOf(action) !== -1;
     }
     return false;
@@ -2786,6 +2789,93 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     return { mode: 'class', index: index, blobs: blobs, keyrings: keyrings, newPasswords: newPasswords };
   }
 
+  /* ---------------- owner's sheet CSV (round9) ----------------
+     One row per (person, partner): class_or_grade may list several classes.
+     class_role (eal | supporting) is optional; when missing the admin picks
+     per pair in the preview — this parser NEVER guesses. */
+  const CLASS_ROLE_ALIASES = [[/^eal/i, 'eal'], [/support|^cet/i, 'support']];
+  function normClassRole(t) {
+    const x = String(t || '').trim();
+    for (const [re, v] of CLASS_ROLE_ALIASES) if (re.test(x)) return v;
+    return null;
+  }
+  function parseSheetCsv(text) {
+    const rows = csvRows(String(text || '').replace(/^﻿/, ''));
+    const errors = [], warnings = [];
+    if (!rows.length) return { users: [], classes: [], errors: ['empty file'], warnings: warnings, unpicked: [] };
+    const head = rows[0].map((h) => h.trim().toLowerCase());
+    const col = (n) => head.indexOf(n);
+    const iU = col('username'), iD = col('display_name'), iR = col('role'), iC = col('class_or_grade'), iS = col('school'), iP = col('paired_with'), iCR = col('class_role'), iSt = col('status');
+    if (iU < 0 || iR < 0) return { users: [], classes: [], errors: ['need at least "username" and "role" columns'], warnings: warnings, unpicked: [] };
+    const users = new Map();          // username -> {username, display_name, role, classes:Set, partners:Set}
+    const clsMap = new Map();         // class name -> Map(username -> class_role|null)
+    const clsSchool = new Map();
+    for (let r = 1; r < rows.length; r++) {
+      const c = rows[r];
+      const un = String(c[iU] || '').trim().toLowerCase();
+      const roleRaw = String(c[iR] || '').trim();
+      if (!un) { if (rows[r].some((x) => String(x || '').trim())) errors.push('row ' + (r + 1) + ': missing username'); continue; }
+      if (!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(un)) { errors.push('row ' + (r + 1) + ': bad username "' + un.slice(0, 20) + '" (letters, digits, - and _ only)'); continue; }
+      const role = normalizeRole(roleRaw);
+      if (!role) { errors.push('row ' + (r + 1) + ': unknown role "' + roleRaw.slice(0, 30) + '"'); continue; }
+      const dn = iD >= 0 ? String(c[iD] || '').trim().slice(0, 40) : '';
+      let u = users.get(un);
+      if (u) {
+        if (u.display_name && dn && u.display_name !== dn) errors.push('username "' + un + '" appears with two different display names ("' + u.display_name + '" and "' + dn + '")');
+        if (u.role !== role) errors.push('username "' + un + '" appears with two different roles');
+      } else { u = { username: un, display_name: dn || un, role: role, classes: new Set(), partners: new Set() }; users.set(un, u); }
+      if (iD >= 0 && dn && !u.display_name) u.display_name = dn;
+      const school = iS >= 0 ? String(c[iS] || '').trim().slice(0, 40) : '';
+      const status = iSt >= 0 ? String(c[iSt] || '').trim().toLowerCase() : 'active';
+      if (status && ['active', 'disabled', 'enabled', 'suspended'].indexOf(status) === -1) errors.push('row ' + (r + 1) + ': unknown status "' + status + '"');
+      const clsRaw = iC >= 0 ? String(c[iC] || '') : '';
+      const clsList = clsRaw.split(/[,;、]/).map((x) => x.trim()).filter(Boolean);
+      const partnerRaw = iP >= 0 ? String(c[iP] || '').trim().toLowerCase() : '';
+      const isAdminRow = role === 'admin' || role === 'manager' || /^all( classes)?$/i.test(clsRaw.trim());
+      const cr = (iCR >= 0 && !isAdminRow) ? normClassRole(c[iCR]) : undefined;   // undefined = column absent/irrelevant
+      if (iCR >= 0 && !isAdminRow && c[iCR] && String(c[iCR]).trim() && !cr) errors.push('row ' + (r + 1) + ': unknown class_role "' + String(c[iCR]).trim().slice(0, 20) + '" (use eal or supporting)');
+      if (isAdminRow) continue;                                   // admin row: no per-class data
+      for (const cn of clsList) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,30}$/.test(cn)) { errors.push('row ' + (r + 1) + ': bad class name "' + cn.slice(0, 20) + '"'); continue; }
+        let m = clsMap.get(cn);
+        if (!m) { m = new Map(); clsMap.set(cn, m); }
+        if (m.has(un) && cr && m.get(un) !== cr) errors.push('class "' + cn + '": "' + un + '" is listed both as eal and supporting');
+        m.set(un, m.has(un) && m.get(un) ? m.get(un) : (cr || null));
+        if (school) clsSchool.set(cn, school);
+        u.classes.add(cn);
+      }
+      if (partnerRaw) u.partners.add(partnerRaw);
+    }
+    /* classes with more than two teachers are an error; pairs without a
+       class_role are returned as "unpicked" — the admin decides, never us */
+    const classes = [], unpicked = [];
+    for (const [cn, m] of clsMap) {
+      const teachers = Array.from(m.keys());
+      if (teachers.length > 2) { errors.push('class "' + cn + '" has ' + teachers.length + ' teachers (max one EAL + one supporting)'); continue; }
+      const roles = teachers.map((t) => m.get(t));
+      const classesEntry = { name: cn, school: clsSchool.get(cn) || '', teachers: teachers.map((t, i) => ({ username: t, class_role: roles[i] })) };
+      classes.push(classesEntry);
+      const nulls = classesEntry.teachers.filter((t) => !t.class_role);
+      if (nulls.length && teachers.length === 2 && !roles[0] && !roles[1]) unpicked.push(cn);
+      else if (nulls.length) {
+        /* one side known: the other is implicitly the opposite role? NO —
+           never guess; ask. */
+        unpicked.push(cn);
+      }
+    }
+    /* partner consistency: both directions must agree on the shared classes */
+    for (const u of users.values()) {
+      for (const p of u.partners) {
+        const pu = users.get(p);
+        if (!pu) { warnings.push('"' + u.username + '" pairs with "' + p + '", who is not in this file — assignment kept from class_role'); continue; }
+      }
+    }
+    return {
+      users: Array.from(users.values()).map((u) => ({ username: u.username, display_name: u.display_name, role: u.role, classes: Array.from(u.classes), partners: Array.from(u.partners) })),
+      classes: classes, errors: errors, warnings: warnings, unpicked: unpicked
+    };
+  }
+
   /* ---------------- roster CSV (account template) ---------------- */
   function csvRows(text) {
     const s = String(text || '').replace(/^\uFEFF/, '');
@@ -2880,7 +2970,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
     AUDIT_MAX: AUDIT_MAX, logAudit: logAudit,
     requestChange: requestChange, approveChange: approveChange, rejectChange: rejectChange, obsCell: obsCell,
     planMigration: planMigration, applyMigration: applyMigration, countCells: countCells,
-    parseRosterCsv: parseRosterCsv, csvRows: csvRows,
+    parseRosterCsv: parseRosterCsv, parseSheetCsv: parseSheetCsv, csvRows: csvRows, normClassRole: normClassRole,
     classFile: classFile, parseClassFile: parseClassFile, classLink: classLink, parseClassHash: parseClassHash,
   };
 });

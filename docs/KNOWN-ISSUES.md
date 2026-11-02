@@ -1,0 +1,6 @@
+# Known issues & security history
+
+| Date | Issue | Status | Detail |
+|---|---|---|---|
+| 2026-11-02 (round9) | Built-in public-password account shipped in the app | **Fixed in round9** | From build `5f99a8a` until round9, the app embedded a built-in owner account whose password was written in plain text in the public source and served HTML. Anyone who read the repository could use it. It could only ever create/open a *fresh* markbook on an *empty* device (both guards were enforced in code), but: **any account that was actually used with that password must change its password** (Manage → Users → Reset password), and **any cloud copy belonging to such an account must be treated as exposed** — the cloud channel address is derived from the username, and the password was public, so the encrypted cloud copy could be pulled by anyone with the source. The account, its constants and its login hook were removed in round9; a source-scan test (`tests/test-recovery-gone.js`) fails the build if a password-like literal returns next to a login comparison. The password itself is deliberately not repeated here. |
+| 2026-10 (round5–8) | Various sync, key-wrap and class-mode issues | Fixed | See git history rounds 5–8 and `docs/qa/`. |

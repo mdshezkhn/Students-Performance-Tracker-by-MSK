@@ -286,6 +286,9 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     /* add a teacher (class-mode admin: the sign-ins live on the Users tab),
        then sign in as the teacher in a fresh window and check scope */
     A.w.location.hash = '#/users';
+    console.log('    [dbg] hash immediately:', A.w.location.hash);
+    await sleep(1200);
+    console.log('    [dbg] hash after 1.2s:', A.w.location.hash, '| addBtn:', !!A.d.querySelector('[data-action="acct-add-open"]'));
     /* condition, not a sleep: the tab renders after the session restore */
     await (async () => { for (let t = 0; t < 60; t++) { if (A.d.querySelector('[data-action="acct-add-open"]')) return; await sleep(250); } })();
     /* the recovery-file nudge (round5 item 3) can steal the single dialog at
@@ -302,6 +305,7 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     };
     drainNudge();
     const addBtn = A.d.querySelector('[data-action="acct-add-open"]');
+    if (!addBtn) console.log('    [dbg] app: ' + String((A.d.getElementById('app') || { textContent: 'none' }).textContent).replace(/\s+/g, ' ').slice(0, 220) + ' | hash: ' + A.w.location.hash + ' | dlg: ' + String((A.d.getElementById('dlg') || { textContent: '' }).textContent).slice(0, 90));
     check(!!addBtn, 'Users tab offers Add account in class mode');
     if (addBtn) {
       click(A, addBtn);

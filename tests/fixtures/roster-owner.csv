@@ -1,0 +1,14 @@
+username,display_name,role,class_or_grade,School,paired_with,class_role,status
+MSK,Mohammed Shehzad Khan,admin,All,All,,admin,active
+anush,Anush,teacher,"P1C1, P1C2, P1C3",Demo School,lily,eal,active
+anush,Anush,teacher,P2C2,Demo School,tina,eal,active
+lily,Lily,teacher,"P1C1, P1C2, P1C3",Demo School,anush,supporting,active
+tina,Tina,teacher,P2C2,Demo School,anush,supporting,active
+tina,Tina,teacher,P2C3,Demo School,kay,eal,active
+kay,Kay,teacher,P2C3,Demo School,tina,supporting,active
+kay,Kay,teacher,"P3C2, P3C3",Demo School,sarah,eal,active
+sarah,Sarah,teacher,"P3C2, P3C3",Demo School,kay,supporting,active
+lisa,Lisa,teacher,"P4C3, P5C3, P5C4",Demo School,mo,eal,active
+lisa,Lisa,teacher,"P4C4, P6C5, P6C6",Demo School,william,eal,active
+mo,Mo,teacher,"P4C3, P5C3, P5C4",Demo School,lisa,supporting,active
+william,William,teacher,"P4C4, P6C5, P6C6",Demo School,lisa,supporting,active

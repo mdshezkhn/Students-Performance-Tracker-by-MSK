@@ -145,7 +145,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   click(W, W.d.querySelector('[data-action="users-csv"]'));
   await sleep(200);
   const csv = String(W.w.__LAST_BLOB_TEXT || '');
-  check(csv.split('\n')[0] === 'username,display_name,role,class_or_grade,paired_with,status', 'CSV header is exactly the agreed columns');
+  check(csv.split('\n')[0] === 'username,display_name,role,class_or_grade,School,paired_with,status,class_role', 'CSV header is exactly the agreed columns (round9: +School +class_role)');
   check(csv.indexOf('keyring') === -1 && csv.indexOf('secret123') === -1, 'CSV carries no secrets');
 
   /* ---- E: disable/enable ---- */
