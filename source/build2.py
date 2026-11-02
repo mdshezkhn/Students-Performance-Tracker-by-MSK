@@ -132,14 +132,10 @@ def notice_page_html():
             '</script>\n</body>\n</html>\n')
 
 # ---------- landing ----------
-import base64, re
 landing = read(SRC / 'landing.template.html')
 landing = landing.replace('/*__FONTS__*/', read(SRC / 'landing-fonts.css'))
 landing = landing.replace('/*__LANDING_CSS__*/', read(SRC / 'landing.css'))
-# poster placeholder appears in BOTH the template (video attr) and landing.css (background) — replace all
-poster_uri = 'data:image/jpeg;base64,' + base64.b64encode((SRC / 'landing-poster.jpg').read_bytes()).decode()
-landing = landing.replace('%%POSTER%%', poster_uri)
-assert '%%POSTER%%' not in landing and '__FONTS__' not in landing and '__LANDING_CSS__' not in landing, 'landing injection failed'
+assert '__FONTS__' not in landing and '__LANDING_CSS__' not in landing, 'landing injection failed'
 
 # ---------- write dist + deploy ----------
 if DIST.exists(): shutil.rmtree(DIST)
