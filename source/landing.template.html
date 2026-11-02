@@ -6,89 +6,440 @@
   then rebuild. build2.py refuses to run if root index.html has drifted from
   the last committed build.
 
-  2026-10-28 (notices-voice): rebuilt to match the app itself — warm paper,
-  board green, the app's serif. Plain headline, one real screenshot, three
-  short sections, no gradient, no video, no count-up stats, no slogans.
-  Every claim is verified by docs/qa/notices/network-hosts.txt.
+  2026-11-02 (spring-valley redesign): adapted the owner's MSK/GSAP template —
+  hero video of the spring valley, real formula stats (9 skills, 20% written),
+  3-step "grades settle" accordion, petal CTA over the night valley. All copy
+  states only facts from the app (calc.js). GSAP/ScrollTrigger/Lenis + Inter
+  Tight are vendored at repo root (vendor/, fonts/) — zero external hosts,
+  CSP keeps default-src 'none'. Media lives at repo-root media/ (webp/jpg,
+  ~4.6MB total; hero video h264). The MSK self-drawing footer logo is the
+  maker's mark. Owner approved 2026-11-02.
 -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
+<title>SPR — Student's Performance Report · ESL markbook</title>
+<meta name="description" content="A free markbook for ESL classes: enter scores, get grades and printable report cards instantly. Works offline in your browser. Designed for teachers by a teacher.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; base-uri 'none'; form-action 'none'">
-<title>Student's Performance Report (SPR) — a markbook for ESL classes</title>
-<meta name="description" content="A free markbook for ESL classes: weekly scores, automatic grades, printable report cards. Runs in your browser. Made by an ESL teacher for his own classes.">
-<meta name="theme-color" content="#1e3b32">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e3b32'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='38' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<meta name="theme-color" content="#4d6a10">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; font-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta property="og:title" content="SPR — Student's Performance Report">
+<meta property="og:description" content="Scores in, report cards out — instantly. A free markbook for ESL classes with automatic grades and printable report cards. Designed for teachers by a teacher.">
+<meta property="og:image" content="https://my-spr-with-mo.duckdns.org/media/valley-night.jpg">
+<link rel="preload" as="image" href="media/backdrop-tiny.jpg" fetchpriority="high">
+<link rel="preload" as="image" href="media/backdrop.jpg" fetchpriority="high">
+<link rel="preload" as="font" type="font/woff2" href="fonts/inter-tight-400.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="fonts/inter-tight-500.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="fonts/inter-tight-600.woff2" crossorigin>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234d6a10'/><text x='16' y='21.5' font-family='Arial,Helvetica,sans-serif' font-size='11' font-weight='700' fill='%23ffffff' text-anchor='middle'>SPR</text></svg>">
 <style>/*__FONTS__*/</style>
 <style>/*__LANDING_CSS__*/</style>
 </head>
-<body>
+<body class="intro">
+<noscript><style>body.intro #heroTitle,body.intro #heroSub,body.intro .nav{opacity:1}body.intro #app{transform:none;border-radius:0}</style></noscript>
 
-<nav class="nav">
-  <div class="wrap nav__inner">
-    <span class="brand">Student&rsquo;s Performance Report <span class="brand__abbr">(SPR)</span></span>
-    <div class="nav__links">
-      <a href="app/">Open the app</a>
-      <a href="notice.html">How your data is stored</a>
-      <a href="app/#/help">Help</a>
+<div class="backdrop" aria-hidden="true"></div>
+
+<div id="app">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" id="hero">
+    <div class="nav-wrap">
+      <nav class="nav">
+        <a class="brand" href="#hero" aria-label="SPR home"><span>SPR</span><small>Student&rsquo;s Performance Report</small></a>
+        <a class="btn" href="app/">Open the app</a>
+      </nav>
     </div>
-  </div>
-</nav>
 
-<header class="hero">
-  <div class="wrap">
-    <h1>A markbook for ESL classes.</h1>
-    <p class="lede">Enter weekly scores, watch grades update, print report cards. Made by an ESL teacher for his own classes.</p>
-    <p class="hero__actions"><a class="btn" href="app/">Open the app</a></p>
-    <figure class="shot">
-      <img src="media/landing-app-screenshot.png" alt="The SPR dashboard: the sample class with live grades and report-card tools." width="1160" height="724">
-      <figcaption>The app with its sample class. Your own data stays in your browser.</figcaption>
-    </figure>
-  </div>
-</header>
+    <div class="cloud cloud-l" data-par="-60" aria-hidden="true">
+      <img class="drift-a" alt="" src="media/cloud-left.webp" decoding="async">
+    </div>
+    <div class="cloud cloud-r" data-par="-90" aria-hidden="true">
+      <img class="drift-b" alt="" src="media/cloud-right.webp" decoding="async">
+    </div>
 
-<main>
-<section class="sec" id="what">
-  <div class="wrap">
-    <h2>What it does</h2>
-    <ul class="plain">
-      <li><b>Weekly score entry.</b> Spelling, daily assignments, observations and tests, with auto-filled totals.</li>
-      <li><b>Automatic grades.</b> A* to U, computed from the school&rsquo;s formula (written 20%, every other part 10%).</li>
-      <li><b>Report cards.</b> One page per student, printable, with comments you can hand-copy into the school performance book.</li>
-      <li><b>Works offline.</b> After the first visit the app reopens without an internet connection.</li>
-    </ul>
-  </div>
-</section>
+    <p id="heroSub">Designed for teachers, by a teacher</p>
+    <h1 id="heroTitle" class="split">Enter a score.<br>The report card <em>updates itself.</em></h1>
 
-<section class="sec sec--tinted" id="data">
-  <div class="wrap">
-    <h2>Your data</h2>
-    <ul class="plain">
-      <li>Data lives in this browser, on this device. It is encrypted with your password.</li>
-      <li>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. Then an encrypted copy goes to Supabase.</li>
-      <li>Exported Excel and backup files are not encrypted. Keep them on school-approved storage.</li>
-      <li>The maker of SPR does not collect, read or sell your data.</li>
-    </ul>
-    <p><a class="btn btn--quiet" href="notice.html">Read the full notice</a></p>
-  </div>
-</section>
+    <div class="hero-media">
+      <video id="heroVideo" muted loop playsinline preload="none"
+        poster="media/backdrop.jpg"
+        data-src="media/hero-loop.mp4"></video>
+    </div>
+  </section>
 
-<section class="sec" id="who">
-  <div class="wrap">
-    <h2>Who made it</h2>
-    <p>Mohammed Shehzad Khan (Teacher Mo) teaches ESL and built SPR for his own classes, then opened it to colleagues at his school. It is free. It is not a commercial product.</p>
-    <p class="signature">Designed for teachers, by a teacher.</p>
-  </div>
-</section>
-</main>
+  <!-- ============ STATS ============ -->
+  <section class="stats" id="stats">
+    <div class="sq-field" data-count="22"></div>
+    <div class="tree-wrap"><img id="tree" class="tree" alt="Cherry trees in blossom" src="media/blossom-trees.webp" loading="lazy" decoding="async"></div>
+    <div class="stats-inner">
+      <span class="pill reveal">The school&rsquo;s formula, built in</span>
+      <h2 class="h2 split">One formula. Nine skills.<br>Grades you can defend.</h2>
+      <div class="cards">
+        <div class="card" data-to="9" data-dec="0" data-suf=""><small>Skills tracked each term</small><b>0</b></div>
+        <div class="card" data-to="20" data-dec="0" data-suf="%"><small>Written exam weight</small><b>0%</b></div>
+        <div class="card" data-to="10" data-dec="0" data-suf="%"><small>Every other skill&rsquo;s weight</small><b>0%</b></div>
+        <div class="card" data-to="1" data-dec="0" data-suf=""><small>Print-ready page per student</small><b>0</b></div>
+      </div>
+      <div class="cards-shadow"></div>
+      <div class="band-wrap">
+        <div id="band"></div>
+        <div class="logos" aria-label="What SPR works with">
+          <span>Excel</span>
+          <span class="l-400">print &amp; PDF</span>
+          <span>Offline-first</span>
+          <span class="l-400">QR sharing</span>
+          <span>Encrypted sync</span>
+        </div>
+      </div>
+    </div>
+  </section>
 
-<footer class="footer">
-  <div class="wrap footer__inner">
-    <span>Made by Mohammed Shehzad Khan (Teacher Mo). Provided as is. <a href="notice.html">See the notice</a>.</span>
-    <span class="footer__links"><a href="app/">Open the app</a> &middot; <a href="notice.html">Notice</a> &middot; <a href="app/#/help">Help</a></span>
-  </div>
-</footer>
+  <!-- ============ A WEEK WITH IT ============ -->
+  <section class="loop" id="loop">
+    <div class="loop-cloud" data-par="-50" aria-hidden="true">
+      <img class="drift-a" alt="" src="media/cloud-left.webp" loading="lazy" decoding="async">
+      <div class="glass" style="left:6%;top:30%;width:15%;aspect-ratio:1"></div>
+      <div class="glass" style="left:23%;top:58%;width:13%;aspect-ratio:1"></div>
+      <div class="glass" style="left:38%;top:24%;width:13%;aspect-ratio:1"></div>
+    </div>
+    <div class="loop-head">
+      <span class="pill reveal">How a week works</span>
+      <h2 class="h2 split">You teach.<br>SPR keeps the book.</h2>
+    </div>
+    <div id="track">
+      <div class="panel is-active" tabindex="0" aria-label="Step 1: the week's scores go in">
+        <div class="panel-in">
+          <div class="num">1</div>
+          <div class="step">
+            <img class="mini-cloud" alt="" src="media/cloud-right.webp" loading="lazy" decoding="async">
+            <h3>Scores go in</h3>
+            <p>One screen for the week: observations, spelling, daily assignments and tests. Totals fill themselves as you type.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel" tabindex="0" aria-label="Step 2: grades settle themselves">
+        <div class="panel-in">
+          <div class="num">2</div>
+          <div class="step">
+            <img class="mini-cloud" alt="" src="media/cloud-left.webp" loading="lazy" decoding="async">
+            <h3>Grades settle themselves</h3>
+            <p>A* to U for every skill, the same formula for every child &mdash; Written 20%, all else 10% &mdash; with class averages and RAG colours alongside.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel" tabindex="0" aria-label="Step 3: report cards come out">
+        <div class="panel-in">
+          <div class="num">3</div>
+          <div class="step">
+            <img class="mini-cloud" alt="" src="media/cloud-right.webp" loading="lazy" decoding="async">
+            <h3>Report cards come out</h3>
+            <p>One page per student: grades, trend charts and comments you can hand-copy into the performance book &mdash; or export the term to Excel.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
+  <!-- ============ CTA ============ -->
+  <section class="cta" id="cta">
+    <div class="sq-field" data-count="16"></div>
+    <div class="cta-img">
+      <img id="ctaImg" alt="Cherry trees in a valley at dusk" src="media/valley-night.jpg" loading="lazy" decoding="async">
+    </div>
+    <div id="petals" aria-hidden="true"></div>
+    <div class="cta-wrap">
+      <div id="ctaCard">
+        <span class="pill">Free, made by a teacher</span>
+        <h2 class="h2 split">A term of evidence, one page per child.</h2>
+        <p class="reveal">Open the app and take the sample class for a spin &mdash; grades, charts and printable report cards are all there. A first visit only asks for a username and password: they encrypt your markbook inside this browser.</p>
+        <a class="btn reveal" href="app/">Open the app</a>
+        <p class="cta-note reveal">Nothing leaves the device unless an admin turns on Device sync. <a href="notice.html">Read the data notice</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer id="footer">
+    <svg class="f-logo" viewBox="0 0 80 80" overflow="visible" role="img" aria-label="MSK">
+      <circle id="fRing" cx="40" cy="40" r="37" fill="none" stroke="#111" stroke-width="2.4" stroke-dasharray="233" stroke-dashoffset="233" transform="rotate(-90 40 40)"/>
+      <circle class="fdot" cx="22" cy="40" r="4.5" fill="#111"/>
+      <circle class="fdot" cx="40" cy="40" r="4.5" fill="#111"/>
+      <circle class="fdot" cx="58" cy="40" r="4.5" fill="#111"/>
+      <g fill="none" stroke="#111" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round">
+        <path class="fL" pathLength="1" d="M19 51V30l7.5 12L34 30v21" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path class="fL" pathLength="1" d="M45.5 33.5C43 30.5 36 30.8 36 36c0 5.5 10 4.5 10 10 0 5-7.5 5.2-10.5 2" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path class="fL" pathLength="1" d="M51 30v21M63.5 30l-12 11.5L64 51" stroke-dasharray="1" stroke-dashoffset="1"/>
+      </g>
+    </svg>
+    <nav class="f-links">
+      <a href="app/">Open the app</a><a href="notice.html">Data notice</a><a href="app/#/help">Help</a>
+    </nav>
+    <div class="f-copy">&copy; 2026 Mohammed Shehzad Khan &middot; Student&rsquo;s Performance Report is free, provided as is. Designed for teachers, by a teacher.</div>
+  </footer>
+
+</div>
+
+<script src="vendor/gsap.min.js" defer></script>
+<script src="vendor/ScrollTrigger.min.js" defer></script>
+<script src="vendor/lenis.min.js" defer></script>
+<script>
+window.addEventListener('DOMContentLoaded', function(){
+(function(){
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var isMobile = window.innerWidth <= 760;
+  var hasGSAP = !!(window.gsap && window.ScrollTrigger);
+  var hasLenis = !!window.Lenis;
+
+  /* ---------- video watchdog: desktops stream the loop; mobile and
+       reduced-motion get the poster with a slow Ken-Burns drift ---------- */
+  (function(){
+    var v = document.getElementById("heroVideo");
+    if(!v) return;
+    var box = v.parentElement, done = false;
+    function fallback(){
+      if(done) return; done = true;
+      v.removeAttribute("autoplay");
+      box.classList.add("no-video");
+    }
+    v.addEventListener("playing", function(){ done = true; });
+    v.addEventListener("error", fallback);
+    if(reduce || isMobile){ fallback(); return; }
+    /* the loop is decoration: it only starts fetching after the page
+       (fonts, poster, clouds) has fully loaded, so it never competes
+       with first paint */
+    function arm(){
+      v.src = v.dataset.src || "";
+      v.load();
+      var pr = v.play();
+      if(pr && pr.catch) pr.catch(function(){
+        /* one polite retry, then the poster fallback takes over */
+        setTimeout(function(){ var p2 = v.play(); if(p2 && p2.catch) p2.catch(function(){}); }, 600);
+      });
+      setTimeout(function(){ if(v.paused || v.readyState < 2) fallback(); }, 9000);
+    }
+    if(document.readyState === "complete") arm();
+    else window.addEventListener("load", arm, {once:true});
+  })();
+
+  /* ---------- 2) word splitter (CJK-aware: per-character for Chinese, per-word for Latin) ---------- */
+  var CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f\u00b7]/;
+  function splitText(node){
+    var frag = document.createDocumentFragment();
+    var txt = node.textContent, tokens = txt.split(/(\s+)/), i, t;
+    for(i=0;i<tokens.length;i++){
+      t = tokens[i];
+      if(!t) continue;
+      if(/^\s+$/.test(t)){ frag.appendChild(document.createTextNode(" ")); continue; }
+      var parts = t.split(""), run = "";
+      for(var j=0;j<parts.length;j++){
+        if(CJK.test(parts[j])){
+          if(run){ addWord(frag,run); run=""; }
+          addWord(frag, parts[j]);
+        } else run += parts[j];
+      }
+      if(run) addWord(frag,run);
+    }
+    return frag;
+  }
+  function addWord(frag,s){ var sp=document.createElement("span"); sp.className="w"; sp.textContent=s; frag.appendChild(sp); }
+  function splitEl(el){
+    var walk = function(n){
+      Array.prototype.slice.call(n.childNodes).forEach(function(child){
+        if(child.nodeType===3){
+          if(child.textContent.trim()==="") return;
+          child.parentNode.replaceChild(splitText(child), child);
+        } else if(child.nodeType===1 && child.tagName!=="BR"){
+          walk(child);
+        }
+      });
+    };
+    walk(el);
+  }
+  document.querySelectorAll(".split").forEach(splitEl);
+
+  /* ---------- 3) sq-field grid squares ---------- */
+  document.querySelectorAll(".sq-field").forEach(function(field){
+    var count = +field.dataset.count || 0;
+    for(var i=0;i<count;i++){
+      var sq = document.createElement("div");
+      sq.className = "grid-sq";
+      var col = Math.floor(Math.random()*30), row = Math.floor(Math.random()*6);
+      sq.style.left = (col*48-10)+"px";
+      sq.style.top  = (row*48+6)+"px";
+      sq.style.width = "46px"; sq.style.height = "46px";
+      field.appendChild(sq);
+      if(hasGSAP && !reduce){
+        gsap.fromTo(sq,{opacity:0},{opacity:1,duration:1.2,yoyo:true,repeat:-1,delay:Math.random()*4,repeatDelay:Math.random()*3});
+      } else sq.style.opacity = .5;
+    }
+  });
+
+  /* ---------- 5) petals ---------- */
+  var petals = document.getElementById("petals");
+  for(var pI=0;pI<18;pI++){
+    var pe = document.createElement("span");
+    pe.className = "petal";
+    pe.style.left = (Math.random()*100)+"%";
+    pe.style.setProperty("--dx",(Math.random()*160-80).toFixed(0)+"px");
+    pe.style.setProperty("--ps",(0.6+Math.random()*0.8).toFixed(2));
+    pe.style.animationDuration = (9+Math.random()*9).toFixed(2)+"s";
+    pe.style.animationDelay = (-Math.random()*15).toFixed(2)+"s";
+    petals.appendChild(pe);
+  }
+
+  /* ---------- counters ---------- */
+  var cards = document.querySelectorAll(".card");
+  function setCounters(prog){
+    cards.forEach(function(c){
+      var b = c.querySelector("b");
+      b.textContent = (parseFloat(c.dataset.to)*prog).toFixed(+c.dataset.dec) + c.dataset.suf;
+    });
+  }
+
+  /* ---------- graceful fallback: no GSAP or reduced motion ---------- */
+  function staticReveal(){
+    document.body.classList.remove("intro");
+    var bd = document.querySelector(".backdrop"); if(bd) bd.remove();
+    setCounters(1);
+    document.querySelectorAll(".fL, #fRing").forEach(function(el){ el.style.strokeDashoffset = 0; });
+    document.querySelectorAll(".fdot").forEach(function(el){ el.style.opacity = 0; });
+  }
+
+  if(!hasGSAP || reduce || !hasLenis){ staticReveal(); }
+
+  /* ---------- accordion (works with or without GSAP) ---------- */
+  function attachAccordion(){
+    if(window.innerWidth <= 760) return;
+    var panels = document.querySelectorAll(".panel");
+    function activate(t){
+      panels.forEach(function(q){ q.classList.toggle("is-active", q===t); });
+    }
+    panels.forEach(function(pnl){
+      pnl.onmouseenter = function(){ activate(pnl); };
+      pnl.onfocus = function(){ activate(pnl); };
+      pnl.onclick = function(){ activate(pnl); };
+    });
+  }
+  attachAccordion();
+
+  if(!hasGSAP || reduce || !hasLenis) return; /* everything below needs the full stack */
+
+  /* ---------- full animated path ---------- */
+  gsap.registerPlugin(ScrollTrigger);
+
+  /* ---------- 6) Lenis ---------- */
+  var lenis = new Lenis({duration:1.25, easing:function(t){return Math.min(1,1.001-Math.pow(2,-10*t));}, smoothWheel:true});
+  window.__lenis = lenis;
+  lenis.on("scroll", ScrollTrigger.update);
+  gsap.ticker.add(function(time){ lenis.raf(time*1000); });
+  gsap.ticker.lagSmoothing(0);
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener("click", function(e){
+      e.preventDefault();
+      lenis.scrollTo(a.getAttribute("href"), {duration:1.6});
+    });
+  });
+
+  /* ---------- 7) intro ---------- */
+  var heroWords = document.querySelectorAll("#heroTitle .w");
+  var nav = document.querySelector(".nav");
+  lenis.stop();
+  gsap.set(heroWords, {opacity:0, y:24, filter:"blur(10px)"});
+  gsap.set(nav, {opacity:0, y:-16});
+  gsap.set("#heroSub", {opacity:0, y:12});
+  gsap.set("#heroTitle", {opacity:1});
+
+  var tl = gsap.timeline({delay:.15, onComplete:function(){
+    document.body.classList.remove("intro");
+    gsap.set("#app",{clearProps:"all"});
+    var bd = document.querySelector(".backdrop"); if(bd) bd.remove();
+    lenis.start();
+    setupScroll();
+  }});
+  tl.fromTo("#app", {scale:.9, borderRadius:28}, {scale:1, borderRadius:0, duration:1.05, ease:"expo.inOut"}, 0)
+    .to(nav, {opacity:1, y:0, duration:.8, ease:"power3.out"}, "-=.5")
+    .to(heroWords, {opacity:1, y:0, filter:"blur(0px)", duration:.9, stagger:.06, ease:"power3.out"}, "-=.75")
+    .to("#heroSub", {opacity:1, y:0, duration:.7, ease:"power2.out"}, "-=.45")
+    .from(".cloud-l", {x:-120, opacity:0, duration:1.6, ease:"power3.out"}, .3)
+    .from(".cloud-r", {x:120, opacity:0, duration:1.6, ease:"power3.out"}, .3);
+
+  /* ---------- 8) scroll scenes ---------- */
+  function setupScroll(){
+    /* hero parallax */
+    var hp = gsap.timeline({scrollTrigger:{trigger:"#hero", start:"top top", end:"bottom top", scrub:true}});
+    hp.to("#heroTitle", {yPercent:-60}, 0);
+    hp.to("#heroSub", {y:-46, opacity:0}, 0);
+    document.querySelectorAll("#hero [data-par]").forEach(function(el){
+      hp.to(el, {y: +el.dataset.par * 2}, 0);
+    });
+    hp.to(".hero-media", {yPercent:8}, 0);
+
+    /* generic reveals */
+    gsap.utils.toArray(".reveal").forEach(function(el){
+      gsap.from(el, {opacity:0, y:16, duration:.8, ease:"power3.out", scrollTrigger:{trigger:el, start:"top 85%"}});
+    });
+
+    /* word reveals outside hero */
+    gsap.utils.toArray("#stats .split, #loop .split, #cta .split").forEach(function(el){
+      gsap.from(el.querySelectorAll(".w"), {opacity:0, y:22, filter:"blur(8px)", duration:.9, stagger:.06, ease:"power3.out", scrollTrigger:{trigger:el, start:"top 80%"}});
+    });
+
+    var mm = gsap.matchMedia();
+
+    /* desktop stats: pin + scrubbed counters + rising tree */
+    mm.add("(min-width: 901px)", function(){
+      gsap.from(".card", {y:40, opacity:0, duration:.9, stagger:.08, ease:"power3.out", scrollTrigger:{trigger:"#stats", start:"top 70%"}});
+      var prox = {p:0};
+      var pin = gsap.timeline({scrollTrigger:{trigger:"#stats", start:"top top", end:"+=120%", pin:true, scrub:1}});
+      pin.to(prox, {p:1, ease:"none", onUpdate:function(){ setCounters(prox.p); }}, 0)
+         .fromTo("#tree", {yPercent:75}, {yPercent:6, ease:"none"}, 0);
+    });
+
+    /* mobile/tablet stats */
+    mm.add("(max-width: 900px)", function(){
+      gsap.from(".card", {y:30, opacity:0, duration:.9, stagger:.08, ease:"power3.out", scrollTrigger:{trigger:".cards", start:"top 85%"}});
+      var c = {p:0};
+      ScrollTrigger.create({trigger:".cards", start:"top 80%", once:true, onEnter:function(){
+        gsap.to(c, {p:1, duration:2, ease:"power2.out", onUpdate:function(){ setCounters(c.p); }});
+      }});
+      gsap.fromTo("#tree", {yPercent:40}, {yPercent:0, ease:"none", scrollTrigger:{trigger:"#stats", start:"top bottom", end:"bottom top", scrub:true}});
+    });
+
+    /* accordion panel entrances (desktop/tablet) */
+    mm.add("(min-width: 761px)", function(){
+      gsap.from(".panel-in", {y:120, opacity:0, duration:1.1, stagger:.12, ease:"power3.out", scrollTrigger:{trigger:"#loop", start:"top 60%"}});
+      gsap.to(".loop-cloud", {x:60, ease:"none", scrollTrigger:{trigger:"#loop", start:"top bottom", end:"bottom top", scrub:true}});
+    });
+
+    /* mobile loop: stacked list */
+    mm.add("(max-width: 760px)", function(){
+      document.querySelectorAll(".panel").forEach(function(pnl){
+        gsap.from(pnl, {y:40, opacity:0, duration:.9, ease:"power3.out", scrollTrigger:{trigger:pnl, start:"top 85%"}});
+      });
+    });
+
+    /* CTA */
+    gsap.fromTo("#ctaImg", {yPercent:-12}, {yPercent:0, ease:"none", scrollTrigger:{trigger:"#cta", start:"top bottom", end:"bottom bottom", scrub:true}});
+    gsap.from("#ctaCard", {y:80, scale:.94, opacity:0, filter:"blur(10px)", duration:1.2, ease:"power3.out", scrollTrigger:{trigger:"#cta", start:"top 60%"}});
+
+    /* footer logo: dots bounce -> fade -> M S K letters draw -> ring draws */
+    var dots = document.querySelectorAll(".fdot");
+    var ftl = gsap.timeline({scrollTrigger:{trigger:"#footer", start:"top 92%", once:true}});
+    ftl.to(dots, {y:-8, duration:.25, stagger:.08, yoyo:true, repeat:3, ease:"sine.inOut"})
+       .to(dots, {opacity:0, duration:.18})
+       .to(".fL", {strokeDashoffset:0, duration:.55, stagger:.14, ease:"power2.out"}, "-=.05")
+       .to("#fRing", {strokeDashoffset:0, duration:.9, ease:"power2.inOut"}, "-=.35");
+
+    ScrollTrigger.refresh();
+  }
+
+  window.addEventListener("load", function(){ ScrollTrigger.refresh(); });
+})();
+});
+</script>
 </body>
 </html>
+

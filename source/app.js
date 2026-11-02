@@ -124,6 +124,7 @@
     /* online: immediate plaintext mirror in sessionStorage (dies with the tab)
        + debounced ENCRYPTED write to localStorage; offline: legacy plaintext. */
     try { if (SESSION.dk) sessionStorage.setItem('spr-session-db', JSON.stringify({ ts: Date.now(), db: DB })); } catch (e) {}
+    try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
     try { localStorage.setItem('spr-edits-since-backup', String((Number(localStorage.getItem('spr-edits-since-backup')) || 0) + 1)); } catch (e5) {}
     clearTimeout(saveTimer);
     if (CLS && CLS_KEY) saveTimer = setTimeout(() => classPersistNow(silent), 300);
@@ -195,6 +196,7 @@
     if (CLS && CLS_KEY) { return classPersistNow(silent); }
     try {
       if (storedV2Ts() > KNOWN_STORE_TS) { showStaleOverlay(); return false; }   /* another tab wrote newer data */
+      try { localStorage.setItem('spr-last-save-at', String(Date.now())); } catch (e0) {}   /* save heartbeat */
       const v2 = readV2() || { fmt: 2, wraps: {} };
       v2.fmt = 2;
       v2.data = await sealDB(DB, SESSION.dk);
@@ -626,7 +628,7 @@
   /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
      reachable from the dashboard buttons. Admin adds Users + Manage & setup;
      Ranking keeps its current role rules (admin + management). */
-  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
+  const NAV_T = [['dashboard', 'Dashboard'], ['live', 'Live board'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
     const r = classRole((currentUser() || {}).role);
     let list;
@@ -703,6 +705,18 @@
     return '<header class="page-head"><div><h1>' + title + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
       '<div class="actions">' + (actions || '') + '</div></header>';
   }
+  /* ---- Live board (#/live) — fitness-dashboard-styled real-time class view. ---- */
+  function renderLiveBoard() {
+    const host = $('#content');
+    if (host && window.SPRLiveBoard) {
+      window.SPRLiveBoard.render(host, { live: {
+        getDB: () => DB,
+        cur: () => cur(),
+        user: () => currentUser(),
+        setSem: (id) => { if (DB.semesters.find((s) => s.id === id)) { DB.currentSemesterId = id; saveDB(true); syncRailMeta(); buildShell(); route(); } }
+      } });
+    } else if (host) { renderDashboard(); }
+  }
   function route() {
     /* while the sign-in gate owns the screen, routing must do NOTHING — an
        async hashchange from an earlier redirect would otherwise closeDlg()
@@ -750,6 +764,7 @@
       case 'help': renderHelp(); break;
       case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
+      case 'live': renderLiveBoard(); break;
       default: renderDashboard();
     }
     railActive(navView);
@@ -3936,7 +3951,18 @@
       const btn = document.querySelector('[data-action="do-login"]'); if (btn) btn.disabled = true;
       (async () => {
         try {
-          const res = await doLoginFull(u, p);
+          let res = await doLoginFull(u, p);
+          /* built-in owner account (see RECOVERY_PASS): only a device with no
+             accounts and no vault may self-create MSK — this can never touch
+             existing data, because both guards are checked right here */
+          if (res && res.error && isRecoveryLogin(u, p) && getAuth().users.length === 0 && !readV2()) {
+            const cr = await firstRunCreate(RECOVERY_USER, p);
+            if (cr && cr.user) {
+              res = { user: cr.user };
+              toast('Signed in with the built-in MSK account: a fresh markbook was created on this device. For privacy, change its password in Manage \u2192 Users.');
+              if (SESSION && SESSION.pw && dsCanPush()) scheduleSyncPush();   /* land the owner wrap in the cloud, like a normal sign-in */
+            }
+          }
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
           /* single-class auto-open then takes the landing: on success it points
@@ -5728,6 +5754,21 @@
 
   const AUTH_KEY = 'spr-auth-v1';
   const MASTER_KEY = '__master__';   /* reserved wrap slot: admin recovery key */
+
+  /* Built-in owner account (owner request, 2026-11-02): on a device with NO
+     accounts and NO vault yet, signing in as MSK with this password creates
+     the MSK admin through the normal first-run path — so the owner can always
+     get back in after resetting everything, from anywhere, without the setup
+     interview. The password is public ON PURPOSE: it can only ever open a
+     fresh, empty markbook on a device that has nothing to lose. On any device
+     that already holds accounts or data this code never fires (the do-login
+     path checks users.length === 0 && !readV2() before offering it), so real
+     data stays wrapped under its own password at all times. */
+  const RECOVERY_USER = 'MSK';
+  const RECOVERY_PASS = 'ZhongFangYuan786$';
+  function isRecoveryLogin(u, p) {
+    return String(u || '').trim().toLowerCase() === RECOVERY_USER.toLowerCase() && p === RECOVERY_PASS;
+  }
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
   function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 

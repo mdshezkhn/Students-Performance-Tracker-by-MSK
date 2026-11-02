@@ -59,6 +59,7 @@ for marker, path in [
     ('/*__EXCEL__*/', SRC / 'excel.js'),
     ('/*__ANALYSIS__*/', SRC / 'analysis.js'),
     ('/*__CLASSSTORE__*/', SRC / 'classstore.js'),
+    ('/*__LIVE__*/', SRC / 'liveboard.js'),
     ('/*__APP__*/', SRC / 'app.js'),
 ]:
     assert marker in app_html, 'missing marker ' + marker
@@ -71,7 +72,7 @@ assert seed_obj.get('meta', '').startswith('SYNTHETIC'), 'refusing to embed a no
 seed_json = json.dumps(seed_obj, ensure_ascii=False)
 app_html = app_html.replace('window.SEED = /*__SEED__*/null;', 'window.SEED = ' + seed_json + ';', 1)
 assert 'window.SEED = {"' in app_html and '__SEED__' not in app_html, 'seed injection failed'
-for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__CLASSSTORE__', '__APP__'):
+for m in ('__FONT__', '__CSS__', '__CHARTJS__', '__XLSX__', '__QRCODE__', '__UTIL__', '__CALC__', '__EXCEL__', '__ANALYSIS__', '__CLASSSTORE__', '__LIVE__', '__APP__'):
     assert m not in app_html, 'unreplaced marker ' + m
 
 # ---------- service worker: version = content hash of the app HTML ----------
@@ -131,14 +132,10 @@ def notice_page_html():
             '</script>\n</body>\n</html>\n')
 
 # ---------- landing ----------
-import base64, re
 landing = read(SRC / 'landing.template.html')
 landing = landing.replace('/*__FONTS__*/', read(SRC / 'landing-fonts.css'))
 landing = landing.replace('/*__LANDING_CSS__*/', read(SRC / 'landing.css'))
-# poster placeholder appears in BOTH the template (video attr) and landing.css (background) — replace all
-poster_uri = 'data:image/jpeg;base64,' + base64.b64encode((SRC / 'landing-poster.jpg').read_bytes()).decode()
-landing = landing.replace('%%POSTER%%', poster_uri)
-assert '%%POSTER%%' not in landing and '__FONTS__' not in landing and '__LANDING_CSS__' not in landing, 'landing injection failed'
+assert '__FONTS__' not in landing and '__LANDING_CSS__' not in landing, 'landing injection failed'
 
 # ---------- write dist + deploy ----------
 if DIST.exists(): shutil.rmtree(DIST)

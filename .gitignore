@@ -12,3 +12,4 @@ tests/_*.sh
 __pycache__/
 .pw/
 qa_root/
+qa-shots/
