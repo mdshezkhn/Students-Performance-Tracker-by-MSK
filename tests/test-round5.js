@@ -285,10 +285,12 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(krIn, 'admin holds the class key in their keyring (per-class access)');
     /* add a teacher (class-mode admin: the sign-ins live on the Users tab),
        then sign in as the teacher in a fresh window and check scope */
+    /* round9: the wizard's async tail (openClass + key wraps, real PBKDF2 in
+       jsdom) ends with `location.hash = '#/dashboard'; route()` — it can land
+       AFTER this point and clobber '#/users'. Wait for it to settle first. */
+    await (async () => { for (let t = 0; t < 80; t++) { await sleep(250); if (A.w.location.hash === '#/dashboard' && (A.d.querySelector('.rail') || A.d.querySelector('#usersSheet'))) break; } })();
+    await sleep(700);   /* one quiet beat: no further hash writes in flight */
     A.w.location.hash = '#/users';
-    console.log('    [dbg] hash immediately:', A.w.location.hash);
-    await sleep(1200);
-    console.log('    [dbg] hash after 1.2s:', A.w.location.hash, '| addBtn:', !!A.d.querySelector('[data-action="acct-add-open"]'));
     /* condition, not a sleep: the tab renders after the session restore */
     await (async () => { for (let t = 0; t < 60; t++) { if (A.d.querySelector('[data-action="acct-add-open"]')) return; await sleep(250); } })();
     /* the recovery-file nudge (round5 item 3) can steal the single dialog at

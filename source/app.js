@@ -1220,7 +1220,7 @@
       for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
       const picks = r.unpicked || [];
       const rowsAcc = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name || u.username) + '</td><td>' + U.esc(roleLabel(u.role)) + '</td><td>' + U.esc((u.classes || []).join(', ')) + '</td></tr>').join('');
-      const pickRows = picks.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is EAL in each class?</b> The file does not say — pick below. SPR never guesses.</p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>EAL / Supporting</th></tr></thead><tbody>' +
+      const pickRows = picks.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is EAL in each class?</b> The file does not say, so pick below. SPR never guesses.</p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>EAL / Supporting</th></tr></thead><tbody>' +
         picks.map((c, i) => {
           const members = (r.users.filter((u) => (u.classes || []).indexOf(c) !== -1).map((u) => u.username));
           const opts = members.map((m) => '<option value="' + U.esc(m) + '">' + U.esc(m) + '</option>').join('');
@@ -1232,7 +1232,7 @@
         (schoolWarn.length ? '<p class="small">School column differs from the Manage &amp; setup school setting ("' + U.esc(school) + '"): ' + U.esc(schoolWarn.join(', ')) + '. Imported anyway.</p>' : '') +
         '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>username</th><th>display name</th><th>role</th><th>classes</th></tr></thead><tbody>' + rowsAcc + '</tbody></table></div>' +
         pickRows +
-        '<p class="small">Check every class pair. Where the file says who is EAL it is pre-filled; otherwise pick — SPR never guesses. New accounts get a one-time password.</p>' +
+        '<p class="small">Check every class pair. Where the file says who is EAL it is pre-filled; otherwise pick below; SPR never guesses. New accounts get a one-time password.</p>' +
         '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1"' + ((r.errors.length || picks.length) ? ' disabled' : '') + '>Import</button></div>',
         function (d) {
           const apply = () => {
@@ -5501,7 +5501,7 @@
        failure: back off 30 s. */
     if (!dsCanPush()) { dsLog('skip: cannot push (signed out / sync off) | why=' + dsWhy); return 'held'; }
     if (dsHoldPush) { dsLog('skip: a pull-check is deciding local-vs-cloud (dialog open) | why=' + dsWhy); return 'held'; }   /* never overwrite mid-decision */
-    if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight — coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
+    if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight - coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
     dsPushBusy = true;
     try {
       return await dsPushNowInner(interactive);
@@ -5733,7 +5733,7 @@
     /* R1 root cause: a BACKGROUND check must never park pushes on a modal
        that may never be answered. Interactive checks keep the dialog. */
     if (!interactive) {
-      dsLog('pull-check: newer cloud copy found — passive notice, NO dialog (R1) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
+      dsLog('pull-check: newer cloud copy found - passive notice, NO dialog (R1) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
       cfg.cloudAhead = { at: new Date().toISOString(), by: row.pushed_by || 'another device' }; dsSaveCfg(cfg);
       toast('A newer cloud copy is waiting: Manage \u2192 Device sync \u2192 Check for newer copy');
       return;
