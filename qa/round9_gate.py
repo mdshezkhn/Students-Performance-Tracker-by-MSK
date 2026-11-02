@@ -212,7 +212,7 @@ try:
             pg2.wait_for_timeout(300)
         pg2.wait_for_selector('#app', timeout=30000)
         pg2.wait_for_timeout(2000)
-        pg2.set_input_files('#file-roster', {'name': 'roster-owner.csv', 'mimeType': 'text/csv', 'buffer': FIXTURE})
+        pg2.set_input_files('#file-roster', {'name': 'roster-owner.csv', 'mimeType': 'text/csv', 'buffer': FIXTURE.encode('utf-8')})
         pg2.wait_for_timeout(2500)
         go2 = pg2.query_selector('#dlg [data-x="1"]')
         while go2 and go2.is_disabled():
