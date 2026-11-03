@@ -463,8 +463,16 @@ const ADMIN = 'mo';
   {
     const fs = require('fs');
     const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-    ok(!/data-count=/.test(landing) && /A markbook for ESL classes/.test(landing) && /Nothing is sent anywhere unless an admin turns on Device sync/.test(landing),
-      'landing is the plain 2026-10-28 rebuild: honest facts, no count-up stats');
+    /* landing = the owner-approved spring-valley redesign (commit 5f99a8a, live on
+       main since 2026-11-02): real-time hero copy, teacher line, honest stat cards
+       (9 skills / 20% / 10% / 1 page), zero external deps. The meaningful guards
+       from the 10-28 rebuild are kept: absolute privacy claims stay out, no
+       "Synced" chip, the privacy line stays conditional on Device sync. */
+    ok(/Enter a score\./.test(landing) && /Designed for teachers, by a teacher/i.test(landing)
+        && /data-to="9"/.test(landing) && /notice\.html/.test(landing),
+      'landing is the approved spring-valley redesign: real-time copy, teacher line, honest stat cards, data notice');
+    ok(/Nothing (is |)leaves? (this |the )?device unless you turn on Device sync|unless (an admin turns on|you turn on) Device sync/i.test(landing),
+      'privacy line stays conditional on Device sync (no absolutes)');
     ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
       'no absolute privacy claims remain on the landing page');
     ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');
