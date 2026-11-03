@@ -278,23 +278,34 @@ const ADMIN = 'mo';
     const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 15000);
     if (reOpen && !(B.w.SPR_DEBUG_GET_DB().semesters || []).length) {
       click(B, reOpen);
-      /* the open is async (PBKDF2 unwrap + persist + route) — poll, never sleep */
-      await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0 || B.w.location.hash === '#/dashboard', 25000);
+      /* the open is async (PBKDF2 unwrap + persist + route) — poll, never sleep.
+         45s ceiling: 600k-iteration PBKDF2 on a 2-core school laptop can exceed 25s
+         under load (seen on the office i3, 2026-11-02 chain run). */
+      await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0 || B.w.location.hash === '#/dashboard', 45000);
     }
   }
-  const opened = await waitFor(() => B.w.location.hash === '#/dashboard' && (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0, 25000);   /* openClass lands on the dashboard LAST — then navigate */
+  const opened = await waitFor(() => B.w.location.hash === '#/dashboard' && (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0, 45000);   /* openClass lands on the dashboard LAST — then navigate */
   if (!opened) {
     console.log('  [dbg-open] hash:', B.w.location.hash, '| sems:', (B.w.SPR_DEBUG_GET_DB().semesters || []).length,
       '| ring:', (function () { var a = B.w.SPR_DEBUG_AUTH.get(); var u = (a.users || []).find(function (x) { return x.username === 'sup-01'; }); return u && u.keyring ? Object.keys(u.keyring).length : 'no-user'; })(),
       '| sessKeys:', Object.keys(((JSON.parse(B.w.sessionStorage.getItem('spr-session') || 'null') || {}).keys) || {}).length,
       '| dlg:', (function () { var d = B.d.getElementById('dlg'); return d && d.open ? d.textContent.slice(0, 140).replace(/\s+/g, ' ') : 'closed'; })(),
       '| toasts:', ((B.d.getElementById('toast-root') || { textContent: '' }).textContent || '').slice(0, 140));
+    /* journey prerequisite failed: bail out with the reason, never limp onward —
+       a cascade from here reads as a baffling TypeError miles from the cause */
+    ok(false, 'class opened onto the dashboard with semesters (journey prerequisite)');
+    console.log('SUITE ERROR: class-open timed out at 45s — full state in [dbg-open] above');
+    process.exit(1);
   }
   B.w.location.hash = '#/entry/obs';
   B.w.dispatchEvent(new B.w.Event('hashchange'));
-  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 15000);
+  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 30000);
   const meDbg = { role: (B.w.SPR_DEBUG_AUTH.get().session || {}).role };
   ok(!!propCell, 'observation cells offer propose-to-change for support');
+  if (!propCell) {
+    console.log('SUITE ERROR: no propose cell on #/entry/obs — hash:', B.w.location.hash);
+    process.exit(1);
+  }
   const before = B.w.SPR_DEBUG_GET_DB();
   const firstSem = before.semesters.find((x) => x.id === before.currentSemesterId) || before.semesters[0];
   const sid0 = propCell ? propCell.dataset.sid : firstSem.students[0].id;
@@ -302,7 +313,7 @@ const ADMIN = 'mo';
   const key0 = propCell ? propCell.dataset.key : 'Listening-LO1';
   const preVal = (((firstSem.observations || {})[sid0] || {})[month0]) || {};
   click(B, propCell);
-  await waitFor(() => B.d.getElementById('prop-val'), 8000);   /* propose dialog is built async */
+  await waitFor(() => B.d.getElementById('prop-val'), 20000);   /* propose dialog is built async */
   setVal(B, B.d.querySelector('#prop-val'), '4');
   setVal(B, B.d.querySelector('#prop-note'), 'recounted, first LO');
   const idxBeforeReq = (JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '';
