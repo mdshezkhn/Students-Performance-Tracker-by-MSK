@@ -6,7 +6,7 @@ set -u
 R="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${1:-$R/.freshclone}"
 rm -rf "$WORK"
-git clone -q -b round9 "$(git -C "$R" remote get-url origin)" "$WORK" || exit 1
+git clone -q -c core.autocrlf=input -b round9 "$(git -C "$R" remote get-url origin)" "$WORK" || exit 1
 cd "$WORK" || exit 1
 echo "== clone: $(git log --oneline -1)"
 npm ci --include=dev > /tmp/fc-npmci.log 2>&1 || { echo "NPM-CI FAILED"; tail -5 /tmp/fc-npmci.log; exit 1; }

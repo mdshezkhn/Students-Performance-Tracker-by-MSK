@@ -2,7 +2,7 @@
 # round9 full gate chain: fresh clone -> npm ci --include=dev -> npm test x3
 # -> build byte-identical -> device-sync 30x pinned to 2 cores (Windows affinity).
 set -u
-R="/d/links-personal/links-personal/web/workspace/spr-repo"
+R="$(cd "$(dirname "$0")/.." && pwd)"
 echo "=== STAGE 1: fresh clone + npm ci --include=dev + npm test #1 + byte-identical ==="
 bash "$R/qa/round9_freshclone.sh" || { echo "STAGE1 FAILED"; exit 1; }
 FC="$R/.freshclone"
