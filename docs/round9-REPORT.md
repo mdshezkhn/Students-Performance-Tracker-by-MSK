@@ -8,10 +8,11 @@ Branch `round9` (rollback tag `pre-round9` = round8 tip). Not merged to main, no
 | 2 | Users sheet = owner's model (one row per person+partner, derived pairing, By-class view, CSV BOM round trip, import with pickers/errors/no-guess, unassign re-keys) | `tests/test-users-sheet.js` (49 checks) + `tests/test-users-roundtrip.js` (6) | yes | suites green; `tests/fixtures/roster-owner.csv`; `docs/qa/round9/users-sheet-1280.png`, `by-class-1280.png`, `import-preview-error-1280.png` |
 | 3 | Remove built-in public-password account (empty device stays empty; same as wrong password; no literal near login compare) | `tests/test-recovery-gone.js` (9 checks, was 5 FAIL) | yes | suite green; `docs/KNOWN-ISSUES.md` |
 | 4 | Reconcile main + landing facts/weight | `qa/landing_weight.py` (FCP, bytes, video-gating) | yes | numbers below |
+| 5 | Reviewer regression (2026-11-06): the redo dropped the Enable/Disable control from the Users sheet — the `user-toggle` handler existed but nothing rendered it. Restored as an actions column (own row excluded, admin-only). | `tests/test-simple-ui.js` E2 (5 checks: re-enable → Active, disable → Disabled, left enabled) | yes | suite green 44; `USERS-SHEET 49 ok` + `ROUND-TRIP 6 ok` re-run green |
 
 ## Bundle size (app/index.html)
 
-- main `5f99a8a`: **1,918,078 B** → round9 final: **1,909,330 B** (net −8,748).
+- main `5f99a8a`: **1,918,078 B** → round9 final: **1,909,600 B** (net −8,478; +270 B for the actions column, build `ab7ec4b17b`).
 - Live board removal itself: −29,975 B (30,297 B `liveboard.js`); Users-sheet code adds the rest.
 
 ## Merge conflicts (origin/main `5f99a8a` into round9)
@@ -30,6 +31,14 @@ Branch `round9` (rollback tag `pre-round9` = round8 tip). Not merged to main, no
 ## Suite last lines
 
 <!-- SUITE-LINES -->
+
+Post-reviewer-fix run, home laptop (DESKTOP-FUMPBJ9), 1×, sequential, jsdom — build `ab7ec4b17b`, byte-verified against `python source/build2.py --force`:
+
+- `SIMPLE-UI PASSED (44)` (39 before the patch; +5 = the new E2 checks)
+- `USERS-SHEET: 49 ok, 0 FAIL`
+- `ROUND-TRIP: 6 ok, 0 FAIL`
+
+Baseline before the patch: clean rebuild of `4e70637` reproduced the committed `app/index.html`, `app/sw.js`, `index.html` byte-for-byte (sw version `db5bbb6610`), so this machine's build is faithful. The office 3× chain numbers were not re-run here.
 
 ## Not tested here
 

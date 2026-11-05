@@ -2711,9 +2711,10 @@
       });
       const cell = (v) => U.esc(v || '—');
       body = filters + '<div class="sheet" id="usersSheet"><table class="tbl"><thead><tr>' +
-        '<th scope="col">username</th><th scope="col">display name</th><th scope="col">role</th><th scope="col">class or grade</th><th scope="col">School</th><th scope="col">paired with</th><th scope="col">status</th>' +
+        '<th scope="col">username</th><th scope="col">display name</th><th scope="col">role</th><th scope="col">class or grade</th><th scope="col">School</th><th scope="col">paired with</th><th scope="col">status</th><th scope="col"><span class="sr-only">actions</span></th>' +
         '</tr></thead><tbody>' + all.map((r) =>
-          '<tr><td>' + U.esc(r.u.username) + '</td><td>' + U.esc(r.u.name || r.u.username) + '</td><td>' + U.esc(roleLabel(r.u.role)) + '</td><td>' + cell(r.classes) + '</td><td>' + cell(r.school) + '</td><td>' + cell(r.partner) + '</td><td>' + (r.u.disabled ? 'Disabled' : 'Active') + '</td></tr>'
+          '<tr><td>' + U.esc(r.u.username) + '</td><td>' + U.esc(r.u.name || r.u.username) + '</td><td>' + U.esc(roleLabel(r.u.role)) + '</td><td>' + cell(r.classes) + '</td><td>' + cell(r.school) + '</td><td>' + cell(r.partner) + '</td><td>' + (r.u.disabled ? 'Disabled' : 'Active') + '</td><td>' +
+            (r.u.username === SESSION.user ? '' : '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(r.u.username) + '">' + (r.u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>'
         ).join('') + '</tbody></table></div>' +
         '<p class="small muted" style="margin-top:8px">Accounts on this device. A teacher sees exactly the classes assigned to them; the partner column is derived from the class assignments.</p>';
     }

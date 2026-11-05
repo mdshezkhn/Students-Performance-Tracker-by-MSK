@@ -171,6 +171,21 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   setVal(W, W.d.getElementById('usersStatus'), 'all');
   await sleep(400);
 
+  /* ---- E2 (reviewer, 2026-11-06 regression): the admin can still disable and re-enable an account from the Users sheet ---- */
+  console.log('== E2: Enable/Disable button on the Users sheet ==');
+  const annaUser = () => JSON.parse(W.w.localStorage.getItem('spr-auth-v1')).users.find((u) => u.username === 'anna');
+  click(W, annaRow().querySelector('[data-action="user-toggle"]'));
+  await sleep(400);
+  check(!annaUser().disabled, 'Enable button re-enables a disabled account');
+  check(/Active/.test(annaRow().textContent), 'sheet shows Active after enabling');
+  click(W, annaRow().querySelector('[data-action="user-toggle"]'));
+  await sleep(400);
+  check(annaUser().disabled === true, 'Disable button disables the account');
+  check(/Disabled/.test(annaRow().textContent), 'sheet shows Disabled after disabling');
+  click(W, annaRow().querySelector('[data-action="user-toggle"]'));
+  await sleep(300);
+  check(!annaUser().disabled, 'account left enabled again');
+
   /* ---- F: sync off => zero fetches ---- */
   console.log('== F: sync off => zero Supabase requests ==');
   check(W.w.__FETCHES.length === 0, 'zero network requests so far (sign-in + save + users tab), got ' + W.w.__FETCHES.length);
