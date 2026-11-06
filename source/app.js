@@ -6565,10 +6565,14 @@
       if (cid === ESCROW_SLOT) continue;
       try { SESSION.keys[cid] = await CS.unwrapKey(user.keyring[cid], password); } catch (e) { /* wrong-wrap: skip */ }
     }
-    await ownerEscrowHeal();   /* round10: re-issue any missing class keys from the escrow */
     auth.session = { username: user.username, name: user.name, role: user.role };
     saveAuth(auth);
     classKeysToSession();
+    /* round10: re-issue any missing class keys from the escrow. MUST run after
+       saveAuth above: ownerEscrowHeal re-reads auth itself, and running it
+       earlier would let this function's older snapshot overwrite the healed
+       wraps on its own save (read-modify-write race, found by test E) */
+    await ownerEscrowHeal();
     if (sprMode() === 'class') {
       const ix = classIndex();
       const lastId = localStorage.getItem('spr-last-class');
