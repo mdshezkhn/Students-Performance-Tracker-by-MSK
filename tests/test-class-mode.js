@@ -278,23 +278,34 @@ const ADMIN = 'mo';
     const reOpen = await waitFor(() => B.d.querySelector('[data-action="class-open"]'), 15000);
     if (reOpen && !(B.w.SPR_DEBUG_GET_DB().semesters || []).length) {
       click(B, reOpen);
-      /* the open is async (PBKDF2 unwrap + persist + route) — poll, never sleep */
-      await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0 || B.w.location.hash === '#/dashboard', 25000);
+      /* the open is async (PBKDF2 unwrap + persist + route) — poll, never sleep.
+         45s ceiling: 600k-iteration PBKDF2 on a 2-core school laptop can exceed 25s
+         under load (seen on the office i3, 2026-11-02 chain run). */
+      await waitFor(() => (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0 || B.w.location.hash === '#/dashboard', 45000);
     }
   }
-  const opened = await waitFor(() => B.w.location.hash === '#/dashboard' && (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0, 25000);   /* openClass lands on the dashboard LAST — then navigate */
+  const opened = await waitFor(() => B.w.location.hash === '#/dashboard' && (B.w.SPR_DEBUG_GET_DB().semesters || []).length > 0, 45000);   /* openClass lands on the dashboard LAST — then navigate */
   if (!opened) {
     console.log('  [dbg-open] hash:', B.w.location.hash, '| sems:', (B.w.SPR_DEBUG_GET_DB().semesters || []).length,
       '| ring:', (function () { var a = B.w.SPR_DEBUG_AUTH.get(); var u = (a.users || []).find(function (x) { return x.username === 'sup-01'; }); return u && u.keyring ? Object.keys(u.keyring).length : 'no-user'; })(),
       '| sessKeys:', Object.keys(((JSON.parse(B.w.sessionStorage.getItem('spr-session') || 'null') || {}).keys) || {}).length,
       '| dlg:', (function () { var d = B.d.getElementById('dlg'); return d && d.open ? d.textContent.slice(0, 140).replace(/\s+/g, ' ') : 'closed'; })(),
       '| toasts:', ((B.d.getElementById('toast-root') || { textContent: '' }).textContent || '').slice(0, 140));
+    /* journey prerequisite failed: bail out with the reason, never limp onward —
+       a cascade from here reads as a baffling TypeError miles from the cause */
+    ok(false, 'class opened onto the dashboard with semesters (journey prerequisite)');
+    console.log('SUITE ERROR: class-open timed out at 45s — full state in [dbg-open] above');
+    process.exit(1);
   }
   B.w.location.hash = '#/entry/obs';
   B.w.dispatchEvent(new B.w.Event('hashchange'));
-  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 15000);
+  const propCell = await waitFor(() => B.d.querySelector('input[data-propose]'), 30000);
   const meDbg = { role: (B.w.SPR_DEBUG_AUTH.get().session || {}).role };
   ok(!!propCell, 'observation cells offer propose-to-change for support');
+  if (!propCell) {
+    console.log('SUITE ERROR: no propose cell on #/entry/obs — hash:', B.w.location.hash);
+    process.exit(1);
+  }
   const before = B.w.SPR_DEBUG_GET_DB();
   const firstSem = before.semesters.find((x) => x.id === before.currentSemesterId) || before.semesters[0];
   const sid0 = propCell ? propCell.dataset.sid : firstSem.students[0].id;
@@ -302,7 +313,7 @@ const ADMIN = 'mo';
   const key0 = propCell ? propCell.dataset.key : 'Listening-LO1';
   const preVal = (((firstSem.observations || {})[sid0] || {})[month0]) || {};
   click(B, propCell);
-  await waitFor(() => B.d.getElementById('prop-val'), 8000);   /* propose dialog is built async */
+  await waitFor(() => B.d.getElementById('prop-val'), 20000);   /* propose dialog is built async */
   setVal(B, B.d.querySelector('#prop-val'), '4');
   setVal(B, B.d.querySelector('#prop-note'), 'recounted, first LO');
   const idxBeforeReq = (JSON.parse(B.w.localStorage.getItem('spr-class-index-v1') || '[]')[0] || {}).updatedAt || '';
@@ -463,8 +474,16 @@ const ADMIN = 'mo';
   {
     const fs = require('fs');
     const landing = fs.readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-    ok(!/data-count=/.test(landing) && /A markbook for ESL classes/.test(landing) && /Nothing is sent anywhere unless an admin turns on Device sync/.test(landing),
-      'landing is the plain 2026-10-28 rebuild: honest facts, no count-up stats');
+    /* landing = the owner-approved spring-valley redesign (commit 5f99a8a, live on
+       main since 2026-11-02): real-time hero copy, teacher line, honest stat cards
+       (9 skills / 20% / 10% / 1 page), zero external deps. The meaningful guards
+       from the 10-28 rebuild are kept: absolute privacy claims stay out, no
+       "Synced" chip, the privacy line stays conditional on Device sync. */
+    ok(/Enter a score\./.test(landing) && /Designed for teachers, by a teacher/i.test(landing)
+        && /data-to="9"/.test(landing) && /notice\.html/.test(landing),
+      'landing is the approved spring-valley redesign: real-time copy, teacher line, honest stat cards, data notice');
+    ok(/Nothing (is |)leaves? (this |the )?device unless you turn on Device sync|unless (an admin turns on|you turn on) Device sync/i.test(landing),
+      'privacy line stays conditional on Device sync (no absolutes)');
     ok(!/Student data never leaves the device/i.test(landing) && !/no server holds your data/i.test(landing) && !/No server accounts, no database/i.test(landing),
       'no absolute privacy claims remain on the landing page');
     ok(!/>Synced</.test(landing), 'the hero mockup chip is no longer labelled Synced');

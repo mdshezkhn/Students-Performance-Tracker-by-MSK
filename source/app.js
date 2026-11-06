@@ -177,10 +177,18 @@
   window.addEventListener('beforeunload', function (e) {
     if (document.getElementById('saveAlert')) { e.preventDefault(); e.returnValue = ''; }
   });
+  let PERSIST_PENDING = false;
   function requestPersistentStorage() {
     try {
-      if (!navigator.storage || !navigator.storage.persist) return;
-      navigator.storage.persist().then(function (ok) { SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); }).catch(function () { SPR_PERSIST = false; });
+      if (!navigator.storage || !navigator.storage.persist || PERSIST_PENDING) return;
+      PERSIST_PENDING = true;
+      if (navigator.storage.persisted) {
+        /* current truth FIRST (answers in ms); persist() refines it after */
+        navigator.storage.persisted().then(function (yes) { if (SPR_PERSIST === null) { SPR_PERSIST = !!yes; if (location.hash === '#/manage') renderManage(); } }).catch(function () {});
+      }
+      const done = function (ok) { PERSIST_PENDING = false; SPR_PERSIST = !!ok; if (location.hash === '#/manage') renderManage(); };
+      navigator.storage.persist().then(function (ok) { done(ok); }, function () { done(false); });
+      setTimeout(function () { if (SPR_PERSIST === null) { done(false); } }, 3000);   /* round5 item 4 + round6: never stick on checking, promise or no promise */
     } catch (e) { SPR_PERSIST = false; }
   }
   async function persistNow(silent) {
@@ -452,7 +460,7 @@
       ui.classOpen = true;
       /* self-heal: if the stored wrap cannot be derived from the user's real
          password (e.g. it was sealed under a one-time migration password on
-         another device), re-seal it now while we hold the correct key —
+         another device), re-seal it now while we hold the correct key:
          after this, sign-in alone unlocks the class again on every device */
       if (SESSION.pw) {
         const meH = myUser();
@@ -503,6 +511,7 @@
       try { const prev = JSON.parse(localStorage.getItem(classBlobKey(CLS.id)) || 'null'); prevTs = (prev && prev.ts) || 0; } catch (e1) {}
       if (prevTs > (CLS_TS || 0)) { showStaleOverlay(); return false; }   /* another tab saved this class newer */
       const blob = await CS.sealClass(DB, CLS_KEY);
+      if (!CLS || !CLS_KEY) return false;   /* the class was closed while the seal was running */
       blob.ts = Date.now(); CLS_TS = blob.ts;
       localStorage.setItem(classBlobKey(CLS.id), JSON.stringify(blob));
       const ix = classIndex(); const m = ix.find((c) => c.id === CLS.id);
@@ -515,6 +524,7 @@
       scheduleSyncPush();
       return true;
     } catch (e) {
+      console.warn('class workbook save failed:', (e && (e.stack || e.message)) || e);   /* silent failures here cost days to diagnose */
       toast('Could not save the class workbook: storage full?', true);
       saveFailedBanner();
       clearTimeout(saveRetryTimer);
@@ -558,7 +568,11 @@
   }
 
   /* ============================ toast & dialogs ============================ */
+  function safariDataDlg() {
+    openDlg('<h3>One thing to know about Safari</h3><p class="small">Safari on iPhone and iPad can remove website data after about 7 days of not using a site. Download a backup from the sidebar regularly, and keep a copy outside this device.</p><div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">Got it</button></div>');
+  }
   function toast(msg, err) {
+    if (typeof document === 'undefined' || !document.getElementById) return;   /* window already torn down (close during an in-flight save) */
     const root = $('#toast-root'); if (!root) return;
     const t = document.createElement('div');
     t.className = 'toast' + (err ? ' err' : '');
@@ -614,7 +628,7 @@
   /* simple-ui sidebar: teachers see FOUR things - Grading and Analysis stay
      reachable from the dashboard buttons. Admin adds Users + Manage & setup;
      Ranking keeps its current role rules (admin + management). */
-  const NAV_T = [['dashboard', 'Dashboard'], ['live', 'Live board'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
+  const NAV_T = [['dashboard', 'Dashboard'], ['students', 'Students'], ['entry', 'Enter scores'], ['reports', 'Report Cards']];
   function navList() {
     const r = classRole((currentUser() || {}).role);
     let list;
@@ -640,6 +654,7 @@
     $('#app').innerHTML =
       '<div class="app">' +
         '<nav class="rail">' +
+          '<button class="rail-menu no-print" data-action="rail-toggle" aria-expanded="false">Menu</button>' +
           '<div class="wordmark"><div class="wm-class">Student\'s Performance Report</div>' +
           '<div class="wm-sub">' + U.esc((sem && sem.school) || 'ESL') + (sem && sem.className ? ' · ' + U.esc(sem.className) : '') + '</div></div>' +
           '<div class="nav">' + navList().map((n) => '<a href="#/' + n[0] + '" data-nav="' + n[0] + '">' + n[1] + '</a>').join('') + '</div>' +
@@ -667,7 +682,11 @@
             '<div class="rail-privacy"><a href="#" data-action="privacy-open">Privacy &amp; data notice</a></div>' +
             '<div class="quote">Designed for teachers, by a teacher<br>— Mohammed Shehzad Khan (Teacher Mo)</div></div>' +
         '</nav>' +
-        '<main class="page"><div id="content"></div></main>' +
+        '<main class="page">' +
+          (sprMode() === 'class' && CLS ?
+            '<div class="cls-topbar"><span class="cls-topbar-name">' + U.esc((CLS && CLS.name) || '') + '</span>' +
+            '<button class="btn primary" data-action="share-hub">Save &amp; Share</button></div>' : '') +
+          '<div id="content"></div></main>' +
       '</div>' +
       '';;
   }
@@ -685,18 +704,6 @@
   function pageHead(title, sub, actions) {
     return '<header class="page-head"><div><h1>' + title + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' +
       '<div class="actions">' + (actions || '') + '</div></header>';
-  }
-  /* ---- Live board (#/live) — fitness-dashboard-styled real-time class view. ---- */
-  function renderLiveBoard() {
-    const host = $('#content');
-    if (host && window.SPRLiveBoard) {
-      window.SPRLiveBoard.render(host, { live: {
-        getDB: () => DB,
-        cur: () => cur(),
-        user: () => currentUser(),
-        setSem: (id) => { if (DB.semesters.find((s) => s.id === id)) { DB.currentSemesterId = id; saveDB(true); syncRailMeta(); buildShell(); route(); } }
-      } });
-    } else if (host) { renderDashboard(); }
   }
   function route() {
     /* while the sign-in gate owns the screen, routing must do NOTHING — an
@@ -722,11 +729,19 @@
       }
     }
     if (!$('#content')) buildShell();   /* a self-contained page (Users/classes) may have wiped the shell: every switch view needs it back */
-    if (!DB.semesters.length) { renderWelcome(); return; }
-    if (!cur()) DB.currentSemesterId = DB.semesters[0].id;
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let view = parts[0] || 'dashboard';
-    if (sprMode() === 'class' && !CLS) { if (view !== 'classes') { location.hash = '#/classes'; return; } renderClasses(); railActive('classes'); return; }
+    if (sprMode() === 'class' && !CLS) { const v0 = view; if (v0 !== 'classes' && v0 !== 'help' && v0 !== 'users' && !(v0 === 'manage' && classRole((currentUser() || {}).role) === 'admin')) { location.hash = '#/classes'; return; } }
+    if (!DB.semesters.length) {
+      /* round9: Users / Manage / Help work before any class exists (the very
+         first admin action is importing the owner's roster sheet) */
+      const v0 = view;
+      if (['users', 'help', 'manage'].indexOf(v0) === -1) { renderWelcome(); return; }
+      if (v0 === 'users') { renderUsers(); railActive('users'); window.scrollTo(0, 0); return; }
+      if (v0 === 'help') { renderHelp(); railActive('help'); window.scrollTo(0, 0); return; }
+      renderManage(); railActive('manage'); window.scrollTo(0, 0); return;
+    }
+    if (DB.semesters.length && !cur()) DB.currentSemesterId = DB.semesters[0].id;
     if (view === 'classes') { if (CLS) { closeClass(); return; } renderClasses(); railActive('classes'); return; }
     if (view === 'ranking' && !isMgmt()) view = 'dashboard';   /* Ranking is Admin + Management only */
     if (view === 'users' && sprMode() === 'class' && classRole((currentUser() || {}).role) !== 'admin') { location.hash = '#/dashboard'; return; }   /* Users: class-mode admin-only (legacy mode has no class roles) */
@@ -745,7 +760,7 @@
       case 'help': renderHelp(); break;
       case 'users': renderUsers(); break;
       case 'review': renderReview(); break;
-      case 'live': renderLiveBoard(); break;
+      case 'live': location.hash = '#/dashboard'; return;   /* round9: Live board retired - old bookmarks keep working */
       default: renderDashboard();
     }
     railActive(navView);
@@ -765,7 +780,7 @@
     return '<div class="class-card">' +
       '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
       '<span class="cc-school">' + U.esc(c.school || '') + '</span>' +
-      '<div class="cc-pair small">' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</div>' +
+      '<div class="cc-pair small">' + U.esc(c.eal || '(none yet)') + ' ↔ ' + U.esc(c.support || '(none yet)') + '</div>' +
       '<div class="small muted">' + (when ? 'updated ' + when : 'never opened') + '</div></div>' +
       '<div class="cc-side">' + (mine ? '<span class="cc-role">' + U.esc(mine) + '</span>' : '') + pend +
       '<button class="btn sm primary" data-action="class-open" data-id="' + U.esc(c.id) + '">Open</button>' +
@@ -787,6 +802,7 @@
       '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
         (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
         '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+        '<button class="uc-out" data-action="ios-warn-again" style="font-size:11.5px;padding:5px 12px">Show the iPhone/iPad warning again</button>' +
         '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
       '</div>' +
       pageHead(mine.length > 1 ? 'Choose your class' : admin ? 'Your classes' : 'My class',
@@ -819,7 +835,7 @@
         '<p class="small">' + DB.semesters.length + ' semester(s) still live in the old single storage. Migration gives every class its own key: a dry run and a backup come first.</p>' +
         '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       (ix.length ? '<h4 style="margin:16px 0 8px">Pairing &amp; share links</h4><table class="tbl"><tbody>' +
-        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '— no EAL —') + ' ↔ ' + U.esc(c.support || '— no support —') + '</td>' +
+        ix.map((c) => '<tr><td>' + U.esc(c.name) + '</td><td>' + U.esc(c.eal || '(none yet)') + ' ↔ ' + U.esc(c.support || '(none yet)') + '</td>' +
           '<td><button class="btn sm" data-action="class-pair" data-id="' + U.esc(c.id) + '">Pair…</button> ' +
           '<button class="btn sm" data-action="class-share" data-id="' + U.esc(c.id) + '">Key &amp; link</button></td></tr>').join('') +
         '</tbody></table>' +
@@ -920,8 +936,8 @@
       '<h3>New class</h3>' +
       '<div class="flex" style="gap:10px;flex-wrap:wrap"><label class="small">School <input class="inp" id="cn-school" style="width:160px" value=""></label>' +
       '<label class="small">Class name <input class="inp" id="cn-name" style="width:120px" placeholder="P4C4"></label></div>' +
-      '<div class="flex" style="gap:10px;margin-top:8px;flex-wrap:wrap"><label class="small">EAL teacher <select class="inp" id="cn-eal"><option value="">— later —</option>' + ealOpts + '</select></label>' +
-      '<label class="small">Support teacher <select class="inp" id="cn-sup"><option value="">— later —</option>' + supOpts + '</select></label></div>' +
+      '<div class="flex" style="gap:10px;margin-top:8px;flex-wrap:wrap"><label class="small">EAL teacher <select class="inp" id="cn-eal"><option value="">(set later)</option>' + ealOpts + '</select></label>' +
+      '<label class="small">Support teacher <select class="inp" id="cn-sup"><option value="">(set later)</option>' + supOpts + '</select></label></div>' +
       '<p class="small muted" style="margin-top:8px">Pairing a teacher now issues their class key with a fresh password (shown once). You can also pair later.</p>' +
       '<div class="login-err" id="cn-err"></div>' +
       '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Create class</button></div>',
@@ -1011,8 +1027,12 @@
     const ix = classIndex(); const c = ix.find((x) => x.id === id);
     if (!c) return;
     const users = getAuth().users;
-    const sel = (role, cur) => '<select class="inp" id="pair-' + role + '"><option value="">— none —</option>' +
-      users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
+    /* round9: a person is ONE account — any teacher may take either slot
+       (EAL in one class, supporting in another). Same account in both slots
+       of the SAME class is still refused below. */
+    const teachers = users.filter((u) => { const r = classRole(u.role); return r === 'eal' || r === 'support'; });
+    const sel = (slot, cur) => '<select class="inp" id="pair-' + slot + '"><option value="">(none yet)</option>' +
+      teachers.map((u) => '<option value="' + U.esc(u.username) + '"' + (u.username === cur ? ' selected' : '') + '>' + U.esc(u.username) + (u.keyring && u.keyring[id] ? ' ✓key' : '') + '</option>').join('') + '</select>';
     openDlg(
       '<h3>Pair teachers: ' + U.esc(c.name) + '</h3>' +
       '<p class="small">The EAL teacher edits the class and approves observation changes; the support teacher edits spelling, daily assignments and tests. Newly paired teachers receive the class key with a fresh password (shown once).</p>' +
@@ -1024,12 +1044,30 @@
           if (!b) return;
           if (b.dataset.x === '0') { closeDlg(); return; }
           const eal = $('#pair-eal').value, sup = $('#pair-support').value;
+          if (eal && sup && eal.toLowerCase() === sup.toLowerCase()) { toast('One person cannot be both EAL and supporting in the same class.', true); return; }
           const ix2 = classIndex(); const c2 = ix2.find((x) => x.id === id);
+          const removed = [c2.eal, c2.support].filter(Boolean).filter((x) => x !== eal && x !== sup);
           const newly = [];
           if (eal && eal !== c2.eal) newly.push(eal);
           if (sup && sup !== c2.support) newly.push(sup);
           c2.eal = eal; c2.support = sup; setClassIndex(ix2);
           const key = (SESSION.keys || {})[id];
+          if (removed.length && key) {
+            /* round9: a removed teacher must lose access — rotate the class key */
+            closeDlg();
+            const kept = [eal, sup].filter(Boolean);
+            const okRk = await rekeyClass(id, kept);
+            if (okRk) {
+              try {
+                const wb2 = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(id))), (SESSION.keys || {})[id]);
+                wb2.eal = eal; wb2.support = sup;
+                localStorage.setItem(classBlobKey(id), JSON.stringify(await CS.sealClass(wb2, (SESSION.keys || {})[id])));
+              } catch (e3) {}
+            }
+            toast('Pairing saved: class key rotated' + (removed.length ? ' (' + removed.join(', ') + ' removed)' : ''));
+            try { if (document.getElementById('app')) renderUsers(); } catch (eClosed) {}   /* the window may be mid-close in tests */
+            return;
+          }
           if (key) {
             try {
               const wb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(id))), key);
@@ -1040,9 +1078,54 @@
           closeDlg();
           if (newly.length && key) await issueClassKeys(id, key, newly);
           toast('Pairing saved' + (newly.length ? ': key issued' : ''));
-          renderClasses();
+          renderUsers(); renderClasses();
         };
       });
+  }
+
+  /* ---- round9: rotate a class key; keepers are re-issued, everyone else loses access ---- */
+  async function rekeyClass(cid, keepers) {
+    const key = (SESSION.keys || {})[cid];
+    const blob = localStorage.getItem(classBlobKey(cid));
+    if (!key || !blob) return false;
+    let wb;
+    try { wb = await CS.openClass(JSON.parse(blob), key); } catch (e) { return false; }
+    CS.logAudit(wb, { by: myUser() ? myUser().username : '', action: 'rekey', note: 'class key rotated; keeps: ' + (keepers || []).join(', ') });
+    const nk = CS.genKey();
+    localStorage.setItem(classBlobKey(cid), JSON.stringify(await CS.sealClass(wb, nk)));
+    SESSION.keys[cid] = nk; classKeysToSession();
+    const keepSet = {};
+    (keepers || []).forEach((k) => { keepSet[k] = true; });
+    /* prune: a removed teacher's wrap is deleted, so the old key is unreadable */
+    const auth0 = getAuth();
+    let pruned = false;
+    for (const u of auth0.users) {
+      if (u.keyring && u.keyring[cid] && !keepSet[u.username] && u.username !== SESSION.user) { delete u.keyring[cid]; pruned = true; }
+    }
+    if (pruned) saveAuth(auth0);
+    /* re-issue: the admin does not know the keepers' passwords, so each keeper
+       gets a fresh one-time password (shown once) and the new key under it */
+    const fresh = {};
+    for (const un of Object.keys(keepSet)) {
+      if (un === SESSION.user) {
+        const a0 = getAuth();
+        const me0 = a0.users.find((x) => x.username === un);
+        if (me0 && SESSION.pw) { me0.keyring = me0.keyring || {}; me0.keyring[cid] = await CS.wrapKey(nk, SESSION.pw); saveAuth(a0); }
+        continue;
+      }
+      const pw = CS.genPassword();
+      const rErr = await rotateUserPassword(un, pw);
+      if (rErr) continue;
+      fresh[un] = pw;
+      const a2 = getAuth();
+      const ug2 = a2.users.find((x) => x.username === un);
+      if (!ug2) continue;
+      ug2.keyring = ug2.keyring || {};
+      ug2.keyring[cid] = await CS.wrapKey(nk, pw);
+      saveAuth(a2);
+    }
+    if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Class key rotated: new passwords (shown once)');
+    return true;
   }
 
   /* ---- admin: key + share link for a class (reuses the QR / DingTalk sheet) ---- */
@@ -1127,37 +1210,150 @@
   }
 
   /* ---- roster CSV import (accounts) ---- */
+  /* ---- round9: import the owner's roster sheet (accounts + classes + keys) ---- */
   function rosterImportGo(file) {
     const fr = new FileReader();
-    fr.onload = () => {
-      const r = CS.parseRosterCsv(fr.result);
-      const preview = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name) + '</td><td>' + U.esc(CS.roleLabel(u.role)) + '</td><td>' + U.esc(u.paired_with) + '</td></tr>').join('');
+    fr.onload = async () => {
+      const r = CS.parseSheetCsv(fr.result);
+      const school = schoolName();
+      const schoolWarn = [];
+      for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
+      const picks = r.unpicked || [];
+      const rowsAcc = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name || u.username) + '</td><td>' + U.esc(roleLabel(u.role)) + '</td><td>' + U.esc((u.classes || []).join(', ')) + '</td></tr>').join('');
+      const pickRows = picks.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is EAL in each class?</b> The file does not say, so pick below. SPR never guesses.</p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>EAL / Supporting</th></tr></thead><tbody>' +
+        picks.map((c, i) => {
+          const members = (r.users.filter((u) => (u.classes || []).indexOf(c) !== -1).map((u) => u.username));
+          const opts = members.map((m) => '<option value="' + U.esc(m) + '">' + U.esc(m) + '</option>').join('');
+          return '<tr><td>' + U.esc(c) + '</td><td><label>EAL <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="eal"><option value="">(pick)</option>' + opts + '</select></label> <label>Supporting <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="support"><option value="">(pick)</option>' + opts + '</select></label></td></tr>';
+        }).join('') + '</tbody></table></div>' : '';
       openDlg(
-        '<h3>Import roster: ' + r.users.length + ' account(s)</h3>' +
-        (r.errors.length ? '<div class="login-err">' + r.errors.map(U.esc).join('<br>') + '</div>' : '') +
-        (r.warnings.length ? '<p class="small" style="color:#b45309">' + r.warnings.map(U.esc).join('<br>') + '</p>' : '') +
-        (r.users.length ? '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Paired with</th></tr></thead><tbody>' + preview + '</tbody></table></div>' +
-        '<p class="small muted">Each account gets a fresh generated password (shown once, downloadable). Class keys are issued later via Pair.</p>' : '') +
-        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1" ' + (r.users.length ? '' : 'disabled') + '>Create accounts</button></div>',
-        (d) => {
+        '<h3>Import roster sheet: ' + r.users.length + ' account(s), ' + r.classes.length + ' class(es)</h3>' +
+        (r.errors.length ? '<div class="login-err">' + r.errors.map((e) => U.esc(e)).join('<br>') + '</div>' : '') +
+        (schoolWarn.length ? '<p class="small">School column differs from the Manage &amp; setup school setting ("' + U.esc(school) + '"): ' + U.esc(schoolWarn.join(', ')) + '. Imported anyway.</p>' : '') +
+        '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>username</th><th>display name</th><th>role</th><th>classes</th></tr></thead><tbody>' + rowsAcc + '</tbody></table></div>' +
+        pickRows +
+        '<p class="small">Check every class pair. Where the file says who is EAL it is pre-filled; otherwise pick below; SPR never guesses. New accounts get a one-time password.</p>' +
+        '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1"' + ((r.errors.length || picks.length) ? ' disabled' : '') + '>Import</button></div>',
+        function (d) {
+          const apply = () => {
+            /* decisions: class -> {eal, support} from pickers where the file was silent */
+            const decided = {};
+            d.querySelectorAll('select[data-rolepick]').forEach((sel) => {
+              const c = sel.getAttribute('data-rolepick'), slot = sel.getAttribute('data-slot');
+              if (!decided[c]) decided[c] = {};
+              if (sel.value) decided[c][slot] = sel.value;
+            });
+            const stillOpen = picks.filter((c) => { const dd = decided[c] || {}; return !dd.eal || !dd.support; });
+            if (stillOpen.length) { toast('Pick EAL and Supporting for: ' + stillOpen.join(', '), true); return; }
+            applySheetImport(r, decided);
+          };
           d.onclick = async (e) => {
             const b = e.target.closest('[data-x]');
-            if (!b || b.dataset.x !== '1') { if (b) closeDlg(); return; }
-            const fresh = {};
-            for (const u of r.users) {
-              const pw = CS.genPassword();   /* 100 bits from crypto.getRandomValues */
-              const err = await provisionUser(u.username, pw, u.display_name || u.username, u.role);
-              if (!err) fresh[u.username] = pw;
-            }
-            closeDlg();
-            if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
-            renderClasses();
+            if (!b) return;
+            if (b.getAttribute('data-x') === '0') { closeDlg(); return; }
+            if (b.disabled) return;
+            apply();
           };
+          d.addEventListener('change', (e) => {
+            /* enable Apply once every pick is made */
+            const btn = d.querySelector('[data-x="1"]');
+            if (!btn || !picks.length) return;
+            const sels = Array.from(d.querySelectorAll('select[data-rolepick]'));
+            btn.disabled = sels.some((sel) => !sel.value);
+          });
         });
     };
     fr.readAsText(file);
   }
 
+  async function applySheetImport(r, decided) {
+    if (!SESSION.pw) { closeDlg(); toast('Sign in again, then import once more: the key wrapping needs your password in memory.', true); return; }
+    const auth0 = getAuth();
+    const fresh = {};
+    const grant = {};   /* username -> [{id, key}] to wrap at the end */
+    const need = {};    /* username -> class count (keys awaiting their wrap) */
+    const rekeys = [];
+    const ix = classIndex();
+    const school = schoolName();
+    /* ---- accounts (skip existing; password only for new) ---- */
+    for (const u of r.users) {
+      const un = String(u.username || '').trim();
+      if (auth0.users.some((x) => String(x.username).toLowerCase() === un.toLowerCase())) continue;
+      const pw = CS.genPassword();
+      const err = await addUser(un, pw, u.display_name || un, u.role);
+      if (err) { toast(un + ': ' + err, true); continue; }
+      fresh[un] = pw;
+    }
+    /* ---- classes ---- */
+    for (const c of r.classes) {
+      let row = ix.find((x) => x.name === c.name);
+      if (row) {
+        /* existing class: merge assignments, rekey if someone lost access */
+        const before = [row.eal, row.support].filter(Boolean);
+        const dec = decided[c.name] || {};
+        const eal = c.teachers.find((t) => t.class_role === 'eal') || (dec.eal ? { username: dec.eal, class_role: 'eal' } : null);
+        const sup = c.teachers.find((t) => t.class_role === 'support') || (dec.support ? { username: dec.support, class_role: 'support' } : null);
+        const ealUn = eal ? eal.username : row.eal;
+        const supUn = sup ? sup.username : row.support;
+        if ((row.eal || '') !== (ealUn || '') || (row.support || '') !== (supUn || '')) {
+          const removed = before.filter((x) => x !== ealUn && x !== supUn);
+          if (removed.length) { rekeys.push({ id: row.id, keep: [ealUn, supUn].filter(Boolean) }); }
+          const key = (SESSION.keys || {})[row.id];
+          if (key) {
+            try {
+              const wb = await CS.openClass(JSON.parse(localStorage.getItem(classBlobKey(row.id))), key);
+              wb.eal = ealUn || ''; wb.support = supUn || '';
+              localStorage.setItem(classBlobKey(row.id), JSON.stringify(await CS.sealClass(wb, key)));
+            } catch (e2) {}
+          }
+          row.eal = ealUn || ''; row.support = supUn || '';
+          for (const h of [ealUn, supUn]) if (h) { (grant[h] = grant[h] || []).push({ id: row.id, key: key }); need[h] = (need[h] || 0) + 1; }
+        }
+        continue;
+      }
+      /* new class */
+      const dec = decided[c.name] || {};
+      const eal = (c.teachers.find((t) => t.class_role === 'eal') || {}).username || dec.eal || '';
+      const sup = (c.teachers.find((t) => t.class_role === 'support') || {}).username || dec.support || '';
+      const cid = 'c-' + String(c.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) + '-' + Math.random().toString(36).slice(2, 6);
+      const key = CS.genKey();
+      const wb = { sprClass: 1, id: cid, name: c.name, school: c.school || school || '', eal: eal, support: sup, settings: Object.assign({ autoTotal: true, spTotal: 20, daTotal: 10 }, (DB && DB.settings) || {}), currentSemesterId: null, semesters: [], pending: [], audit: [] };
+      CS.logAudit(wb, { by: myUser() ? myUser().username : '', action: 'create', note: 'created from roster sheet import' });
+      localStorage.setItem(classBlobKey(cid), JSON.stringify(await CS.sealClass(wb, key)));
+      ix.push({ id: cid, name: c.name, school: c.school || school || '', eal: eal, support: sup, createdAt: Date.now(), updatedAt: Date.now(), pendingCount: 0, studentCount: 0 });
+      SESSION.keys[cid] = key; classKeysToSession();
+      for (const h of [eal, sup]) if (h) { (grant[h] = grant[h] || []).push({ id: cid, key: key }); need[h] = (need[h] || 0) + 1; }
+    }
+    /* ONE password rotation per teacher, then wrap every key under it */
+    for (const un of Object.keys(need)) {
+      let pwG = un === SESSION.user ? SESSION.pw : null;
+      if (!pwG) { pwG = fresh[un] || CS.genPassword(); if (!fresh[un]) fresh[un] = pwG; const rErr = await rotateUserPassword(un, pwG); if (rErr) { toast(un + ': ' + rErr, true); continue; } }
+      const authG = getAuth();
+      const ug = authG.users.find((x) => x.username === un);
+      if (!ug) continue;
+      ug.keyring = ug.keyring || {};
+      for (const g of (grant[un] || [])) { try { ug.keyring[g.id] = await CS.wrapKey(g.key, pwG); } catch (e4) {} }
+      saveAuth(authG);
+    }
+    /* the admin's own keyring: every class key on this device, wrapped under
+       this session (the owner's sheet: MSK sees everything) */
+    {
+      const authA2 = getAuth();
+      const mu2 = authA2.users.find((u) => u.username === SESSION.user);
+      if (mu2 && SESSION.pw) {
+        mu2.keyring = mu2.keyring || {};
+        for (const c of ix) { try { mu2.keyring[c.id] = await CS.wrapKey((SESSION.keys || {})[c.id], SESSION.pw); } catch (e5) {} }
+        saveAuth(authA2);
+      }
+    }
+    setClassIndex(ix);
+    if (sprMode() !== 'class') { try { localStorage.setItem(MODE_KEY, 'class'); } catch (eM) {} }
+    for (const rk of rekeys) await rekeyClass(rk.id, rk.keep);
+    closeDlg();
+    if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
+    else toast('Roster sheet imported: ' + r.classes.length + ' class(es) ready.');
+    renderUsers();
+  }
   /* ---- export / restore EVERYTHING (admin) ---- */
   /* nuke this device's app state and reload to the sign-in screen. The cloud
      copy and other devices are untouched; a full backup downloads first so
@@ -1265,7 +1461,7 @@
     } else if (!DB.semesters.length) { toast('Nothing to migrate', true); return; }
     const plan = CS.planMigration(src);
     const users = getAuth().users;
-    const sel = (cid, role) => '<select class="inp" data-mig="' + U.esc(cid) + ':' + role + '"><option value="">— none —</option>' +
+    const sel = (cid, role) => '<select class="inp" data-mig="' + U.esc(cid) + ':' + role + '"><option value="">(none yet)</option>' +
       users.filter((u) => classRole(u.role) === role).map((u) => '<option value="' + U.esc(u.username) + '">' + U.esc(u.username) + '</option>').join('') + '</select>';
     const rows = plan.classes.map((c) =>
       '<tr><td><b>' + U.esc(c.name) + '</b><div class="small muted">' + U.esc(c.school) + '</div></td>' +
@@ -1558,12 +1754,20 @@
           '<div class="chart-box" style="height:' + Math.max(220, Math.min(gAll.filter(gateOk).length, 30) * 20) + 'px"><canvas id="ch-byStu" role="img" aria-label="Final score by student bar chart"></canvas></div></div>';
     }
 
+    /* round9: honest save stamp (was the Live-board Updated-at) - the app
+       saves on this device; it is not a live feed. Cloud-copy line appears
+       only when device sync is actually on (cfg.lastPush). */
     let upd = '';
     try {
       const at = Number(localStorage.getItem('spr-last-save-at') || 0);
       if (at) {
-        const d = new Date(at), mins = Math.round((Date.now() - at) / 60000);
-        upd = ' \u00b7 Updated ' + (mins < 1 ? 'just now' : ('at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')));
+        const mins = Math.round((Date.now() - at) / 60000);
+        upd = ' \u00b7 Saved ' + (mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : Math.round(mins / 60) + ' h ago');
+      }
+      const cfg = dsCfg();
+      if (cfg && cfg.lastPush) {
+        const d2 = new Date(cfg.lastPush);
+        upd += ' \u00b7 Cloud copy: ' + String(d2.getHours()).padStart(2, '0') + ':' + String(d2.getMinutes()).padStart(2, '0');
       }
     } catch (e0) {}
     $('#content').innerHTML = pageHead('Class dashboard', U.esc(sem.name) + ' \u00b7 ' + sem.students.length + ' students' + upd,
@@ -2447,56 +2651,81 @@
 
   /* simple-ui admin Users tab: every account this device knows, plain words,
      no secrets (never render hashes, keyrings or wraps) */
-  function usersClassInfo(un, role) {
-    const r = classRole(role);
-    if (r === 'admin' || r === 'manager') return { classes: 'All classes', partner: '' };
-    const ix = classIndex();
-    const mine = ix.filter((c) => c.eal === un || c.support === un);
-    if (!mine.length) return { classes: 'Not paired yet', partner: '' };
-    const partner = mine.map((c) => (c.eal === un ? c.support : c.eal) || '').filter(Boolean).join(', ');
-    return { classes: mine.map((c) => c.name).join(', '), partner: partner };
+  function schoolName() {
+    try { return (JSON.parse(localStorage.getItem('spr-auth-v1') || '{}').settings || {}).school || 'Demo School'; } catch (e) { return 'Demo School'; }
+  }
+  /* ---- round9: one row per (person, partner) — pairing derived from classes ---- */
+  function usersSheetRows() {
+    const users = getAuth().users, ix = classIndex();
+    const school = schoolName() || 'All';
+    const rows = [];
+    for (const u of users) {
+      const r = classRole(u.role);
+      if (r === 'admin' || r === 'manager') { rows.push({ u: u, classes: 'All classes', school: 'All', partner: '', classRole: '' }); continue; }
+      const mine = ix.filter((c) => c.eal === u.username || c.support === u.username);
+      if (!mine.length) { rows.push({ u: u, classes: '', school: school, partner: '', classRole: '' }); continue; }
+      const byP = new Map();
+      for (const c of mine) {
+        const p = (c.eal === u.username ? c.support : c.eal) || '';
+        if (!byP.has(p)) byP.set(p, []);
+        byP.get(p).push(c);
+      }
+      for (const [p, cs] of byP) {
+        const roles = cs.map((c) => (c.eal === u.username ? 'eal' : 'support'));
+        const cr = roles.every((x) => x === roles[0]) ? roles[0] : '';
+        rows.push({ u: u, classes: cs.map((c) => c.name).sort().join(', '), school: school, partner: p, classRole: cr });
+      }
+    }
+    return rows;
   }
   function renderUsers() {
-    const f = ui.usersView || (ui.usersView = { q: '', role: 'all' });
-    const all = getAuth().users;
+    const f = ui.usersView || (ui.usersView = { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' });
     const q = f.q.trim().toLowerCase();
-    const rows = all.filter((u) => (f.role === 'all' || classRole(u.role) === f.role) &&
-      (!q || (u.username + ' ' + (u.name || '')).toLowerCase().includes(q)));
-    const cell = (v) => U.esc(v || '\u2014');
-    /* self-contained: reachable both from the shell (class open) and straight
-       from the chooser screen (no class open): so draw the whole page */
-    $('#app').innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
-      '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
-        '<a class="btn" href="' + (CLS || sprMode() !== 'class' ? '#/dashboard' : '#/classes') + '" style="font-size:11.5px;padding:5px 12px">&larr; Back to the app</a>' +
-        '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button></div>' +
-      pageHead('Users', all.length + ' account' + (all.length === 1 ? '' : 's') + ' on this device') +
-      '<p class="small muted" style="margin:-4px 0 14px">Shows accounts known on this device. When the school database is added, this list will show everyone automatically.</p>' +
-      '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
-        '<label>Search <input class="inp" id="usersQ" placeholder="Name or username\u2026" value="' + U.esc(f.q) + '"></label>' +
-        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'EAL teacher'], ['support', 'Supporting teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+    const ix = classIndex();
+    const mine = (un) => ix.filter((c) => c.eal === un || c.support === un);
+    const tabBtn = (v, label) => '<button class="btn sm' + (f.view === v ? ' primary' : '') + '" data-action="users-view" data-view="' + v + '" style="margin-right:6px">' + label + '</button>';
+    const filters = '<div class="sheet-toolbar no-print"><div class="flex" style="flex-wrap:wrap;gap:10px;align-items:center">' +
+        '<label>Search <input class="inp" id="usersQ" placeholder="Name, username or partner…" value="' + U.esc(f.q) + '"></label>' +
+        '<label>Role <select class="inp" id="usersRole">' + [['all', 'All roles'], ['admin', 'Admin'], ['manager', 'Manager'], ['eal', 'Teacher']].map((o) => '<option value="' + o[0] + '"' + (f.role === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        '<label>Class <select class="inp" id="usersClass"><option value="all">All classes</option>' + ix.map((c) => c.name).sort().map((n) => '<option value="' + U.esc(n) + '"' + (f.cls === n ? ' selected' : '') + '>' + U.esc(n) + '</option>').join('') + '</select></label>' +
+        '<label>Status <select class="inp" id="usersStatus">' + [['all', 'All'], ['active', 'Active'], ['disabled', 'Disabled']].map((o) => '<option value="' + o[0] + '"' + (f.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
         '<button class="btn" data-action="users-csv">Download list (CSV)</button>' +
         '<button class="btn" data-action="acct-add-open">Add account</button>' +
         '<button class="btn" data-action="class-roster-btn">Import roster CSV</button>' +
-      '</div></div>' +
-      (rows.length ? '<table class="tbl"><thead><tr><th scope="col">Display name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Class</th><th scope="col">Paired with</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>' +
-        rows.map((u) => {
-          const ci = usersClassInfo(u.username, u.role);
-          const selfNow = u.username === SESSION.user;
-          return '<tr><td>' + U.esc(u.name || u.username) + '</td>' +
-            '<td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
-            '<td>' + roleLabel(u.role) + '</td>' +
-            '<td>' + cell(ci.classes) + '</td>' +
-            '<td>' + cell(ci.partner) + '</td>' +
-            '<td>' + (u.disabled ? '<span class="g g-none">Disabled</span>' : '<span class="g g-ok">Active</span>') + '</td>' +
-            '<td>' + (selfNow ? '' :
-              '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
-              '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(u.username) + '">' + (u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>';
-        }).join('') + '</tbody></table>'
-        : '<div class="empty" style="padding:28px 24px"><div class="big">No matching accounts</div></div>') +
-      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
-      '</main></div>';
+      '</div></div>';
+    let body = '';
+    if (f.view === 'byclass') {
+      body = filters + '<div class="sheet"><table class="tbl"><thead><tr><th scope="col">Class</th><th scope="col">EAL teacher</th><th scope="col">Supporting teacher</th><th scope="col" class="num">Students</th></tr></thead><tbody>' +
+        ix.slice().sort((a, b) => a.name < b.name ? -1 : 1).map((c) => {
+          const btn = (un, slot) => '<button class="btn sm" data-action="class-pair-open" data-pair="' + U.esc(c.name) + '" title="Change the ' + slot + ' teacher">' + U.esc(un || '(none)') + '</button>';
+          return '<tr><td><b>' + U.esc(c.name) + '</b></td><td>' + btn(c.eal, 'EAL') + '</td><td>' + btn(c.support, 'supporting') + '</td><td class="num">' + (c.studentCount || 0) + '</td></tr>';
+        }).join('') + '</tbody></table><p class="small muted" style="margin-top:8px">Click a teacher cell to change the assignment. One EAL + one supporting teacher per class; assigning a teacher gives them this class&rsquo;s key, removing it rotates the key.</p></div>';
+    } else {
+      const all = usersSheetRows().filter((r) => {
+        if (f.role !== 'all' && classRole(r.u.role) !== f.role) return false;
+        if (f.cls !== 'all' && mine(r.u.username).every((c) => c.name !== f.cls)) return false;
+        if (f.status === 'active' && r.u.disabled) return false;
+        if (f.status === 'disabled' && !r.u.disabled) return false;
+        if (q && !((r.u.username + ' ' + (r.u.name || '') + ' ' + r.partner).toLowerCase().includes(q))) return false;
+        return true;
+      });
+      const cell = (v) => U.esc(v || '—');
+      body = filters + '<div class="sheet" id="usersSheet"><table class="tbl"><thead><tr>' +
+        '<th scope="col">username</th><th scope="col">display name</th><th scope="col">role</th><th scope="col">class or grade</th><th scope="col">School</th><th scope="col">paired with</th><th scope="col">status</th><th scope="col"><span class="sr-only">actions</span></th>' +
+        '</tr></thead><tbody>' + all.map((r) =>
+          '<tr><td>' + U.esc(r.u.username) + '</td><td>' + U.esc(r.u.name || r.u.username) + '</td><td>' + U.esc(roleLabel(r.u.role)) + '</td><td>' + cell(r.classes) + '</td><td>' + cell(r.school) + '</td><td>' + cell(r.partner) + '</td><td>' + (r.u.disabled ? 'Disabled' : 'Active') + '</td><td>' +
+            (r.u.username === SESSION.user ? '' : '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(r.u.username) + '">' + (r.u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>'
+        ).join('') + '</tbody></table></div>' +
+        '<p class="small muted" style="margin-top:8px">Accounts on this device. A teacher sees exactly the classes assigned to them; the partner column is derived from the class assignments.</p>';
+    }
+    const host = $('#app');
+    host.innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
+      '<header class="page-head"><div><h1>Users</h1><div class="sub">who can sign in on this device, and which classes they see</div></div>' +
+      '<div class="actions"><button class="btn" data-action="go-back">Back</button></div></header>' +
+      '<div class="tabs" style="margin:12px 0">' + tabBtn('sheet', 'Sheet') + tabBtn('byclass', 'By class') + '</div>' + body +
+      '<input type="file" id="file-roster" accept=".csv,text/csv" hidden></main></div>';
+    window.scrollTo(0, 0);
   }
-
   /* ============================== help & training ==============================
      One page for every role: training modules, the manual + video, and a
      request line to the owner (2026-10-27, owner request 3: replaces the
@@ -2526,7 +2755,7 @@
     const VIDEO = '/media/manual/SPR-with-Mo_Teacher-Video-Guide.mp4';
     const mod = (t, steps) => '<details class="help-mod"><summary>' + t + '</summary><ol class="small" style="margin:8px 0 2px;padding-left:20px;line-height:1.7">' +
       steps.map((x) => '<li>' + x + '</li>').join('') + '</ol></details>';
-    return '<div class="panel"><b>Training modules</b> <span class="small muted">— tap a topic to open it. The illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</span>' +
+    return '<div class="panel"><b>Training modules</b> <span class="small muted">Tap a topic to open it. The illustrated 30-page manual and the 4-minute video guide cover every screen step by step.</span>' +
       '<div class="flex" style="margin-top:8px">' +
         '<a class="btn sm" href="' + MANUAL + '" target="_blank" rel="noopener">Open the manual (PDF)</a>' +
         '<a class="btn sm" href="' + VIDEO + '" target="_blank" rel="noopener">Watch the video guide</a>' +
@@ -2563,7 +2792,7 @@
         'Admins: set a <b>master password</b> once: from the sign-in screen it can recover the admin account if that password is ever forgotten.',
       ]) +
       '</div>' +
-      '<div class="panel" style="margin-top:12px"><b>Raise a request to the administrator</b> <span class="small muted">— something broken, a feature idea, or an account or password problem. The request goes straight to Teacher Mo (the site owner); fixes usually ship within a day.</span>' +
+      '<div class="panel" style="margin-top:12px"><b>Raise a request to the administrator</b> <span class="small muted">Something broken, a feature idea, or an account or password problem. The request goes straight to Teacher Mo (the site owner); fixes usually ship within a day.</span>' +
       '<div class="req-box" style="max-width:640px">' +
         '<label style="display:block;margin-top:10px;font-size:13px">What is it about? <select class="inp" id="reqType" style="width:100%;margin-top:4px">' +
           ['Something is broken', 'I need help using a screen', 'Feature idea', 'Password or account help', 'Other'].map((t) => '<option>' + t + '</option>').join('') + '</select></label>' +
@@ -2605,9 +2834,11 @@
         '<div class="flex" style="justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
           (dsOn() ? '<button class="uc-out" data-action="ds-now" style="font-size:11.5px;padding:5px 12px">Check for newer copy</button>' : '') +
           '<button class="uc-out" data-action="privacy-open" style="font-size:11.5px;padding:5px 12px">Privacy &amp; data notice</button>' +
+          '<button class="uc-out" data-action="ios-warn-again" style="font-size:11.5px;padding:5px 12px">Show the iPhone/iPad warning again</button>' +
           '<button class="uc-out" data-action="logout" style="font-size:11.5px;padding:5px 12px">Sign out</button>' +
         '</div>' +
-        pageHead('Manage & setup', 'setup, pairing and recovery tools') +
+        pageHead('Manage & setup', 'setup, pairing and recovery tools',
+          '<button class="btn" data-action="ios-warn-again">Show the iPhone/iPad warning again</button>') +
         renderClassesAdvanced(classIndex(), false) +
         '<input type="file" id="file-roster" accept=".csv,text/csv" hidden>' +
         '</main></div>';
@@ -2628,7 +2859,8 @@
       window.scrollTo(0, 0);
       return;
     }
-    $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data') +
+    $('#content').innerHTML = pageHead('Manage & setup', 'classes, students and data',
+      '<button class="btn" data-action="ios-warn-again">Show the iPhone/iPad warning again</button>') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
         '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
@@ -2644,7 +2876,7 @@
       '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b>: store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
       (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
-        '<b>Safety copies</b> <span class="small muted">— kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
+        '<b>Safety copies</b> <span class="small muted">Kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
         safetyBackups().map((b, i) => '<div class="flex" style="margin-top:6px;gap:8px;align-items:center;flex-wrap:wrap">' +
           '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + ((b.db || {}).semesters || []).length + ' class(es)</span>' +
           '<button class="btn sm" data-action="sb-restore" data-i="' + i + '">Restore</button>' +
@@ -2692,7 +2924,8 @@
         '</tbody></table>' : '') +
         '<div class="flex" style="margin-top:10px"><button class="btn" data-action="acct-add-open">Add sign-in</button>' +
         '<span class="small muted" style="align-self:center">New sign-ins get their own password and open this same markbook: no data copying needed.</span></div>' +
-        '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: download backups regularly.' : 'checking… download backups regularly until it says granted.') + '</p>' +
+        (SPR_PERSIST === null ? (function () { setTimeout(requestPersistentStorage, 0); return ''; })() : '') +
+        '<p class="small" style="margin:14px 0 0"><b>Persistent storage:</b> ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low.' : SPR_PERSIST === false ? 'not granted: the browser did not promise to keep this data, so it may remove it when space runs low: download backups regularly.' : 'checking…') + '</p>' +
       '<p class="small" style="margin:14px 0 0;border-top:1px solid rgba(127,127,127,.25);padding-top:12px">' + (masterWrap()
           ? '<b>Master password is set.</b> From the sign-in screen it can reset the admin password if that is ever forgotten. Keep it on paper: SPR cannot show it again.'
           : '<b>No master password yet.</b> Set one as a recovery key: if the admin password is ever forgotten, the master password resets it from the sign-in screen. Keep it on paper: SPR cannot show it again.') + '</p>' +
@@ -2706,7 +2939,9 @@
         : '') +
       (isAdmin() ? (function () {
         const a = (DB.settings && DB.settings.schoolApproval) || {};
-        return '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School approval</b>: records that the school has approved using SPR. It appears at the bottom of the notice and travels with the full backup.</p>' +
+        const schoolHtml = '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School</b>: the one school this device works for (the roster CSV School column is checked against it).</p>' +
+          '<div class="flex" style="gap:8px;flex-wrap:wrap"><input class="inp" id="mg-school" placeholder="School name" style="max-width:280px" value="' + U.esc(schoolName() || 'Demo School') + '"><button class="btn sm" data-action="school-save">Save</button></div></div>';
+        return schoolHtml + '<div class="panel" style="margin-top:10px"><p class="small" style="margin:0 0 8px"><b>School approval</b>: records that the school has approved using SPR. It appears at the bottom of the notice and travels with the full backup.</p>' +
           '<div class="flex" style="gap:8px;flex-wrap:wrap">' +
           '<input class="inp" id="ap-by" placeholder="Approved by (name and title)" style="max-width:250px" value="' + U.esc(a.by || '') + '">' +
           '<input class="inp" id="ap-date" placeholder="Date (e.g. 2026-10-28)" style="max-width:150px" value="' + U.esc(a.date || '') + '">' +
@@ -3286,6 +3521,8 @@
       try { if (!DB.settings) DB.settings = {}; if (!DB.settings.privacyAck) { DB.settings.privacyAck = Date.now(); } saveDB(true); } catch (e2) {}
       closeDlg();
       if (onAck) onAck();
+      /* a join/pair link that arrived while the gate was up runs now */
+      if (PENDING_JOIN) { const j = PENDING_JOIN; PENDING_JOIN = null; j(); }
     });
   }
 
@@ -3351,6 +3588,23 @@
       months: months, students: students,
       observations: {}, spelling: {}, daily: {}, tests: {},
     });
+    /* round5 item 2: the FIRST class on a fresh browser must land in class
+       mode (per-class workbooks, pairing, per-teacher access): never in the
+       shared single-markbook. Existing vault browsers keep vault mode. */
+    if (sprMode() !== 'class' && !classIndex().length && !DB.semesters.length) {
+      const clsName = sem.className || sem.name;
+      (async () => {
+        const cid = await createClassWorkbook(sem.school || 'School', clsName, '', '');
+        if (!cid) return;
+        await openClass(cid);
+        DB.semesters.push(sem);
+        DB.currentSemesterId = sem.id;
+        saveDB(); buildShell(); closeDlg();
+        toast('Class ' + clsName + ' created. This browser now manages classes one at a time: add teachers from Users to give them this class.');
+        location.hash = '#/dashboard'; route();
+      })();
+      return;
+    }
     DB.semesters.push(sem);
     DB.currentSemesterId = sem.id;
     saveDB(); buildShell(); closeDlg();
@@ -3493,6 +3747,10 @@
 
   /* ============================ global listeners ============================ */
   document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.rail .nav a') && window.matchMedia && window.matchMedia('(max-width: 700px)').matches) {
+      const rail = document.querySelector('.rail');
+      if (rail) rail.classList.remove('open');
+    }
     const el = e.target.closest('[data-action]');
     if (!el) return;
     /* pseudo-links (href='#') must not navigate: the hashchange re-route would
@@ -3507,6 +3765,7 @@
     if (a === 'restore-all-btn') { const f = $('#file-restore-all'); if (f) f.click(); return; }
     if (a === 'class-migrate-open') { migrateOpen(); return; }
     if (a === 'class-pair') { pairClassDialog(el.dataset.id); return; }
+    if (a === 'class-pair-open') { const cP = classIndex().find((x) => x.name === el.dataset.pair); if (cP) pairClassDialog(cP.id); else toast('That class no longer exists here', true); return; }
     if (a === 'class-share') { classShareDialog(el.dataset.id); return; }
     if (a === 'class-export-file') { exportClassFile(el.dataset.id); return; }
     if (a === 'export-all') { exportEverything(); return; }
@@ -3533,17 +3792,17 @@
              up until a master password is set or a recovery file is saved. */
           openDlg('<h3>One more thing: your recovery path</h3>' +
             '<p class="small">If the admin password is ever forgotten, one of these two is the only way back in. Choose one now.</p>' +
-            '<div class="panel" style="margin:10px 0"><b>1. Set a master password</b>' +
-            '<p class="small muted">A second password that can reset the admin password from the sign-in screen. Keep it on paper.</p>' +
+            '<div class="panel" style="margin:10px 0"><b>1. Set a master password (recommended)</b>' +
+            '<p class="small muted">A second password that resets the admin password from the sign-in screen. No file needed, and it still works years from now. Keep it on paper.</p>' +
             '<div class="flex" style="gap:8px;flex-wrap:wrap"><input type="password" id="mrPw" class="inp" style="max-width:210px" placeholder="Master password" autocomplete="new-password">' +
             '<button class="btn" data-action="recovery-master">Set master password</button></div>' +
             '<div class="login-err" id="mrErr" aria-live="assertive"></div></div>' +
-            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file</b>' +
-            '<p class="small muted">A backup file of this brand-new (empty) workbook. Keep it with the school\u2019s records.</p>' +
+            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file instead</b>' +
+            '<p class="small muted">What this can and cannot do: the file restores your data <b>as of the moment you save it</b>. Right now that is nothing: the workbook is empty. SPR offers a fresh recovery file at the first backup prompt (when there is real data to protect). Keep the newest copy with the school\u2019s records. A file cannot reset a forgotten password: it only brings data back.</p>' +
             '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-action="recovery-dl">Download recovery file</button>' +
-            '<label class="small" style="gap:6px"><input type="checkbox" id="recoverySaved"> I saved the file</label></div></div>' +
+            '<span class="small muted" id="recoveryDlState">not downloaded yet</span></div></div>' +
             '<div class="login-err" id="recErr" aria-live="assertive"></div>' +
-            '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack">Continue</button></div>',
+            '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack" id="recoveryGo" disabled>Continue</button></div>',
             function (d) { d.addEventListener('cancel', function (e) { e.preventDefault(); }); });
         } catch (err) { if (errEl) errEl.textContent = 'Setup failed: ' + err.message; }
       })();
@@ -3560,24 +3819,27 @@
           v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, mst);
           writeV2(v2);
           if (err) err.textContent = '';
-          const cb = $('#recoverySaved'); if (cb) { cb.checked = true; cb.disabled = true; }
+          const go = $('#recoveryGo'); if (go) go.disabled = false;
           toast('Master password set');
         } catch (e2) { if (err) err.textContent = 'Could not set the master password: ' + e2.message; }
       })();
       return;
     }
     if (a === 'recovery-dl') {
-      downloadBackup();
-      const cb = $('#recoverySaved');
-      if (cb && !cb.disabled) cb.checked = true;
+      downloadBackup();   /* round5 item 3: Continue enables only after this really fired */
+      try { DB.settings.recoveryFilePending = 1; saveDB(true); } catch (eR) {}
+      const st = $('#recoveryDlState');
+      if (st) st.textContent = 'downloaded: a fresh one is offered at the first backup prompt';
+      const go = $('#recoveryGo'); if (go) go.disabled = false;
       return;
     }
     if (a === 'recovery-ack') {
-      const cb = $('#recoverySaved');
+      const go = $('#recoveryGo');
       const err = $('#recErr');
       const v2 = readV2();
       const masterSet = !!(v2 && v2.wraps && v2.wraps[MASTER_KEY]);
-      if (!masterSet && !(cb && cb.checked)) { if (err) err.textContent = 'Choose one of the two options first: set a master password or download the recovery file.'; return; }
+      if (go && go.disabled) { if (err) err.textContent = 'Choose one of the two options first: set a master password, or download the recovery file.'; return; }
+      if (!masterSet && !(go && !go.disabled)) { if (err) err.textContent = 'Choose one of the two options first.'; return; }
       try { localStorage.setItem('spr-recovery-ack', String(Date.now())); } catch (e3) {}
       closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
       toast('Sign-in created. Welcome to SPR');
@@ -3606,7 +3868,7 @@
              back on the row. If the immediate push cannot run (hold/read
              failure), the debounce retry still applies. */
           const pushedNow = await dsPushNow(false);
-          if (!pushedNow) scheduleSyncPush();
+          if (pushedNow !== true) scheduleSyncPush(pushedNow === 'held' ? 4000 : 0, 'account event: removal');   /* held: retry chain; failure: immediate retry on next event */
         }
         toast('Sign-in removed: ' + un);
         if (location.hash === '#/manage') renderManage();
@@ -3635,21 +3897,24 @@
       if (location.hash === '#/manage') renderManage();
       return;
     }
+    if (a === 'users-view') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).view = el.dataset.view; renderUsers(); return; }
     if (a === 'users-csv') {
-      const head = 'username,display_name,role,class_or_grade,paired_with,status';
-      const lines = getAuth().users.map((u) => {
-        const ci = usersClassInfo(u.username, u.role);
+      /* round9: the Sheet view, in the owner's column order, UTF-8 + BOM so
+         Excel opens Chinese display names correctly */
+      const head = 'username,display_name,role,class_or_grade,School,paired_with,status,class_role';
+      const lines = usersSheetRows().map((r) => {
         const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-        return [u.username, u.name || u.username, roleLabel(u.role), ci.classes, ci.partner, u.disabled ? 'Disabled' : 'Active'].map(esc).join(',');
+        const cr = r.classRole === 'eal' ? 'eal' : r.classRole === 'support' ? 'supporting' : '';
+        return [r.u.username, r.u.name || r.u.username, roleLabel(r.u.role), r.classes, r.school, r.partner, r.u.disabled ? 'Disabled' : 'Active', cr].map(esc).join(',');
       });
-      const blob = new Blob([head + '\n' + lines.join('\n')], { type: 'text/csv' });
+      const NL2 = String.fromCharCode(10);
+      const blob = new Blob([String.fromCharCode(0xFEFF) + head + NL2 + lines.join(NL2)], { type: 'text/csv' });
       const a2 = document.createElement('a');
       a2.href = URL.createObjectURL(blob);
       a2.download = 'spr-accounts.csv';
       document.body.appendChild(a2); a2.click(); a2.remove();
       return;
-    }
-    if (a === 'user-toggle') {
+    }    if (a === 'user-toggle') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
       const auth = getAuth();
@@ -3657,7 +3922,7 @@
       if (!u || un === SESSION.user) return;
       u.disabled = !u.disabled;
       saveAuth(auth);
-      if (dsCanPush()) scheduleSyncPush();
+      if (dsCanPush()) scheduleSyncPush(0, 'account event: enable/disable');   /* account event: push promptly, not on the edit debounce */
       toast(un + (u.disabled ? ' disabled' : ' enabled') + ' \u2014 they cannot sign in while disabled');
       renderUsers();
       return;
@@ -3708,7 +3973,7 @@
         }
         closeDlg();
         const ptr = await dsWritePointer(un, pw);
-        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new account hash in the data row */
+        if (dsCanPush()) scheduleSyncPush(0, 'account event: sign-in created');   /* account event: push promptly, not on the edit debounce */
         toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + '): works on any system they sign in from'
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
              : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
@@ -3775,7 +4040,7 @@
         }
         if (SESSION.user === un) SESSION.pw = nw;   /* next cloud push re-wraps under the new password */
         const ptr = await dsWritePointer(un, nw);
-        if (dsCanPush()) scheduleSyncPush();   /* fresh devices need the new password hash in the data row */
+        if (dsCanPush()) scheduleSyncPush(0, 'account event: password reset');   /* account event: push promptly, not on the edit debounce */
         closeDlg();
         toast((ptr === 'ok' ? 'Password updated for ' + un + ': sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
@@ -3902,17 +4167,6 @@
       (async () => {
         try {
           let res = await doLoginFull(u, p);
-          /* built-in owner account (see RECOVERY_PASS): only a device with no
-             accounts and no vault may self-create MSK — this can never touch
-             existing data, because both guards are checked right here */
-          if (res && res.error && isRecoveryLogin(u, p) && getAuth().users.length === 0 && !readV2()) {
-            const cr = await firstRunCreate(RECOVERY_USER, p);
-            if (cr && cr.user) {
-              res = { user: cr.user };
-              toast('Signed in with the built-in MSK account: a fresh markbook was created on this device. For privacy, change its password in Manage \u2192 Users.');
-              if (SESSION && SESSION.pw && dsCanPush()) scheduleSyncPush();   /* land the owner wrap in the cloud, like a normal sign-in */
-            }
-          }
           if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
           /* single-class auto-open then takes the landing: on success it points
@@ -3931,7 +4185,7 @@
     if (a === 'change-pass-save') {
       (async () => {
         /* P1.1: self-service for EVERY role. The current password is verified
-           by UNLOCKING (login wrap / v2 wrap): never against a stored hash —
+           by UNLOCKING (login wrap / v2 wrap): never against a stored hash:
            and everything wrapped under the old password is re-wrapped under
            the new one: v2 master wrap, the login wrap, and every class key in
            the user's keyring. */
@@ -3975,7 +4229,8 @@
             if (row && row.payload && row.payload.sprPTR === 1) {
               const pt = await ptrOpen(row.payload, cur);
               const env2 = await ptrSeal(pt, nw);
-              await sbSave(chan, env2, row.share_name || 'SPR pointer', me.username, new Date().toISOString(), false);
+              const dsC = dsCfg();
+              await sbSave(chan, env2, row.share_name || 'SPR pointer', me.username, new Date().toISOString(), false, dsC ? { token: dsC.writeToken, keyProof: dsC.key } : null);
               ptrNote = ' Cloud pointer updated too.';
             }
           } catch (e2) { ptrNote = ' (Could not update the cloud pointer - on other devices use the I-use-SPR-on-another-device option with the OLD password once, or ask the admin to reset it.)'; }
@@ -4022,12 +4277,62 @@
     if (a === 'share-push') { sharePush(); return; }
     if (a === 'share-pull') { sharePull(); return; }
     if (a === 'share-qr') { shareQrModal(); return; }
+    if (a === 'share-hub') { SHARE_LAST_ERR = ''; shareHubDlg(); return; }
+    if (a === 'hub-copy') {
+      const inp = $('#hubLink');
+      const done = () => hubStatus('#hubSaveStatus', 'Link copied.', false);
+      try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(inp ? inp.value : '').then(done, done); } else if (inp) { inp.select(); document.execCommand('copy'); done(); } } catch (e) { done(); }
+      return;
+    }
+    if (a === 'hub-test') {
+      hubStatus('#hubTestStatus', 'Testing…', false);
+      hubPing().then((r) => {
+        if (r === 'ok') hubStatus('#hubTestStatus', 'Cloud connection works.', false);
+        else if (r === 'unreachable') hubStatus('#hubTestStatus', "Can't reach the cloud from this network. Try again from another network, or ask the school IT.", true);
+        else if (r === 'unprotected') hubStatus('#hubTestStatus', 'Cloud connection works, but the protection upgrade has not been run yet.', true);
+        else hubStatus('#hubTestStatus', 'The cloud copy is protected and your key is wrong.', true);
+      });
+      return;
+    }
     if (a === 'share-copy') {
       const inp = $('#shareLink');
       if (!inp) return;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(inp.value).then(() => toast('Share link copied'), () => { inp.select(); document.execCommand('copy'); toast('Share link copied'); });
       } else { inp.select(); document.execCommand('copy'); toast('Share link copied'); }
+      return;
+    }
+    if (a === 'recovery-file-now') {
+      downloadBackup();
+      try { delete DB.settings.recoveryFilePending; saveDB(true); } catch (eR2) {}
+      closeDlg();
+      toast('Recovery file saved: it now holds your real data as of today');
+      return;
+    }
+    if (a === 'ds-test') {
+      if (!dsOn()) { toast('Turn on device sync first', true); return; }
+      (async () => {
+        const c = dsCfg();
+        let msg;
+        try {
+          const chan = c.channel || await dsChan(c.owner || SESSION.user);
+          const r = await sbPing(chan, c.writeToken);
+          msg = r === 'ok' ? 'Cloud connection is good: the server knows this device\u2019s write token, and pushes are protected.'
+              : r === 'no-token' ? 'Connected, but the cloud channel has no write token enrolled yet. Your next change will enrol it automatically. Until then the server refuses pushes (they fail safely).'
+              : r === 'bad-token' ? 'Connected, but the server rejected this device\u2019s write token: turn device sync off and on to rotate it.'
+              : r === 'no-row' ? 'Connected: no cloud copy exists yet. It is created on your first change.'
+              : r === 'not-installed' ? 'Connected, but the server-side protection is NOT installed yet: the cloud copy can still be overwritten by anyone. See docs/supabase-write-token.sql (three copy-paste steps).'
+              : 'Unexpected answer from the server: ' + r;
+        } catch (e) {
+          if (e && e.rpcMissing) {
+            msg = 'Connected, but the server-side protection is NOT installed yet (the write-token SQL has not been run). Pushes fall back to the old unprotected write, so the cloud copy can still be overwritten by anyone until the owner runs docs/supabase-write-token.sql.';
+          } else {
+            msg = 'Cloud connection FAILED: ' + String((e && e.message) || e) + '. Your data on this device is safe.';
+          }
+        }
+        openDlg('<h3>Cloud connection</h3><p class="small">' + U.esc(msg) + '</p>' +
+          '<div class="dlg-actions"><button class="btn primary" data-x="close">Close</button></div>');
+      })();
       return;
     }
     if (a === 'ds-enable') { dsEnable(); return; }
@@ -4060,6 +4365,17 @@
     }
     if (a === 'ds-share') { shareNative($('#dsLinkInp') ? $('#dsLinkInp').value : ''); return; }
     if (a === 'share-native') { shareNative($('#shareLink') ? $('#shareLink').value : ''); return; }
+    if (a === 'school-save') {
+      if (!isAdmin()) { toast('Admin only.', true); return; }
+      const nm = ($('#mg-school') ? $('#mg-school').value : '').trim() || 'Demo School';
+      const auth = getAuth();
+      auth.settings = auth.settings || {};
+      auth.settings.school = nm;
+      saveAuth(auth);
+      toast('School setting saved: ' + nm);
+      renderManage();
+      return;
+    }
     if (a === 'approval-save') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const by = ($('#ap-by') ? $('#ap-by').value : '').trim();
@@ -4073,6 +4389,12 @@
       return;
     }
     if (a === 'privacy-open') { openPrivacy(); return; }
+    if (a === 'rail-toggle') {
+      const rail = document.querySelector('.rail');
+      if (rail) { rail.classList.toggle('open'); const b = rail.querySelector('.rail-menu'); if (b) b.setAttribute('aria-expanded', rail.classList.contains('open') ? 'true' : 'false'); }
+      return;
+    }
+    if (a === 'ios-warn-again') { safariDataDlg(); return; }
     if (a === 'notice-lang') { noticeLang = el.dataset.lang === 'zh' ? 'zh' : 'en'; openPrivacy(); return; }
     if (a === 'privacy-open-full') {
       openDlg('<h3>Notice / 使用说明</h3>' + noticeBodyHtml() +
@@ -4232,7 +4554,9 @@
     if (t.id === 'stuSearch') { ui.q = t.value; const el = $('#stuList'); if (el && cur()) el.innerHTML = stuCards(cur()); return; }
     if (t.id === 'dashSearch') { (ui.dash = ui.dash || {}).q = t.value; const el = $('#dashEvBody'); if (el && cur()) el.innerHTML = dashEvidenceRows(cur()); return; }
     if (t.id === 'usersQ') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).q = t.value; renderUsers(); return; }
-    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all' }).role = t.value; renderUsers(); return; }
+    if (t.id === 'usersRole') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).role = t.value; renderUsers(); return; }
+    if (t.id === 'usersClass') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).cls = t.value; renderUsers(); return; }
+    if (t.id === 'usersStatus') { (ui.usersView = ui.usersView || { q: '', role: 'all', cls: 'all', status: 'all', view: 'sheet' }).status = t.value; renderUsers(); return; }
     if (t.dataset && t.dataset.rn) {
       const semRn = cur(); if (!semRn) return;
       semRn.reportNotes = semRn.reportNotes || {};
@@ -4363,14 +4687,47 @@
     const c = getShare();
     const id = c.channel || c.bin;
     if (!id || !c.key) return null;
-    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key);
+    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key) + (c.writeToken ? '&t=' + encodeURIComponent(c.writeToken) : '');
   }
   /* ---------- Supabase channel (Save & Share, per-class) ---------- */
   function sbHeaders(extra) {
     const sb = SB();
-    const h = Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
-    try { const c = dsCfg(); if (c && c.writeToken) h['x-spr-write-token'] = String(c.writeToken); } catch (e) {}
-    return h;
+    /* round5 item 1: the write token travels in the RPC body now (a header is
+       invisible to the row policy and was ignored by the server anyway) */
+    return Object.assign({ apikey: sb.key, Authorization: 'Bearer ' + sb.key }, extra || {});
+  }
+  async function sha256Hex(str) {
+    const d = await subtle().digest('SHA-256', new TextEncoder().encode(String(str)));
+    return Array.from(new Uint8Array(d), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  async function rpcBody(fn, payload) {
+    const sb = SB();
+    const res = await fetch(sb.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+    if (res.status === 404) { const e = new Error('rpc-missing'); e.rpcMissing = true; throw e; }
+    if (!res.ok) {
+      let m = 'HTTP ' + res.status;
+      try { const j = await res.json(); m = (j && (j.message || j.details)) || m; } catch (e2) {}
+      const e = new Error(m);
+      e.notEnrolled = /no token enrolled/i.test(m);
+      e.badToken = /write token rejected/i.test(m);
+      e.alreadyEnrolled = /already enrolled/i.test(m);
+      throw e;
+    }
+    try { return await res.json(); } catch (e3) { return null; }
+  }
+  async function sbWrite(channel, token, env, who, at, shareName) {
+    await rpcBody('spr_channel_write', { p_id: channel, p_token: String(token), p_payload: env, p_pushed_by: who, p_pushed_at: at, p_share_name: shareName });
+    return 'ok';
+  }
+  async function sbEnrol(channel, token, keyB64) {
+    /* proof of pairing: the sync key itself, verified server-side by
+       recomputing the row's payload HMAC (see docs/supabase-write-token.sql) */
+    await rpcBody('spr_channel_enrol', { p_id: channel, p_token: String(token), p_key: String(keyB64) });
+    return true;
+  }
+  async function sbPing(channel, token) {
+    const r = await rpcBody('spr_channel_ping', { p_id: channel, p_token: String(token || '') });
+    return (r === null || r === undefined) ? '' : String(r);
   }
   async function sbGet(channel) {
     const sb = SB();
@@ -4379,8 +4736,52 @@
     const rows = await res.json();
     return rows.length ? rows[0] : null;
   }
-  async function sbSave(channel, env, shareName, who, at, insert) {
+  async function sbSave(channel, env, shareName, who, at, insert, opts) {
     const sb = SB();
+    /* round6: the token+key travel with the CALLER (device sync passes its
+       dsCfg values, Save & Share passes the share channel's own pair), so a
+       share push can never fall back to a different channel's token */
+    const token = opts && opts.token;
+    const keyProof = opts && opts.keyProof;
+    if (token) {
+      /* write-token world. Fresh channel: the very first INSERT arms the row
+         (write_token_hash in the insert body). Existing row: the RPC is the
+         only write path; if the row predates the SQL (hash NULL) this client
+         enrols once with the key proof and retries. If the server does not
+         have the RPC yet (SQL not run), fall back to the legacy direct write
+         so nothing breaks before the owner upgrades. */
+      if (insert) {
+        let armed = null;
+        try {
+          armed = JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env, write_token_hash: await sha256Hex(token) });
+        } catch (eHash) { armed = null; }
+        if (armed) {
+          const r1 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: armed });
+          if (r1.ok) return 'ok';
+          if (r1.status === 409) return 'conflict';
+          /* pre-SQL server: the hash column does not exist (PGRST204) */
+          const r2 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
+          if (r2.status === 409) return 'conflict';
+          if (!r2.ok) throw new Error('HTTP ' + r2.status);
+          return 'ok';
+        }
+      }
+      try {
+        return await sbWrite(channel, token, env, who, at, shareName);
+      } catch (e) {
+        if (e && e.rpcMissing) {   /* SQL not run yet: legacy direct write */
+          /* fall through to the direct path below */
+        } else if (e && e.notEnrolled && keyProof) {
+          try {
+            await sbEnrol(channel, token, keyProof);
+            return await sbWrite(channel, token, env, who, at, shareName);
+          } catch (e2) {
+            if (e2 && e2.rpcMissing) { /* fall through */ }
+            else throw e2;
+          }
+        } else throw e;
+      }
+    }
     if (insert) {
       const res = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
       if (res.status === 409) return 'conflict';
@@ -4398,7 +4799,11 @@
        an opaque channel id, a timestamp and encrypted bytes */
     const pt = new TextEncoder().encode(JSON.stringify({ spr: 1, sem: sem, name: shareName || '', by: who }));
     const ct = await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, pt);
-    return { sprEnc: 1, v: 2, pushedAt: pushedAt, iv: b64uFromBytes(iv), ct: b64uFromBytes(new Uint8Array(ct)) };
+    const ctBytes = new Uint8Array(ct);
+    /* mac lets the server VERIFY a key-holder during enrol (same shape as the
+       device-sync envelope): b64url(HMAC-SHA256(key, ct)) */
+    const mac = await dsHmac(bytesFromB64u(keyB64), ctBytes);
+    return { sprEnc: 1, v: 2, pushedAt: pushedAt, iv: b64uFromBytes(iv), ct: b64uFromBytes(ctBytes), mac: mac };
   }
   function mergeSharedSem(sem) {
     validateDB({ semesters: [sem], settings: {} });
@@ -4407,6 +4812,66 @@
     if (i >= 0) DB.semesters[i] = sem; else DB.semesters.push(sem);
     DB.currentSemesterId = sem.id;
     saveDB(true); buildShell(); location.hash = '#/dashboard'; route();
+  }
+  /* round7 item 4: ONE obvious Save & Share dialog, plain words only.
+     Jargon (channel/token/enrol/HMAC/sealed/pointer) never appears here;
+     raw error text lives behind the Details toggle. */
+  let SHARE_LAST_ERR = '';
+  function hubPing() {
+    /* exactly one harmless server call; plain answers, no raw errors */
+    return (async () => {
+      const c = getShare();
+      const sb = SB();
+      if (!(sb.url && sb.key) || !(c.provider === 'sb' || c.channel)) return 'off';
+      try {
+        const r = await sbPing(c.channel, c.writeToken || '');
+        if (r === 'ok') return 'ok';
+        if (r === 'rpcMissing') return 'unprotected';
+        return 'wrong-key';
+      } catch (e) { return 'unreachable'; }
+    })();
+  }
+  function shareHubDlg() {
+    const c = getShare();
+    const sb = SB();
+    const on = !!(sb.url && sb.key && (c.provider === 'sb' || c.channel));
+    if (!on) {
+      openDlg('<h3>Save &amp; Share</h3>' +
+        '<p class="small">Saving to the cloud is not turned on for this class' +
+        (subtle() ? '' : ', and this browser only has the offline version: it needs the https website') +
+        '. Nothing leaves this device.</p>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dl-backup">Download backup</button>' +
+        '<button class="btn" data-x="close">Close</button></div>');
+      return;
+    }
+    const whenTxt = c.lastPush ? new Date(c.lastPush).toLocaleString() + (c.lastPushBy ? ', by ' + c.lastPushBy : '') : 'never';
+    const link = shareLink();
+    openDlg('<h3>Save &amp; Share</h3>' +
+      '<p class="small" style="margin-top:-4px">Your work is saved in this browser. A cloud copy is the safety net and the way a colleague gets this class. The cloud copy never replaces what is on this device without asking you first.</p>' +
+      '<h4 style="margin:10px 0 4px">1. Save a copy to the cloud</h4>' +
+      '<p class="small muted" style="margin:0 0 6px">Last saved: ' + U.esc(whenTxt) + '</p>' +
+      '<div class="flex" style="gap:8px;align-items:center"><button class="btn primary" data-action="share-push" id="hubSaveBtn">Save a copy to the cloud</button>' +
+      '<span class="small muted" id="hubSaveStatus"></span></div>' +
+      '<h4 style="margin:12px 0 4px">2. Share this class with a colleague</h4>' +
+      '<div class="flex" style="gap:8px;align-items:center"><input class="inp" id="hubLink" readonly style="flex:1;min-width:220px;font-size:12px" value="' + U.esc(link || '') + '">' +
+      '<button class="btn" data-action="hub-copy">Copy link</button></div>' +
+      '<p class="small muted" style="margin:6px 0 0">Anyone with this link can edit this class. Send it only to a teacher who should see these students.</p>' +
+      '<h4 style="margin:12px 0 4px">3. Test cloud connection</h4>' +
+      '<div class="flex" style="gap:8px;align-items:center"><button class="btn" data-action="hub-test">Test cloud connection</button>' +
+      '<span class="small muted" id="hubTestStatus"></span></div>' +
+      '<details style="margin-top:12px"><summary class="small muted">Details</summary>' +
+      '<pre class="small muted" id="hubErr" style="white-space:pre-wrap"></pre></details>' +
+      '<div class="dlg-actions"><button class="btn" data-x="close">Close</button></div>');
+    const errBox = $('#hubErr');
+    if (errBox && SHARE_LAST_ERR) errBox.textContent = SHARE_LAST_ERR;
+    const closeBtn = $('#dlg [data-x="close"]');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeDlg());
+  }
+  function hubStatus(id, msg, bad) {
+    const el = $(id);
+    if (el) { el.textContent = msg; el.style.color = bad ? '#b45309' : ''; }
+    const errBox = $('#hubErr');
+    if (errBox && bad && SHARE_LAST_ERR) errBox.textContent = SHARE_LAST_ERR;
   }
   function shareQrModal() {
     const link = shareLink();
@@ -4477,15 +4942,24 @@
         const pushedAt = new Date().toISOString();
         if (!c.key) c.key = b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
         if (!c.channel) c.channel = uuid();
+        /* round6: the share channel gets its OWN write token (never reused from
+           device sync). It rides the share link next to the key, so the
+           co-teacher pushes with the same token; the server sees only its hash. */
+        if (!c.writeToken) {
+          const t = new Uint8Array(24); crypto.getRandomValues(t);
+          c.writeToken = Array.from(t, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        }
+        setShare(c);
         const env = await sealSem(sem, c.key, who, pushedAt, c.shareName);
+        const sbOpts = { token: c.writeToken, keyProof: c.key };
         /* '' keeps NOT NULL columns happy without sending real names (privacy) */
-        let out = await sbSave(c.channel, env, '', '', pushedAt, !row);
-        if (out === 'conflict') { out = await sbSave(c.channel, env, '', '', pushedAt, false); }
+        let out = await sbSave(c.channel, env, '', '', pushedAt, !row, sbOpts);
+        if (out === 'conflict') { out = await sbSave(c.channel, env, '', '', pushedAt, false, sbOpts); }
         c.lastPush = pushedAt; c.lastPushBy = who; setShare(c);
         toast('Saved & shared: send the link or QR to your co-teacher');
         shareQrModal();
         if (location.hash === '#/manage') renderManage();
-      } catch (e) { toast('Save & Share failed: ' + e.message, true); }
+      } catch (e) { SHARE_LAST_ERR = String((e && e.message) || e); toast('Could not save. Open Save & Share again for details.', true); }
       return;
     }
     toast('The classic npoint channel was retired - Save & Share now uses the encrypted SPR cloud (Create share).', true);
@@ -4552,13 +5026,13 @@
 
     toast('The classic npoint channel was retired - ask your co-teacher for a current Save & Share link.', true);
   }
-  async function shareJoin(id, keyB64) {
-    if (looksUuid(id)) return joinSb(id, keyB64);
+  async function shareJoin(id, keyB64, writeToken) {
+    if (looksUuid(id)) return joinSb(id, keyB64, writeToken);
     /* pre-2026 npoint links are retired: nothing is fetched from npoint */
     toast('This share link uses the retired classic channel. Ask the sender to Push again with current SPR (Save & Share), or open a backup file.', true);
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   }
-  async function joinSb(channel, keyB64) {
+  async function joinSb(channel, keyB64, writeToken) {
     const sb = SB();
     try {
       if (!(sb.url && sb.key)) throw new Error('Save & Share is not set up on this browser yet');
@@ -4572,23 +5046,37 @@
       const nm = (obj.sem.className ? obj.sem.className + ' · ' : '') + obj.sem.name;
       const okGo = await confirmDlg('Join shared class?',
         'This adds <b>' + U.esc(nm) + '</b> to this browser' + (row.pushed_by ? ' (saved by <b>' + U.esc(row.pushed_by) + '</b>)' : '') + '. Your other classes stay untouched, and the Save &amp; Share button will keep this class in sync from now on. Your current copy is kept as a safety copy (Manage &rarr; Backups).', 'Join');
-      if (!okGo) { history.replaceState(null, '', location.pathname + location.search); return; }
+      const cleanUrl = function () { try { history.replaceState(null, '', location.pathname + location.search); } catch (eH) { try { location.hash = '/dashboard'; } catch (eH2) {} } };
+      if (!okGo) { cleanUrl(); return; }
       stashSafetyBackup('before replacing data');
-      setShare({ provider: 'sb', channel: channel, key: keyB64 || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
-      history.replaceState(null, '', location.pathname + location.search);
+      setShare({ provider: 'sb', channel: channel, key: keyB64 || null, writeToken: writeToken || null, semId: obj.sem.id, shareName: obj.shareName || nm, lastPull: new Date().toISOString() });
+      cleanUrl();
       mergeSharedSem(obj.sem);
       toast('Joined: Save & Share now keeps this class in sync');
     } catch (e) {
       toast('Join failed: ' + e.message, true);
-      history.replaceState(null, '', location.pathname + location.search);
+      /* same cleanup as the success path: history can be absent (embedded
+         webviews, test DOMs) and this threw AFTER the toast, escaping as an
+         unhandled rejection */
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (eH) { try { location.hash = '/dashboard'; } catch (eH2) {} }
     }
   }
+  let PENDING_JOIN = null;   /* a share/pair link that arrived before the notice gate was agreed */
   function maybeJoin() {
     const h = location.hash || '';
-    const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?/);
-    if (m) { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null); return; }
+    const m = h.match(/^#join=([^&]+)(?:&k=([^&]+))?(?:&t=([^&]+))?/);
+    if (m) {
+      /* the gate and the join confirm share ONE dialog: if the notice gate is
+         still pending, the join confirm must wait, or the gate silently
+         replaces it and the share link dies */
+      if (!readNoticeAck()) { PENDING_JOIN = function () { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); }; return; }
+      shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); return;
+    }
     const p = h.match(/^#pair=([^&]+)&k=([^&]+)/);
-    if (p) dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+    if (p) {
+      if (!readNoticeAck()) { PENDING_JOIN = function () { dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2])); }; return; }
+      dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+    }
   }
 
   /* ============================ device sync (admin) ============================
@@ -4607,6 +5095,37 @@
   const DS_KEY = 'spr-devicesync-v1';
   const DS_DECLINED_KEY = 'spr-ds-declined';
   let DS_BOOT_TS = 0, dsTimer = null, dsHoldPush = false;
+  /* push-decision log: one line per attempt (held / retry / skip / send /
+     done) with the reason. Ring of 40; read via SPR_SYNC_TEST.pushLog(),
+     humans see it in the console as [spr-sync] lines. */
+  const DS_PUSH_LOG = [];
+  window.__SPR_PUSH_LOG = DS_PUSH_LOG;
+  /* SPR_DS_TRACE: debug trace for push decisions. OFF by default; the flag is
+     set only by a test harness (window.__SPR_DS_TRACE) or a developer console.
+     Production users see nothing: the ring is silent, printing needs the flag. */
+  function dsTraceOn() { try { return window.__SPR_DS_TRACE === true; } catch (e) { return false; } }
+  function dsLog(reason) {
+    const line = new Date().toISOString().slice(11, 23) + ' ' + reason;
+    DS_PUSH_LOG.push(line); if (DS_PUSH_LOG.length > 40) DS_PUSH_LOG.shift();
+    try { if (dsTraceOn()) console.warn('[spr-sync] ' + line); } catch (e2) {}
+  }
+  /* A wanted push is NEVER dropped (fix 2026-10-31). Until now, a push
+     requested while a pull-check held the row, or while the device was signed
+     out, vanished silently: scheduleSyncPush() refused to schedule and the
+     debounce timer had no retry. A concurrent device still holding the
+     pre-deletion account list could then publish the deleted account back
+     onto the shared row. The want now survives in the sync cfg (so it even
+     crosses a reload) and is retried until the row accepts it. */
+  let dsWantedSeq = 0;   /* bumped on every request: lets the timer tell a stale completion from a fresh change */
+  /* R4: failed-push retry ladder 4 s → 8 s → 16 s, capped at 30 s (the count
+     lives in the cfg, so the ladder survives a reload too) */
+  function dsBackoffDelay(failCount) { return failCount <= 1 ? 4000 : failCount === 2 ? 8000 : failCount === 3 ? 16000 : 30000; }
+  function dsPushWanted() { const c = dsCfg(); return !!(c && c.pendingPush); }
+  function dsSetPushWanted(v) {
+    const c = dsCfg(); if (!c) return;
+    if (v) { c.pendingPush = true; dsWantedSeq++; } else delete c.pendingPush;
+    dsSaveCfg(c);
+  }
   /* the pull-check must never treat the copy this device JUST installed as
      "newer than itself": floor the boot clock at the envelope's seal time
      (v2.ts is the SENDER's last local write: often older than the envelope) */
@@ -4668,15 +5187,15 @@
       if (!known) {
         /* first write must INSERT: a 409 means this username is already taken
            in the SPR cloud by another school: never overwrite their pointer */
-        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true);
+        const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true, { token: cfg.writeToken, keyProof: cfg.key });
         if (res !== 'ok') return 'name-taken';
       } else {
         /* re-seal (password reset): PATCH our own row, then verify it landed —
            PostgREST reports success even when the id matches zero rows */
-        await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), false);
+        await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), false, { token: cfg.writeToken, keyProof: cfg.key });
         const back = await sbGet(id);
         if (!back || !back.payload || back.payload.ct !== env.ct) {
-          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true);
+          const res = await sbSave(id, env, 'ds-ptr', 'cloud sign-in: ' + username, new Date().toISOString(), true, { token: cfg.writeToken, keyProof: cfg.key });
           if (res !== 'ok') return 'name-taken';
         }
       }
@@ -4877,11 +5396,24 @@
     const keyBytes = bytesFromB64u(cfg.key);
     const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
     const sum = await dsSum(dsContentString());
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: syncUsers(), v2: v2, v3: classSyncPayload(), gone: dsGone() });   /* NO hash ever leaves this device */
+    const users = syncUsers();
+    const gone = dsGone();
+    /* accounts signature: covers login wraps, keyrings and tombstones, which
+       change with NO class edit. The push short-circuit compares this next to
+       the content sum, or an accounts-only change (password reset, account
+       removal) is never published and other devices keep the stale list. */
+    const asum = await dsSum(JSON.stringify({ users: users, gone: gone }));
+    /* wraps signature, SEPARATE from asum: an admin password reset re-keys a
+       login wrap (v2.wraps[un]) with NO user/gone change, and the push
+       short-circuit must not skip that (a fresh browser bootstraps from the
+       row's wrap). Wraps are stable across plain sign-ins, so wsig does not
+       churn the way asum would if it included them. */
+    const wsig = await dsSum(JSON.stringify(v2.wraps || {}));
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
-    const env = { sprDS: 1, sum: sum, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
+    const env = { sprDS: 1, sum: sum, asum: asum, wsig: wsig, iv: b64uFromBytes(iv), ct: b64uFromBytes(ct), mac: await dsHmac(keyBytes, ct) };
     /* the wrap lets a fresh device unwrap this sync key with nothing but the
        admin username + password; refreshed on every push made during a fresh
        sign-in, carried forward unchanged otherwise */
@@ -4919,10 +5451,30 @@
     } catch (e) { toast('Could not install the cloud copy: ' + e.message, true); return; }
     location.reload();
   }
-  function scheduleSyncPush() {
-    if (!dsCanPush()) return;
+  let dsTimerAt = 0;                           /* when the armed timer will fire */
+  let dsPushBusy = false, dsRerunAfterFlight = false;   /* in-flight coalescing (R1/R2) */
+  let dsWhy = 'timer';                         /* why the current push chain exists (trace + retries) */
+  function scheduleSyncPush(delay, why) {
+    if (!dsOn()) return;
+    if (why) dsWhy = why;
+    dsSetPushWanted(true);                     /* remembered across reloads */
+    const at = Date.now() + (delay || 4000);
+    if (dsTimer && dsTimerAt <= at) return;    /* already armed sooner: keep it (a 30s backoff never delays a fresh edit) */
     clearTimeout(dsTimer);
-    dsTimer = setTimeout(function () { dsPushNow(false); }, 4000);
+    dsTimerAt = at;
+    dsTimer = setTimeout(async function () {
+      dsTimer = null; dsTimerAt = 0;
+      if (!dsPushWanted()) { dsLog('timer: nothing pending'); return; }
+      if (!dsCanPush()) { dsLog('skip: signed out / sync off | why=' + dsWhy + ' → retry 4s'); scheduleSyncPush(4000, 'retry'); return; }
+      if (dsHoldPush) { dsLog('skip: held by pull-check | why=' + dsWhy + ' → retry 4s'); scheduleSyncPush(4000, 'retry'); return; }
+      const seqAtStart = dsWantedSeq;   /* a change scheduled DURING this push must not be cleared by it */
+      let okPush = false;
+      try { okPush = await dsPushNow(false); } catch (e) { okPush = false; dsLog('push threw: ' + ((e && e.message) || e)); }
+      if (okPush === true && dsWantedSeq === seqAtStart) { dsLog('push done: pending cleared | why=' + dsWhy); dsSetPushWanted(false); }
+      else if (okPush === true) { dsLog('push done, but a newer change arrived: pushing again'); scheduleSyncPush(0, 'newer change'); }
+      else if (okPush === 'held') scheduleSyncPush(4000, 'retry');   /* transient: retry soon, not dropped */
+      else scheduleSyncPush(dsBackoffDelay(((dsCfg() || {}).failCount) || 1), 'backoff');   /* failed: ladder backoff, keep trying */
+    }, Math.max(0, at - Date.now()));
   }
   function writeV2(v2) {
     try {
@@ -4930,7 +5482,7 @@
       KNOWN_STORE_TS = Math.max(KNOWN_STORE_TS, v2.ts || Date.now());
       saveOkBanner();
     } catch (e) { saveFailedBanner(); return false; }
-    scheduleSyncPush();
+    scheduleSyncPush(4000, 'content change');
     return true;
   }
   /* tombstone-first row removal (a DELETE the row policy ignores still says
@@ -4945,8 +5497,21 @@
     } catch (e) { return false; }
   }
   async function dsPushNow(interactive) {
-    if (!dsCanPush()) return false;
-    if (dsHoldPush) return false;   /* a pull-check is deciding local-vs-cloud; never overwrite mid-decision */
+    /* returns: true = sent or already current; 'held' = transient (pull-check
+       in flight / signed out this second): retry in 4 s; false = real
+       failure: back off 30 s. */
+    if (!dsCanPush()) { dsLog('skip: cannot push (signed out / sync off) | why=' + dsWhy); return 'held'; }
+    if (dsHoldPush) { dsLog('skip: a pull-check is deciding local-vs-cloud (dialog open) | why=' + dsWhy); return 'held'; }   /* never overwrite mid-decision */
+    if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight - coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
+    dsPushBusy = true;
+    try {
+      return await dsPushNowInner(interactive);
+    } finally {
+      dsPushBusy = false;
+      if (dsRerunAfterFlight) { dsRerunAfterFlight = false; scheduleSyncPush(0, 'coalesced after in-flight'); }
+    }
+  }
+  async function dsPushNowInner(interactive) {
     let cfg = dsCfg();
     try {
       /* the cloud home is derived from the OWNER (admin) account, so every
@@ -4961,7 +5526,8 @@
       let rowReadErr = null;
       const row = await sbGet(chan).catch(function (e) { rowReadErr = (e && e.message) || 'read failed'; return null; });
       if (rowReadErr) {
-        cfg.lastResult = 'fail'; dsSaveCfg(cfg);
+        dsLog('fail: row read error ' + rowReadErr + ' | why=' + dsWhy);
+        cfg.lastResult = 'fail'; cfg.failCount = (cfg.failCount || 0) + 1; if (!cfg.failSince) cfg.failSince = new Date().toISOString(); dsSaveCfg(cfg);
         if (interactive) toast('Could not read the cloud copy (' + rowReadErr + '): not overwriting it blind; try again later.', true);
         return false;
       }
@@ -4990,37 +5556,52 @@
         try { rowOurs = (await dsHmac(bytesFromB64u(cfg.key), bytesFromB64u(row.payload.ct))) === row.payload.mac; }
         catch (e) { rowOurs = true; }
         if (!rowOurs) {
+          dsLog('fail: row sealed under a different sync key (adopt first)');
           try { console.warn('row ownership check failed: adopting instead of overwriting (channel mismatch after adoption?)'); } catch (e5) {}
           cfg.lastResult = 'fail'; dsSaveCfg(cfg);
           if (interactive) toast('The cloud copy for this account was saved from a different device-sync setup: open it from Manage → Device sync first.', true);
           return false;
         }
       }
-      if (row && row.payload && row.payload.sum === env.sum && !wrapRepair) {
+      if (row && row.payload && row.payload.sum === env.sum && row.payload.asum === env.asum && row.payload.wsig === env.wsig && !wrapRepair) {
+        dsLog('skip: already current | env(sum=' + env.sum + ',asum=' + env.asum + ',wsig=' + env.wsig.slice(0, 8) + '…) row(sum=' + row.payload.sum + ',asum=' + row.payload.asum + ',wsig=' + String(row.payload.wsig || '-').slice(0, 8) + '…) | why=' + dsWhy);
         await dsAdoptChan(cfg, chan);
-        cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+        cfg.lastPush = row.pushed_at || new Date().toISOString(); cfg.lastResult = 'ok';
+        cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; dsSaveCfg(cfg);
         if (interactive) toast('Cloud copy already up to date');
         return true;
       }
+      dsLog('send: state differs (content / accounts / wrap repair) or no row yet | env(sum=' + env.sum + ',asum=' + env.asum + ',wsig=' + env.wsig.slice(0, 8) + '…)' + (row && row.payload ? ' row(sum=' + row.payload.sum + ',asum=' + row.payload.asum + ',wsig=' + String(row.payload.wsig || '-').slice(0, 8) + '…)' : ' row=none') + ' | why=' + dsWhy);
       const at = new Date().toISOString();
       const who = (cfg && cfg.device ? cfg.device : 'device') + ': ' + SESSION.user;
-      let r = await sbSave(chan, env, 'devicesync', who, at, !row);
-      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false);
+      const sbOpts = { token: cfg.writeToken, keyProof: cfg.key };
+      let r = await sbSave(chan, env, 'devicesync', who, at, !row, sbOpts);
+      if (r === 'conflict') r = await sbSave(chan, env, 'devicesync', who, at, false, sbOpts);
       if (r !== 'ok') throw new Error('cloud save rejected');
+      dsLog('sent ok: row accepted the new copy | sum=' + env.sum + ' asum=' + env.asum + ' | why=' + dsWhy);
       await dsAdoptChan(cfg, chan);
       cfg = dsCfg() || cfg;
-      cfg.lastPush = at; cfg.lastResult = 'ok'; dsSaveCfg(cfg);
+      cfg.lastPush = at; cfg.lastResult = 'ok'; cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; dsSaveCfg(cfg);
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
       return true;
     } catch (e) {
       try { console.warn('cloud save failed:', (e && e.message) || e); } catch (e4) {}   /* silent failures here cost days to diagnose */
-      const c2 = dsCfg(); if (c2) { c2.lastResult = 'fail'; dsSaveCfg(c2); }
-      if (interactive) toast('Cloud save failed: it will retry on your next change', true);
-      /* auto-retry a failed push once after 30s — a flaky link shouldn't need a
-         new edit to get the data out */
-      clearTimeout(dsTimer);
-      dsTimer = setTimeout(function () { if (dsCanPush()) dsPushNow(false); }, 30000);
+      const reason = String((e && e.message) || e || 'unknown error').replace(/\s+/g, ' ').slice(0, 160);
+      dsLog('fail: ' + reason + ' | why=' + dsWhy);
+      const c2 = dsCfg();
+      if (c2) {
+        c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.';
+        c2.failCount = (c2.failCount || 0) + 1;
+        if (!c2.failSince) c2.failSince = new Date().toISOString();   /* R4: the 2-minute quiet clock starts here */
+        dsSaveCfg(c2);
+      }
+      if (interactive) toast('Cloud copy not updated: ' + reason + '. Your data on this device is safe.', true);
+      /* auto-retry via the ladder (4/8/16/30 s) — a flaky link shouldn't need
+         a new edit to get the data out; the want stays armed until it lands */
+      dsLog('retry ladder: next in ' + dsBackoffDelay((c2 && c2.failCount) || 1) + 'ms (failCount=' + ((c2 && c2.failCount) || 1) + ')');
+      scheduleSyncPush(dsBackoffDelay((c2 && c2.failCount) || 1), 'retry after failure');
+      if (location.hash === '#/manage') renderManage();
       return false;
     }
   }
@@ -5049,10 +5630,16 @@
        otherwise the 4s-debounced push could overwrite the newer cloud copy
        while the user is still deciding whether to open it */
     dsHoldPush = true;
+    dsLog('pull-check: start (interactive=' + (interactive ? 1 : 0) + ') | pushes held');
     try { await dsPullCheckInner(interactive); }
     finally {
       dsHoldPush = false;
-      if (dsOn() && dsCanPush()) scheduleSyncPush();   /* resume: pushes local choice if user declined */
+      dsLog('pull-check: done | pushes released');
+      /* resume IMMEDIATELY (not on a 4 s debounce): the check is finished and
+         its outcome is already applied, so a wanted push (e.g. the account
+         event that arrived mid-check) can go out now. scheduleSyncPush(0)
+         re-arms any later retry timer to fire at once (sooner wins). */
+      if (dsOn() && dsCanPush()) scheduleSyncPush(0, 'pull-check resume');
     }
   }
   function dsDeclined() { try { return JSON.parse(localStorage.getItem(DS_DECLINED_KEY)) || null; } catch (e) { return null; } }
@@ -5115,6 +5702,7 @@
         let hit = null;
         try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
         if (hit) {
+          if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: 'another device' }; dsSaveCfg(cfg); toast('This device\u2019s pairing is out of date: Manage \u2192 Device sync \u2192 Check for newer copy'); return; }
           const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
             'SPR found an <b>encrypted cloud copy</b> of this markbook for your account: saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b> by <b>' + U.esc(String(hit.by)) + '</b>.<br><br>This device&rsquo;s pairing is out of date. Open the cloud copy and re-pair? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).',
             'Open cloud copy');
@@ -5133,7 +5721,8 @@
          strictly newer: the copies have diverged. A flat "nothing to open"
          refusal here dead-ends a device whose local copy is broken (e.g. a
          class blob went missing), so offer the copy with honest wording. */
-      if (!interactive) return;
+      if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: row.pushed_by || 'another device' }; dsSaveCfg(cfg); toast('The cloud copy differs from this device: Manage \u2192 Device sync \u2192 Check for newer copy'); return; }
+      dsLog('pull-check: opening DIFFERS dialog (interactive only, pushes stay held)');
       const okD = await confirmDlg('The cloud copy differs from this device',
         'Neither copy is newer: this device last saved <b>' + new Date(DS_BOOT_TS).toLocaleString() + '</b>; the cloud copy was saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore.',
         'Open cloud copy');
@@ -5142,6 +5731,15 @@
       dsInstall(obj);
       return;
     }
+    /* R1 root cause: a BACKGROUND check must never park pushes on a modal
+       that may never be answered. Interactive checks keep the dialog. */
+    if (!interactive) {
+      dsLog('pull-check: newer cloud copy found - passive notice, NO dialog (R1) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
+      cfg.cloudAhead = { at: new Date().toISOString(), by: row.pushed_by || 'another device' }; dsSaveCfg(cfg);
+      toast('A newer cloud copy is waiting: Manage \u2192 Device sync \u2192 Check for newer copy');
+      return;
+    }
+    dsLog('pull-check: opening NEWER-COPY dialog (interactive, modal, pushes stay held) | cloudTs=' + new Date(cloudTs).toISOString().slice(11, 19) + ' boot=' + new Date(DS_BOOT_TS).toISOString().slice(11, 19));
     const ok = await confirmDlg('A newer copy is in the cloud',
       'Saved <b>' + new Date(cloudTs).toLocaleString() + '</b> by <b>' + U.esc(String(row.pushed_by || 'another device')) + '</b>: newer than this device&rsquo;s data from ' + new Date(DS_BOOT_TS).toLocaleString() + '.<br><br>Open the cloud copy here? Your current data is kept as a safety copy you can restore (Manage &rarr; Backups).' +
       (dsAuthDiffers(obj) ? '<br><br><b>Note:</b> the cloud copy has a different password for this account: use the password from the device that saved it.' : ''),
@@ -5279,7 +5877,7 @@
       cfg.key = cfg.key || b64uFromBytes(crypto.getRandomValues(new Uint8Array(32)));
       cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = new Date().toISOString();
       dsSaveCfg(cfg);
-      const done = await dsPushNow(false);
+      const done = (await dsPushNow(false)) === true;   /* 'held' is not saved */
       toast(done ? 'Device sync is on: cloud copy saved. On other systems, just sign in with this account.'
                  : 'Device sync is on, but the first cloud save failed: it will retry on your next change.', !done);
       if (location.hash === '#/manage') renderManage();
@@ -5350,15 +5948,21 @@
         '<span class="small muted" style="align-self:center">Optional: SPR works fully without it.</span></div></div>';
     }
     const when = function (iso) { return iso ? new Date(iso).toLocaleString() : '—'; };
+    /* R4: retries are silent for the first 2 minutes; after that, one honest
+       sentence. A waiting newer copy shows a passive notice (never a modal). */
+    const failing = cfg.lastResult === 'fail' && cfg.failSince && (Date.now() - Date.parse(cfg.failSince)) >= 120000;
+    const status = failing ? '<span style="color:#b45309">Cloud copy is behind. Your data on this device is safe.</span>'
+      : cfg.cloudAhead ? '<span style="color:#b45309">A newer cloud copy is waiting: press Check for newer copy.</span>'
+      : 'An encrypted copy of everything is updated after each change.';
     return '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Device sync is on.</b> ' +
-      (cfg.lastResult === 'fail' ? '<span style="color:#b45309">Last cloud save failed: it will retry automatically.</span>'
-                                  : 'An encrypted copy of everything is updated after each change.') + '</p>' +
+      status + '</p>' +
       '<table class="tbl"><tbody>' +
       '<tr><td style="width:180px">This device</td><td>' + U.esc(cfg.device || '—') + '</td></tr>' +
       '<tr><td>Last cloud save</td><td>' + U.esc(when(cfg.lastPush)) + '</td></tr>' +
       '<tr><td>Last cloud check</td><td>' + U.esc(when(cfg.lastCheck)) + '</td></tr>' +
       '</tbody></table>' +
       '<div class="flex" style="margin-top:10px"><button class="btn sm" data-action="ds-now">Check for newer copy</button>' +
+      '<button class="btn sm" data-action="ds-test">Test cloud connection</button>' +
       '<button class="btn sm" data-action="ds-link">Show pairing link &amp; QR</button>' +
       '<button class="btn sm" data-action="ds-off">Turn off</button>' +
       '<button class="btn sm danger" data-action="ds-off-del">Turn off &amp; delete cloud copy</button></div>' +
@@ -5377,11 +5981,6 @@
      that already holds accounts or data this code never fires (the do-login
      path checks users.length === 0 && !readV2() before offering it), so real
      data stays wrapped under its own password at all times. */
-  const RECOVERY_USER = 'MSK';
-  const RECOVERY_PASS = 'ZhongFangYuan786$';
-  function isRecoveryLogin(u, p) {
-    return String(u || '').trim().toLowerCase() === RECOVERY_USER.toLowerCase() && p === RECOVERY_PASS;
-  }
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
   function isAdmin() { return (currentUser() || {}).role === 'admin'; }
 
@@ -5446,7 +6045,7 @@
     username = String(username || '').trim();
     if (username.toLowerCase() === MASTER_KEY) return { error: 'Invalid username or password.' };
     /* fresh browser: quietly pull accounts + data from the cloud, then sign
-       in normally. Unpaired browsers need nothing but the admin account —
+       in normally. Unpaired browsers need nothing but the admin account:
        the channel is derived from the username and the key is password-wrapped.
        Paired browsers try their pairing first (covers pre-migration rows),
        then the account. */
@@ -5533,7 +6132,7 @@
       const hasBlob = function (c) { return !!localStorage.getItem(classBlobKey(c.id)); };
       /* key in hand -> open right away; otherwise a single class with data on
          this device is STILL auto-opened: openClass either derives the key
-         from the just-typed password or shows one honest recovery screen —
+         from the just-typed password or shows one honest recovery screen:
          never the bare chooser (the 2026-10-24 owner's case) */
       const meta = ix.find((c) => c.id === lastId && openable(c)) || ix.filter(openable)[0]
         || ((ix.filter(hasBlob).length === 1 && SESSION.pw) ? ix.filter(hasBlob)[0] : null);
@@ -5544,7 +6143,7 @@
     /* fresh sign-in with device sync on: push soon even without a data change,
        so a legacy channel migrates home and the owner's password wrap lands on
        the row (a fresh device cannot bootstrap until the wrap exists) */
-    if (SESSION.pw && dsCanPush()) scheduleSyncPush();
+    if (SESSION.pw && dsCanPush()) scheduleSyncPush(4000, 'sign-in repair');
     if (installedFromCloud) toast('Welcome back: your data arrived from the cloud');
     return { user: auth.session };
   }
@@ -5723,7 +6322,11 @@
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     try { DS_BOOT_TS = Math.max(DS_BOOT_TS, Number(localStorage.getItem('spr-ds-boot') || 0) || 0); } catch (e) {}
-    window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(); });
+    window.addEventListener('online', function () { const c = dsCfg(); if (c && c.on && c.lastResult === 'fail') scheduleSyncPush(4000, 'back online'); });
+    /* R4: a push want that survived a reload must find its timer again — arm a
+       check shortly after boot; the timer itself retries until the session is
+       back, then pushes (or clears on an already-current row) */
+    setTimeout(function () { if (dsPushWanted() && dsOn()) scheduleSyncPush(4000, 'reload re-arm'); }, 2500);
     /* a push scheduled but not yet fired when the tab is hidden/closed would
        otherwise leave the cloud copy one edit behind: flush best effort */
     function dsFlushPending() {
@@ -5797,6 +6400,7 @@
             saveAuth(auth);
           }
           ready = true;
+          requestPersistentStorage();   /* round6 item 3: reloads must ask too (fresh sign-in already does) */
           try { window.__SPR_SESSION_RESTORED = sess.user; } catch (e5) {}
         }
       } catch (e) { try { sessionStorage.removeItem('spr-session'); } catch (e2) {} }
@@ -5824,7 +6428,7 @@
          so a reload lands on the current view instead of the empty welcome */
       buildShell(); route();
       /* item 6: a session mirror newer than the stored blob means the tab closed
-         faster than the 300 ms debounce could save — offer it back */
+         faster than the 300 ms debounce could save: offer it back */
       (function mirrorRecover() {
         try {
           const mir = JSON.parse(sessionStorage.getItem('spr-session-db') || 'null');
@@ -5845,7 +6449,7 @@
           const safariish = /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrom|Edg|Firefox/.test(ua));
           if (!safariish || localStorage.getItem('spr-ios-data-warn')) return;
           localStorage.setItem('spr-ios-data-warn', '1');
-          openDlg('<h3>One thing to know about Safari</h3><p class="small">Safari on iPhone and iPad can remove website data after about 7 days of not using a site. Download a backup from the sidebar regularly, and keep a copy outside this device.</p><div class="dlg-actions"><button class="btn primary" data-action="privacy-ack">Got it</button></div>');
+          safariDataDlg();
         } catch (e) {}
       })();
       /* item 3: many edits without a backup -> offer one (at most once a day) */
@@ -5869,6 +6473,16 @@
         if ((now - lastNudge) < 7 * DAY) return;
         if (last && (now - last) < 30 * DAY) return;
         const days = last ? Math.round((now - last) / DAY) : null;
+        if (DB.settings.recoveryFilePending) {
+          /* round5 item 3: the setup-time recovery file was empty; the honest
+             one is generated HERE, from real data, at the first backup prompt */
+          openDlg('<h3>Your recovery file needs updating</h3>' +
+            '<p class="small">The recovery file from sign-up day was empty. This one is generated from your <b>current</b> data and restores your classes as of today. Save it with the school\u2019s records.</p>' +
+            '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Later</button>' +
+            '<button class="btn primary" data-action="recovery-file-now">Download recovery file</button></div>');
+          DB.settings.lastBackupNudgeAt = now; saveDB(true);
+          return;
+        }
         toast(days ? 'It has been ' + days + ' days since your last backup: download a fresh copy in Manage & setup.' : 'You have never downloaded a backup: keep a copy of your classes in Manage & setup.');
         DB.settings.lastBackupNudgeAt = now; saveDB(true);
       })();
@@ -5877,6 +6491,22 @@
   }
   /* test/debug hooks (read-only; used by the jsdom smoke suite) */
   window.SPR_DEBUG_GET_DB = function () { return DB; };
+  /* round5: sync internals for the mock-PostgREST regression suite */
+  window.SPR_SYNC_TEST = { pushLog: function () { return (window.__SPR_PUSH_LOG || []).slice(); }, push: function (interactive) { return dsPushNow(interactive); }, cfg: function () { return dsCfg(); }, canPush: function () { return dsCanPush(); }, hold: function () { return !!dsHoldPush; }, enrol: sbEnrol, write: sbWrite, ping: sbPing, sha256Hex: sha256Hex, sbSave: sbSave, sealSem: sealSem };
+  window.SPR_DEBUG_HUB = shareHubDlg;   /* round7: hub dialog is reachable */
+  window.SPR_SYNC_TEST.sharePush = sharePush;   /* round7: conflict flow under test */
+  window.SPR_DEBUG_PING = function (sbCfg, chan, tok) {
+    /* plain-language outcomes for the hub's connection test */
+    return (async () => {
+      let saved = null;
+      try { saved = localStorage.getItem('spr-sb-v1'); if (sbCfg) localStorage.setItem('spr-sb-v1', JSON.stringify(sbCfg)); } catch (e0) {}
+      try {
+        const r = await sbPing(chan, tok);
+        return r === 'ok' ? 'Cloud connection works.' : (r === 'rpcMissing' ? 'Cloud connection works, but the protection upgrade has not been run yet.' : 'The cloud copy is protected and your key is wrong.');
+      } catch (e) { return "Can't reach the cloud from this network. Try again from another network, or ask the school IT."; }
+      finally { try { if (saved === null) localStorage.removeItem('spr-sb-v1'); else localStorage.setItem('spr-sb-v1', saved); } catch (e2) {} }
+    })();
+  };
   window.SPR_DEBUG_UNWRAP = async function (username, pw) { try { const u = (getAuth().users || []).find(function (x) { return x.username === username; }); if (!u || !u.keyring) return 'no-keyring'; const cid = Object.keys(u.keyring)[0]; try { await CS.unwrapKey(u.keyring[cid], pw); return 'unwraps'; } catch (e) { return 'fails: ' + (e && e.message); } } catch (e) { return 'err: ' + e.message; } };
   window.SPR_DEBUG_AUTH = { get: getAuth, save: saveAuth, provision: provisionUser };
   window.SPR_DEBUG_SET_DB = function (d) { DB = d; try { if (SESSION.dk) persistNow(true); else saveDB(true); } catch (e) {} };

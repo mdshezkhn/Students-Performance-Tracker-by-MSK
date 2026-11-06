@@ -1,0 +1,42 @@
+SPR round8 BEFORE: test-device-sync.js, 20 serial runs
+Machine: home laptop DESKTOP-FUMPBJ9, i5-6300U (2 cores / 4 threads), Windows + Git Bash node v24.14.1
+No taskset/docker on this box: the machine IS 2-core; nothing else running during the runs.
+(Docker Desktop failed to start; WSL not installed -- native runs used instead)
+
+run  result secs     first_fail
+1    PASS   185      -
+2    PASS   190      -
+3    PASS   181      -
+4    PASS   189      -
+5    PASS   182      -
+6    PASS   180      -
+7    PASS   176      -
+8    PASS   167      -
+9    PASS   178      -
+10   PASS   168      -
+11   PASS   170      -
+12   PASS   170      -
+13   PASS   171      -
+14   PASS   167      -
+15   PASS   170      -
+16   PASS   340      -
+17   FAIL   302      owner signed in
+18   PASS   223      -
+19   PASS   182      -
+20   PASS   192      -
+
+Phase 2 — 4 copies in parallel on the same 2 CPUs (load induction; SPR_DS_TRACE=1; one round):
+copy 1: FAIL  fails=6  first=R1(signed-out): the pending push survived the sign-out and landed after re-sign-in
+copy 2: FAIL  fails=6  first=R1(signed-out): the pending push survived the sign-out and landed after re-sign-in
+copy 3: FAIL  fails=6  first=R1(signed-out): the pending push survived the sign-out and landed after re-sign-in
+copy 4: FAIL  fails=6  first=R1(signed-out): the pending push survived the sign-out and landed after re-sign-in
+
+Summary (BEFORE, round7 build b3577df):
+- serial: 19 of 20 passed; the 1 failure was an unrelated login-wait flake
+  ('owner signed in', a 20 s ceiling losing to PBKDF2 under a load spike).
+  The reviewer's S8 8-FAIL signature did not fire in the serial lottery here.
+- 4-parallel on 2 CPUs: 0 of 4 passed, 6 rule failures each
+  (R1 signed-out, R2, R4 ladder/silence/sentence/reload) -- the new S12
+  rule checks fail on round7 under load; solo, S12 R1a additionally fails
+  deterministically (background decision dialog holds the reset push; see
+  diagnosis.md for the captured trace, including a natural in-S8 occurrence).

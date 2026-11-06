@@ -378,13 +378,11 @@ dialog h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 19px;
   .page { padding: 18px 16px 40px; }
   .rail { width: 200px; flex-basis: 200px; }
 }
+/* rail-on-phone layout moved to the 700px block below (round 7 item 3):
+   the sidebar is a real top bar with a Menu button there. */
 @media (max-width: 760px) {
-  .app { flex-direction: column; }
-  .rail { width: 100%; flex: none; height: auto; position: static; }
-  .nav { display: flex; overflow-x: auto; padding: 0; }
   .nav .nav-sec { display: none; }
-  .nav a { border-left: none; border-bottom: 3px solid transparent; white-space: nowrap; }
-  .nav a.on { border-bottom-color: var(--marigold); }
+  .nav a { border-left: none; white-space: nowrap; }
 }
 
 /* ---------- print ---------- */
@@ -599,3 +597,95 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 /* login card: calmer focus to match the app */
 .login-card input.inp:focus { border-color: var(--board); box-shadow: 0 0 0 3px rgba(30, 59, 50, 0.14); }
 /* users/manage tables inherit the same quiet header via .tbl above */
+
+/* ==================== phones & tablets (round 7 item 3) ====================
+   Below 700px the sidebar becomes a slim top bar: Menu button opens the nav
+   (collapsed by default, closes after choosing). Every control is at least
+   40px tall. Wide tables scroll inside their own .sheet box, never the page. */
+
+.rail-menu { display: none; }
+
+.cls-topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 8px 2px 10px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.cls-topbar-name { font-family: var(--font-display); font-size: 17px; color: var(--ink); }
+
+/* tablets (768 portrait) keep the sidebar but still get 40px tap targets */
+@media (max-width: 820px) {
+  .btn, .btn.sm, .uc-out, .month-pill, .tab,
+  select, textarea, input.inp, input.cell,
+  .dlg-actions .btn, .sheet-toolbar .btn, .tabs a {
+    min-height: 40px; box-sizing: border-box;
+  }
+  .btn { padding-top: 8px; padding-bottom: 8px; }
+  .uc-out { padding: 8px 14px; }
+  select, input.inp { padding: 8px 10px; font-size: 16px; }
+  input.cell { height: 40px; text-align: center; }
+  input[type="checkbox"] { width: 40px; height: 40px; accent-color: var(--board); }
+  .month-pill { padding: 10px 14px; }
+}
+@media (max-width: 700px) {
+  /* --- top bar: collapsed by default --- */
+  .app { flex-direction: column; }
+  .rail {
+    width: 100%; flex: none; height: auto; position: sticky; top: 0; z-index: 40;
+    padding: 0 10px; box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  .rail-menu {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; min-height: 44px; margin: 6px 0;
+    background: rgba(255,255,255,.08); color: #fff; border: 1px solid var(--board-edge);
+    border-radius: 8px; font: 600 15px/1 var(--font-body); cursor: pointer;
+  }
+  .wordmark { padding: 10px 4px 0; }
+  .wordmark .wm-class { font-size: 17px; }
+  .wordmark .wm-sub { font-size: 11px; }
+  /* everything below the button stays hidden until Menu is pressed */
+  .rail .nav, .rail .rail-foot { display: none; }
+  .rail.open .nav, .rail.open .rail-foot { display: block; }
+  .rail.open { padding-bottom: 10px; max-height: 82vh; overflow-y: auto; }
+  .nav { padding: 4px 0 8px; }
+  .nav a { min-height: 44px; display: flex; align-items: center; border-left: none; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .nav a.on { border-bottom-color: var(--marigold); }
+
+  /* --- tap targets: nothing interactive under 40px tall --- */
+  .btn, .btn.sm, .uc-out, .month-pill, .tab,
+  select, textarea, input.inp, input.cell,
+  .dlg-actions .btn, .sheet-toolbar .btn, .tabs a, .users-role {
+    min-height: 40px; box-sizing: border-box;
+  }
+  .btn { padding-top: 8px; padding-bottom: 8px; }
+  .uc-out { padding: 8px 14px; }
+  select, input.inp { padding: 8px 10px; font-size: 16px; }   /* 16px: iOS won't zoom in */
+  input.cell { height: 40px; text-align: center; }
+  .month-pill { padding: 10px 14px; }
+  .dlg-actions { flex-wrap: wrap; }
+  .dlg-actions .btn { flex: 1 1 auto; }
+  input[type="checkbox"] { width: 40px; height: 40px; accent-color: var(--board); }
+
+  /* --- wide tables scroll inside their box --- */
+  .sheet { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* bare tables inside panels (dashboard cards) get the same treatment */
+  .panel > table.tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .page { padding: 12px 12px 40px; max-width: 100%; }
+
+  /* --- dashboard cards stack --- */
+  .grid-2, .grid-3, .stat-cards, .cover { grid-template-columns: 1fr; display: grid; gap: 12px; }
+  .cover { display: flex; flex-direction: column; }
+  .class-grid { grid-template-columns: 1fr; }
+
+  /* --- Users: table becomes a list of cards --- */
+  .page .sheet table.tbl thead { display: none; }
+  .page .sheet table.tbl tr { display: block; border-bottom: 1px solid var(--rule); padding: 10px 4px; }
+  .page .sheet table.tbl td {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    border: none; padding: 5px 2px; text-align: right;
+  }
+  .page .sheet table.tbl td::before {
+    content: attr(data-l); font-weight: 600; color: var(--ink-60); text-align: left; font-size: 12.5px;
+  }
+  .page .sheet table.tbl td:not([data-l])::before { content: ""; }
+  .page .sheet table.tbl td .btn { min-height: 40px; }
+}

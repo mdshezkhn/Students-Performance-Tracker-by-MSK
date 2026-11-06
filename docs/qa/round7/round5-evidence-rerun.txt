@@ -1,0 +1,26 @@
+127.0.0.1 - - [30/Oct/2026 13:19:51] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:19:52] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:19:52] "GET /app/ HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:20:16] "GET /app/sw.js HTTP/1.1" 304 -
+PASS item3 recovery dialog offers master password
+PASS item3 Continue starts DISABLED
+PASS item3 self-tick checkbox is gone
+PASS item3 download really fired - SPR-backup-2026-10-30.json
+PASS item3 Continue ENABLED after the download
+PASS item2 fresh admin signed in
+PASS item2 mode is still unset/legacy before any class
+PASS item2 Manage offers the New class wizard
+PASS item2 browser is in CLASS mode after the first class
+PASS item2 class index holds exactly the new class - ['P1A']
+PASS item2 admin holds the class key in the keyring - ['c-p1a-10g5']
+PASS item2 teacher account created
+PASS item2 pair dialog lists the teacher
+PASS item2 pairing issued a one-time password - anna-...
+PASS item2 teacher holds a key for exactly ONE class - ['c-p1a-10g5']
+PASS item4 persistent storage shows a final state (no endless checking)
+PASS item4 not-granted wording explains the consequence
+PASS item1 app ships the Test cloud connection button
+PASS item1 app ships the write-token RPC client
+PASS zero page errors across the whole run
+
+20/20 PASS

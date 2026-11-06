@@ -125,7 +125,7 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   check(W.w.location.hash.indexOf('#/dashboard') === 0, 'single class opens automatically (#/dashboard), got ' + W.w.location.hash);
   check(navIds(W).join(',') === 'dashboard,students,entry,reports,ranking,users,help,manage', 'admin sidebar: 4 tools + Ranking + Users + Help + Manage (2026-10-27)');
   check(!W.d.getElementById('classSwitch'), 'no class switcher with a single class');
-  check(/Updated/.test(W.d.getElementById('content').innerHTML), 'dashboard shows an Updated-at line');
+  check(/Saved/.test(W.d.getElementById('content').innerHTML), 'dashboard shows the honest save stamp (round9 wording: "Saved X ago")');
 
   /* ---- D: Users tab (admin, class open) ---- */
   console.log('== D: Users tab ==');
@@ -145,19 +145,46 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   click(W, W.d.querySelector('[data-action="users-csv"]'));
   await sleep(200);
   const csv = String(W.w.__LAST_BLOB_TEXT || '');
-  check(csv.split('\n')[0] === 'username,display_name,role,class_or_grade,paired_with,status', 'CSV header is exactly the agreed columns');
+  check(csv.charCodeAt(0) === 0xFEFF, 'CSV starts with a UTF-8 BOM (Excel opens Chinese display names)');
+  check(csv.replace(/^\uFEFF/, '').split('\n')[0] === 'username,display_name,role,class_or_grade,School,paired_with,status,class_role', 'CSV header is exactly the agreed columns (round9: +School +class_role)');
   check(csv.indexOf('keyring') === -1 && csv.indexOf('secret123') === -1, 'CSV carries no secrets');
 
-  /* ---- E: disable/enable ---- */
-  console.log('== E: disable/enable ==');
+  /* ---- E: status column + Status filter ----
+     round9 owner-sheet redesign removed the per-row disable/enable button;
+     the contract now: the status column renders the stored flag, and the
+     Status filter isolates Disabled accounts. */
+  console.log('== E: status column + Status filter ==');
   const annaRow = () => Array.from(W.d.querySelectorAll('#app table tbody tr')).find((r) => r.textContent.includes('anna'));
+  check(/Active/.test(annaRow().textContent), 'account renders Active in the status column');
+  const authNow = JSON.parse(W.w.localStorage.getItem('spr-auth-v1'));
+  authNow.users.find((u) => u.username === 'anna').disabled = true;
+  W.w.localStorage.setItem('spr-auth-v1', JSON.stringify(authNow));
+  W.w.location.hash = '#/dashboard'; W.w.dispatchEvent(new W.w.Event('hashchange'));
+  await sleep(400);
+  W.w.location.hash = '#/users'; W.w.dispatchEvent(new W.w.Event('hashchange'));
+  await sleep(800);
+  check(/Disabled/.test(annaRow().textContent), 'status column renders Disabled from the stored flag');
+  setVal(W, W.d.getElementById('usersStatus'), 'disabled');
+  await sleep(500);
+  const disRows = Array.from(W.d.querySelectorAll('#app table tbody tr'));
+  check(disRows.length >= 1 && disRows.every((r) => /Disabled/.test(r.textContent)) && !!disRows.find((r) => r.textContent.includes('anna')), 'Status filter isolates disabled accounts');
+  setVal(W, W.d.getElementById('usersStatus'), 'all');
+  await sleep(400);
+
+  /* ---- E2 (reviewer, 2026-11-06 regression): the admin can still disable and re-enable an account from the Users sheet ---- */
+  console.log('== E2: Enable/Disable button on the Users sheet ==');
+  const annaUser = () => JSON.parse(W.w.localStorage.getItem('spr-auth-v1')).users.find((u) => u.username === 'anna');
   click(W, annaRow().querySelector('[data-action="user-toggle"]'));
   await sleep(400);
-  check(/Disabled/.test(annaRow().textContent), 'account shows Disabled after toggle');
-  check(JSON.parse(W.w.localStorage.getItem('spr-auth-v1')).users.find((u) => u.username === 'anna').disabled === true, 'disabled flag stored on the account');
+  check(!annaUser().disabled, 'Enable button re-enables a disabled account');
+  check(/Active/.test(annaRow().textContent), 'sheet shows Active after enabling');
+  click(W, annaRow().querySelector('[data-action="user-toggle"]'));
+  await sleep(400);
+  check(annaUser().disabled === true, 'Disable button disables the account');
+  check(/Disabled/.test(annaRow().textContent), 'sheet shows Disabled after disabling');
   click(W, annaRow().querySelector('[data-action="user-toggle"]'));
   await sleep(300);
-  check(!JSON.parse(W.w.localStorage.getItem('spr-auth-v1')).users.find((u) => u.username === 'anna').disabled, 'second toggle re-enables');
+  check(!annaUser().disabled, 'account left enabled again');
 
   /* ---- F: sync off => zero fetches ---- */
   console.log('== F: sync off => zero Supabase requests ==');

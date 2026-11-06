@@ -186,10 +186,13 @@
     if (action === 'manage.accounts' || action === 'manage.classes' || action === 'migrate' || action === 'export.all') return false;
     if (r === 'manager') return action === 'view' || action === 'audit.view';
     if (!isClassOf(user, cls)) return false;
-    if (r === 'eal') {
+    /* round9: a plain teacher's rights come from the CLASS assignment
+       (eal vs support), not from the account role — one person can be EAL
+       in one class and Supporting in another. Admin/manager decided above. */
+    if (cls.eal === user.username) {
       return ['view', 'edit.obs', 'edit.scores', 'edit.roster', 'review', 'export.class', 'audit.view'].indexOf(action) !== -1;
     }
-    if (r === 'support') {
+    if (cls.support === user.username) {
       return ['view', 'edit.scores', 'request.obs', 'audit.view'].indexOf(action) !== -1;
     }
     return false;
@@ -342,6 +345,93 @@
     return { mode: 'class', index: index, blobs: blobs, keyrings: keyrings, newPasswords: newPasswords };
   }
 
+  /* ---------------- owner's sheet CSV (round9) ----------------
+     One row per (person, partner): class_or_grade may list several classes.
+     class_role (eal | supporting) is optional; when missing the admin picks
+     per pair in the preview — this parser NEVER guesses. */
+  const CLASS_ROLE_ALIASES = [[/^eal/i, 'eal'], [/support|^cet/i, 'support']];
+  function normClassRole(t) {
+    const x = String(t || '').trim();
+    for (const [re, v] of CLASS_ROLE_ALIASES) if (re.test(x)) return v;
+    return null;
+  }
+  function parseSheetCsv(text) {
+    const rows = csvRows(String(text || '').replace(/^﻿/, ''));
+    const errors = [], warnings = [];
+    if (!rows.length) return { users: [], classes: [], errors: ['empty file'], warnings: warnings, unpicked: [] };
+    const head = rows[0].map((h) => h.trim().toLowerCase());
+    const col = (n) => head.indexOf(n);
+    const iU = col('username'), iD = col('display_name'), iR = col('role'), iC = col('class_or_grade'), iS = col('school'), iP = col('paired_with'), iCR = col('class_role'), iSt = col('status');
+    if (iU < 0 || iR < 0) return { users: [], classes: [], errors: ['need at least "username" and "role" columns'], warnings: warnings, unpicked: [] };
+    const users = new Map();          // username -> {username, display_name, role, classes:Set, partners:Set}
+    const clsMap = new Map();         // class name -> Map(username -> class_role|null)
+    const clsSchool = new Map();
+    for (let r = 1; r < rows.length; r++) {
+      const c = rows[r];
+      const un = String(c[iU] || '').trim().toLowerCase();
+      const roleRaw = String(c[iR] || '').trim();
+      if (!un) { if (rows[r].some((x) => String(x || '').trim())) errors.push('row ' + (r + 1) + ': missing username'); continue; }
+      if (!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(un)) { errors.push('row ' + (r + 1) + ': bad username "' + un.slice(0, 20) + '" (letters, digits, - and _ only)'); continue; }
+      const role = normalizeRole(roleRaw);
+      if (!role) { errors.push('row ' + (r + 1) + ': unknown role "' + roleRaw.slice(0, 30) + '"'); continue; }
+      const dn = iD >= 0 ? String(c[iD] || '').trim().slice(0, 40) : '';
+      let u = users.get(un);
+      if (u) {
+        if (u.display_name && dn && u.display_name !== dn) errors.push('username "' + un + '" appears with two different display names ("' + u.display_name + '" and "' + dn + '")');
+        if (u.role !== role) errors.push('username "' + un + '" appears with two different roles');
+      } else { u = { username: un, display_name: dn || un, role: role, classes: new Set(), partners: new Set() }; users.set(un, u); }
+      if (iD >= 0 && dn && !u.display_name) u.display_name = dn;
+      const school = iS >= 0 ? String(c[iS] || '').trim().slice(0, 40) : '';
+      const status = iSt >= 0 ? String(c[iSt] || '').trim().toLowerCase() : 'active';
+      if (status && ['active', 'disabled', 'enabled', 'suspended'].indexOf(status) === -1) errors.push('row ' + (r + 1) + ': unknown status "' + status + '"');
+      const clsRaw = iC >= 0 ? String(c[iC] || '') : '';
+      const clsList = clsRaw.split(/[,;、]/).map((x) => x.trim()).filter(Boolean);
+      const partnerRaw = iP >= 0 ? String(c[iP] || '').trim().toLowerCase() : '';
+      const isAdminRow = role === 'admin' || role === 'manager' || /^all( classes)?$/i.test(clsRaw.trim());
+      const cr = (iCR >= 0 && !isAdminRow) ? normClassRole(c[iCR]) : undefined;   // undefined = column absent/irrelevant
+      if (iCR >= 0 && !isAdminRow && c[iCR] && String(c[iCR]).trim() && !cr) errors.push('row ' + (r + 1) + ': unknown class_role "' + String(c[iCR]).trim().slice(0, 20) + '" (use eal or supporting)');
+      if (isAdminRow) continue;                                   // admin row: no per-class data
+      for (const cn of clsList) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,30}$/.test(cn)) { errors.push('row ' + (r + 1) + ': bad class name "' + cn.slice(0, 20) + '"'); continue; }
+        let m = clsMap.get(cn);
+        if (!m) { m = new Map(); clsMap.set(cn, m); }
+        if (m.has(un) && cr && m.get(un) !== cr) errors.push('class "' + cn + '": "' + un + '" is listed both as eal and supporting');
+        m.set(un, m.has(un) && m.get(un) ? m.get(un) : (cr || null));
+        if (school) clsSchool.set(cn, school);
+        u.classes.add(cn);
+      }
+      if (partnerRaw) u.partners.add(partnerRaw);
+    }
+    /* classes with more than two teachers are an error; pairs without a
+       class_role are returned as "unpicked" — the admin decides, never us */
+    const classes = [], unpicked = [];
+    for (const [cn, m] of clsMap) {
+      const teachers = Array.from(m.keys());
+      if (teachers.length > 2) { errors.push('class "' + cn + '" has ' + teachers.length + ' teachers (max one EAL + one supporting)'); continue; }
+      const roles = teachers.map((t) => m.get(t));
+      const classesEntry = { name: cn, school: clsSchool.get(cn) || '', teachers: teachers.map((t, i) => ({ username: t, class_role: roles[i] })) };
+      classes.push(classesEntry);
+      const nulls = classesEntry.teachers.filter((t) => !t.class_role);
+      if (nulls.length && teachers.length === 2 && !roles[0] && !roles[1]) unpicked.push(cn);
+      else if (nulls.length) {
+        /* one side known: the other is implicitly the opposite role? NO —
+           never guess; ask. */
+        unpicked.push(cn);
+      }
+    }
+    /* partner consistency: both directions must agree on the shared classes */
+    for (const u of users.values()) {
+      for (const p of u.partners) {
+        const pu = users.get(p);
+        if (!pu) { warnings.push('"' + u.username + '" pairs with "' + p + '", who is not in this file — assignment kept from class_role'); continue; }
+      }
+    }
+    return {
+      users: Array.from(users.values()).map((u) => ({ username: u.username, display_name: u.display_name, role: u.role, classes: Array.from(u.classes), partners: Array.from(u.partners) })),
+      classes: classes, errors: errors, warnings: warnings, unpicked: unpicked
+    };
+  }
+
   /* ---------------- roster CSV (account template) ---------------- */
   function csvRows(text) {
     const s = String(text || '').replace(/^\uFEFF/, '');
@@ -436,7 +526,7 @@
     AUDIT_MAX: AUDIT_MAX, logAudit: logAudit,
     requestChange: requestChange, approveChange: approveChange, rejectChange: rejectChange, obsCell: obsCell,
     planMigration: planMigration, applyMigration: applyMigration, countCells: countCells,
-    parseRosterCsv: parseRosterCsv, csvRows: csvRows,
+    parseRosterCsv: parseRosterCsv, parseSheetCsv: parseSheetCsv, csvRows: csvRows, normClassRole: normClassRole,
     classFile: classFile, parseClassFile: parseClassFile, classLink: classLink, parseClassHash: parseClassHash,
   };
 });

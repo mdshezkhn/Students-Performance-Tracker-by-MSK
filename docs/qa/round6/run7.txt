@@ -1,0 +1,37 @@
+1. adopted SQL (docs/supabase-write-token.sql)
+  ok: DO NOT RUN YET banner kept
+  ok: drops EVERY update/delete/ALL policy found in pg_policies (no guessed names)
+  ok: no dependency on a guessed policy name
+  ok: revokes UPDATE/DELETE from anon+authenticated
+  ok: recreates the plain read policy
+  ok: recreates the plain insert policy
+  ok: ping answers no-row for an unknown channel
+  ok: CHECK query + expected result documented
+  ok: three owner steps at the top
+  ok: harness ran the 3 policy scenarios + the Save & Share shapes (got 4)
+  ok: direct UPDATE by anon is REFUSED in every scenario
+  ok: row never overwritten in any scenario
+  ok: ping returns no-row (not NULL) on the real engine
+  ok: anon DELETE refused (ALL-policy scenario)
+2. Save & Share write token
+  ok: sealSem reachable for the test
+  ok: share envelope carries mac (enrol proof possible)
+  ok: mac verifies against the share key (HMAC-SHA256 of ct)
+  ok: owner: first save succeeds (arms the row)
+  ok: row armed from its first insert (hash stored)
+  ok: armed with sha256(share token)
+  ok: no direct PATCH on the armed path
+  FAIL: opening the share link stores channel + key + token
+  ok: Mo: pushed via the RPC with the share token (no PATCH)
+  ok: Anna: pushed via the RPC with the share token (no PATCH)
+  ok: Mo: pushed via the RPC with the share token (no PATCH)
+  ok: Anna: pushed via the RPC with the share token (no PATCH)
+  ok: cloud copy holds the latest pusher in turn
+  ok: old unprotected share row: push enrols from the key proof and succeeds
+  FAIL: enrol used the share key as proof
+  FAIL: old row is armed after the auto-enrol
+3. persistent storage line (class mode)
+  ok: class mode: line resolves within 3 s (got: ' + (SPR_PERSIST === true ? 'granted: the browser will try not to clear SPR data when storage runs low)
+  ok: persist() requested in class mode too
+
+ROUND6: 29 ok, 3 FAIL

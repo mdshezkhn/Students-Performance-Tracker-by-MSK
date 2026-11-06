@@ -1,0 +1,34 @@
+1. adopted SQL (docs/supabase-write-token.sql)
+  ok: DO NOT RUN YET banner kept
+  ok: drops EVERY update/delete/ALL policy found in pg_policies (no guessed names)
+  ok: no dependency on a guessed policy name
+  ok: revokes UPDATE/DELETE from anon+authenticated
+  ok: recreates the plain read policy
+  ok: recreates the plain insert policy
+  ok: ping answers no-row for an unknown channel
+  ok: CHECK query + expected result documented
+  ok: three owner steps at the top
+  ok: harness ran the 3 policy scenarios + the Save & Share shapes (got 4)
+  ok: direct UPDATE by anon is REFUSED in every scenario
+  ok: row never overwritten in any scenario
+  ok: ping returns no-row (not NULL) on the real engine
+  ok: anon DELETE refused (ALL-policy scenario)
+2. Save & Share write token
+  ok: sealSem reachable for the test
+  ok: share envelope carries mac (enrol proof possible)
+  ok: mac verifies against the share key (HMAC-SHA256 of ct)
+  ok: owner: first save succeeds (arms the row)
+  ok: row armed from its first insert (hash stored)
+  ok: armed with sha256(share token)
+  ok: no direct PATCH on the armed path
+  FAIL: opening the share link stores channel + key + token
+http://localhost/app/index.html#join=7e3a1c2b-4d5e-4f6a-8b9c-0d1e2f3a4b5c&k=lsUL-PBYPll2LrndmajNTZ39EvumbJHMJp0i918_Wjc&t=share-tok-xny8g7b4:4713
+      history.replaceState(null, '', location.pathname + location.search);
+      ^
+
+ReferenceError: history is not defined
+    at joinSb (http://localhost/app/index.html#join=7e3a1c2b-4d5e-4f6a-8b9c-0d1e2f3a4b5c&k=lsUL-PBYPll2LrndmajNTZ39EvumbJHMJp0i918_Wjc&t=share-tok-xny8g7b4:4713:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v24.14.1
+Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76

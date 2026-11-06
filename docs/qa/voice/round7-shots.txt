@@ -1,0 +1,5 @@
+127.0.0.1 - - [30/Oct/2026 13:18:10] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:18:10] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:18:10] "GET /app/ HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:18:21] "GET /app/sw.js HTTP/1.1" 304 -
+report-card.pdf written (40633 bytes); page count check: 1 page(s)

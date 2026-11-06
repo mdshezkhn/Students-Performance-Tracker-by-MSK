@@ -1,0 +1,26 @@
+1. clean-clone release hygiene
+  ok: package.json declares jsdom AND @electric-sql/pglite
+  ok: package-lock.json is committed
+  ok: npm test runs every suite (all 14 wired)
+  ok: sql-policy-test.mjs lives in tests/
+  FAIL: .gitignore covers node_modules, .pw, qa_root, *.log
+  ok: no "All rights reserved" anywhere shipped
+  FAIL: REVIEW-NOTES.md: Chinese text needs a native reader
+  FAIL: BACKEND-DESIGN.md: shared-DB build gated by school approval
+  ok: Test cloud connection still present in Manage
+2. owner runbook (docs only)
+  FAIL: runbook banner: DO NOT RUN until the reviewer says so
+  FAIL: runbook has the six numbered parts
+  FAIL: pointer decision table with the exact delete
+  FAIL: backup table + restore query
+  FAIL: after-steps smoke test in plain words
+  FAIL: rollback statements present
+  FAIL: harness has scenario E (run SQL, rollback, old behaviour back)
+  FAIL: scenario E proves old behaviour + intact data
+4. Save & Share hub
+  FAIL: hub dialog reachable (test hook present)
+  FAIL: class screen topbar check ran (Failed to execute 'encrypt' on 'SubtleCrypto': 3rd argument )
+6c. iOS warning re-showable
+  FAIL: Manage offers "show the iPhone/iPad warning again"
+
+ROUND7: 6 ok, 14 FAIL

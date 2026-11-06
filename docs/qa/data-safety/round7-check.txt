@@ -1,0 +1,29 @@
+127.0.0.1 - - [30/Oct/2026 13:16:31] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:16:32] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:16:32] "GET /app/ HTTP/1.1" 200 -
+item4 password "1" rejected: PASS — Use at least 8 characters.
+127.0.0.1 - - [30/Oct/2026 13:16:39] "GET /app/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:16:40] "GET /app/sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:16:40] "GET /app/ HTTP/1.1" 200 -
+item1 admin signed in (setup + recovery path): PASS
+127.0.0.1 - - [30/Oct/2026 13:16:53] "GET /app/sw.js HTTP/1.1" 304 -
+item1 sample data loaded: PASS
+127.0.0.1 - - [30/Oct/2026 13:16:57] "GET /app/sw.js HTTP/1.1" 304 -
+item1 tab B signed in: PASS
+item1 tab B edited first student to: Wang Xiaoming-B
+item1 stale tab A got the overlay: PASS — Another window changed this class  This window is out of date. Saving 
+127.0.0.1 - - [30/Oct/2026 13:17:14] "GET /app/sw.js HTTP/1.1" 304 -
+item1 newer write survived (B edit present after stale tab): PASS
+127.0.0.1 - - [30/Oct/2026 13:17:26] "GET /app/sw.js HTTP/1.1" 304 -
+item2 NOT-SAVED banner on quota failure: PASS — NOT SAVED — storage is full or blocked. Download a backup no
+item2 banner has Download backup button: PASS
+127.0.0.1 - - [30/Oct/2026 13:17:39] "GET /reset.html HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 13:17:39] code 404, message File not found
+127.0.0.1 - - [30/Oct/2026 13:17:39] "GET /favicon.ico HTTP/1.1" 404 -
+item8 wipe starts disabled: PASS
+item8 wrong word keeps it disabled: PASS
+item8 raw copy downloads first: PASS — spr-raw-backup-2026-10-30.json
+item8 typed ERASE + saved copy arms the wipe: PASS
+
+page errors across all tabs: 0
+evidence written

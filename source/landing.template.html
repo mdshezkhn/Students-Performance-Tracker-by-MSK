@@ -189,6 +189,8 @@ window.addEventListener('DOMContentLoaded', function(){
 (function(){
   "use strict";
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var saveData = false;
+  try { saveData = !!(navigator.connection && navigator.connection.saveData); } catch(e){}
   var isMobile = window.innerWidth <= 760;
   var hasGSAP = !!(window.gsap && window.ScrollTrigger);
   var hasLenis = !!window.Lenis;
@@ -206,7 +208,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     v.addEventListener("playing", function(){ done = true; });
     v.addEventListener("error", fallback);
-    if(reduce || isMobile){ fallback(); return; }
+    if(reduce || isMobile || saveData){ fallback(); return; }   /* round9: Save-Data also stops the video */
     /* the loop is decoration: it only starts fetching after the page
        (fonts, poster, clouds) has fully loaded, so it never competes
        with first paint */
