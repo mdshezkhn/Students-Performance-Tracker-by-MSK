@@ -262,7 +262,9 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     const dl = A.d.getElementById('dlg');
     if (dl && dl.querySelector('[data-action="recovery-master"]')) {
       set('mrPw', 'Master-K3y!9x'); click(A, dl.querySelector('[data-action="recovery-master"]'));
-      /* the master wrap is real PBKDF2: wait until the dialog ENABLES Continue */
+      /* round10: kit download is required before Continue enables */
+      for (let t = 0; t < 60; t++) { await sleep(250); const k = A.d.querySelector('#dlg [data-action="owner-kit-dl"]'); if (k && k.disabled === false) break; }
+      const kb5 = A.d.querySelector('#dlg [data-action="owner-kit-dl"]'); if (kb5 && !kb5.disabled) click(A, kb5);
       for (let t = 0; t < 60; t++) { await sleep(250); const b = A.d.querySelector('#dlg [data-action="recovery-ack"]'); if (b && b.disabled === false) break; }
     }
     const ack2 = A.d.querySelector('[data-action="recovery-ack"]');
@@ -397,12 +399,19 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     for (let t = 0; t < 40; t++) { await sleep(250); const dl = A.d.getElementById('dlg'); if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) break; }
     const dl = A.d.getElementById('dlg');
     check(/master password/i.test(dlgTxt(A)), 'recovery dialog offers the master password');
-    check(/recover|restores/i.test(dlgTxt(A)) && /empty|right now|as of/i.test(dlgTxt(A)), 'text says what the file can and cannot recover');
+    check(/owner recovery kit/i.test(dlgTxt(A)), 'round10: the required owner kit panel is shown');
     const ackBtn = dl.querySelector('[data-action="recovery-ack"]');
-    check(ackBtn.disabled === true, 'Continue starts DISABLED (no self-ticked "I saved")');
+    check(ackBtn.disabled === true, 'Continue starts DISABLED');
     check(!dl.querySelector('#recoverySaved'), 'the self-tick checkbox is gone');
-    click(A, dl.querySelector('[data-action="recovery-dl"]')); await sleep(400);
-    check(ackBtn.disabled === false, 'Continue enables only after the download button actually fired');
+    const mpw5 = dl.querySelector('#mrPw');
+    if (mpw5) { mpw5.value = 'Master-K3y!9x'; mpw5.dispatchEvent(new A.w.Event('input', { bubbles: true })); }
+    click(A, dl.querySelector('[data-action="recovery-master"]')); await sleep(3500);
+    const kb5b = dl.querySelector('[data-action="owner-kit-dl"]');
+    check(kb5b && kb5b.disabled, 'kit button stays disabled until the master password is set');
+    for (let t5 = 0; t5 < 40 && (!kb5b || kb5b.disabled); t5++) { await sleep(300); }
+    check(kb5b && !kb5b.disabled, 'kit button enabled after the master password is set');
+    click(A, kb5b); await sleep(400);
+    check(ackBtn.disabled === false, 'Continue enables only after the kit download actually fired');
     click(A, ackBtn);
     const inned = await (async () => { for (let t = 0; t < 30; t++) { await sleep(250); if (!A.d.body.classList.contains('auth-gate')) return true; } return false; })();
     check(inned, 'setup completes after the download-gated route');

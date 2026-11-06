@@ -319,7 +319,7 @@
   function sprMode() { try { return localStorage.getItem(MODE_KEY) === 'class' ? 'class' : 'legacy'; } catch (e) { return 'legacy'; } }
   function classIndex() { try { const ix = JSON.parse(localStorage.getItem(CLASS_INDEX_KEY) || '[]'); return Array.isArray(ix) ? ix : []; } catch (e) { return []; } }
   function setClassIndex(ix) { localStorage.setItem(CLASS_INDEX_KEY, JSON.stringify(ix)); }
-  function classRole(r) { return r === 'management' ? 'manager' : r === 'teacher' ? 'eal' : r; }
+  function classRole(r) { return r === 'management' ? 'manager' : r === 'teacher' ? 'eal' : r === 'owner' ? 'admin' : r; }
   function myUser() {
     const u = currentUser();
     if (!u || !u.username) return null;
@@ -645,7 +645,7 @@
        to 'eal' for permissions, but the Users tab must not re-label a plain
        teacher as an EAL teacher (2026-10-24 review note) */
     const raw = String(r || '');
-    const labels = { admin: 'Admin', manager: 'Manager', management: 'Manager', eal: 'EAL teacher', support: 'Supporting teacher', teacher: 'Teacher' };
+    const labels = { owner: 'Owner', admin: 'Admin', manager: 'Manager', management: 'Manager', eal: 'EAL teacher', support: 'Supporting teacher', teacher: 'Teacher' };
     return labels[raw] || labels[classRole(raw)] || (CS && CS.roleLabel(classRole(raw))) || raw;
   }
   function isMgmt() { const r = classRole((currentUser() || {}).role); return r === 'admin' || r === 'manager'; }
@@ -968,6 +968,18 @@
     try { localStorage.setItem(MODE_KEY, 'class'); } catch (e0) {}   /* first class => class mode; the legacy blob stays untouched as an archive */
     await issueClassKeys(cid, key, [myUser().username].concat(eal ? [eal] : []).concat(support ? [support] : []));
     SESSION.keys[cid] = key; classKeysToSession();
+    /* round10: the owner is a guaranteed holder - escrow wrap (works from any
+       admin session that can unwrap the escrow key) + own keyring when the
+       owner IS the session */
+    {
+      const kEsc2 = await escrowKeyBytes();
+      if (kEsc2) await addEscrowWrap(cid, key, kEsc2);
+      const ow2 = ownerUser();
+      if (ow2 && ow2.username === SESSION.user && SESSION.pw) {
+        const a3 = getAuth(); const me3 = a3.users.find((u) => u.username === ow2.username);
+        if (me3 && !me3.keyring[cid]) { me3.keyring[cid] = await CS.wrapKey(key, SESSION.pw); saveAuth(a3); }
+      }
+    }
     toast('Class ' + name + ' created');
     renderClasses();
     return cid;
@@ -1096,6 +1108,11 @@
     SESSION.keys[cid] = nk; classKeysToSession();
     const keepSet = {};
     (keepers || []).forEach((k) => { keepSet[k] = true; });
+    /* round10: the owner is an implicit keeper - a re-key must never lock the
+       owner out of a class (their wrap is re-issued below when this session IS
+       the owner; otherwise the class link restores it, see docs) */
+    const ow3 = ownerUser();
+    if (ow3) keepSet[ow3.username] = true;
     /* prune: a removed teacher's wrap is deleted, so the old key is unreadable */
     const auth0 = getAuth();
     let pruned = false;
@@ -1125,6 +1142,14 @@
       saveAuth(a2);
     }
     if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Class key rotated: new passwords (shown once)');
+    /* round10: refresh the escrow wrap for the new key when this session can */
+    {
+      const kEsc3 = await escrowKeyBytes();
+      if (kEsc3) await addEscrowWrap(cid, SESSION.keys[cid], kEsc3);
+      if (ow3 && ow3.username !== SESSION.user && !getAuth().users.some((u) => u.username === ow3.username && u.keyring && u.keyring[cid])) {
+        try { toast('Class key rotated: ask the owner to re-open this class once from their device (Class key & link), or send them the link.', false); } catch (eT) {}
+      }
+    }
     return true;
   }
 
@@ -1214,7 +1239,7 @@
   function rosterImportGo(file) {
     const fr = new FileReader();
     fr.onload = async () => {
-      const r = CS.parseSheetCsv(fr.result);
+      const r = CS.parseSheetCsv(fr.result, (ownerUser() || {}).username);
       const school = schoolName();
       const schoolWarn = [];
       for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
@@ -1234,6 +1259,7 @@
       openDlg(
         '<h3>Import roster sheet: ' + r.users.length + ' account(s), ' + r.classes.length + ' class(es)</h3>' +
         (r.errors.length ? '<div class="login-err">' + r.errors.map((e) => U.esc(e)).join('<br>') + '</div>' : '') +
+        ((r.warnings || []).length ? '<div class="small" style="margin:8px 0;padding:8px 10px;background:rgba(127,127,127,.12);border-radius:8px">' + r.warnings.map((w) => U.esc(w)).join('<br>') + '</div>' : '') +
         (schoolWarn.length ? '<p class="small">School column differs from the Manage &amp; setup school setting ("' + U.esc(school) + '"): ' + U.esc(schoolWarn.join(', ')) + '. Imported anyway.</p>' : '') +
         '<div class="sheet" style="max-height:220px;overflow:auto"><table class="tbl"><thead><tr><th>username</th><th>display name</th><th>role</th><th>classes</th></tr></thead><tbody>' + rowsAcc + '</tbody></table></div>' +
         pickRows +
@@ -1359,6 +1385,13 @@
     setClassIndex(ix);
     if (sprMode() !== 'class') { try { localStorage.setItem(MODE_KEY, 'class'); } catch (eM) {} }
     for (const rk of rekeys) await rekeyClass(rk.id, rk.keep);
+    /* round10: escrow-wrap every class key so the owner can always re-open
+       (AFTER setClassIndex: addEscrowWrap reads the live class index) */
+    {
+      const kEsc0 = await escrowKeyBytes();
+      try { window.__ESC_DBG = { k: !!kEsc0, pw: !!SESSION.pw, user: SESSION.user, keys: Object.keys(SESSION.keys || {}).length }; } catch (e) { window.__ESC_DBG = { err: String(e) }; }
+      if (kEsc0) for (const c of classIndex()) { if ((SESSION.keys || {})[c.id] && !c.escrow) await addEscrowWrap(c.id, SESSION.keys[c.id], kEsc0); }
+    }
     closeDlg();
     if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
     else toast('Roster sheet imported: ' + r.classes.length + ' class(es) ready.');
@@ -2724,7 +2757,7 @@
         '<th scope="col">username</th><th scope="col">display name</th><th scope="col">role</th><th scope="col">class or grade</th><th scope="col">School</th><th scope="col">paired with</th><th scope="col">status</th><th scope="col"><span class="sr-only">actions</span></th>' +
         '</tr></thead><tbody>' + all.map((r) =>
           '<tr><td>' + U.esc(r.u.username) + '</td><td>' + U.esc(r.u.name || r.u.username) + '</td><td>' + U.esc(roleLabel(r.u.role)) + '</td><td>' + cell(r.classes) + '</td><td>' + cell(r.school) + '</td><td>' + cell(r.partner) + '</td><td>' + (r.u.disabled ? 'Disabled' : 'Active') + '</td><td>' +
-            (r.u.username === SESSION.user ? '' : '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(r.u.username) + '">' + (r.u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>'
+            (r.u.username === SESSION.user || r.u.role === 'owner' ? '<span class="small muted">protected</span>' : '<button class="btn sm" data-action="user-toggle" data-user="' + U.esc(r.u.username) + '">' + (r.u.disabled ? 'Enable' : 'Disable') + '</button>') + '</td></tr>'
         ).join('') + '</tbody></table></div>' +
         '<p class="small muted" style="margin-top:8px">Accounts on this device. A teacher sees exactly the classes assigned to them; the partner column is derived from the class assignments.</p>';
     }
@@ -2833,6 +2866,36 @@
     window.scrollTo(0, 0);
   }
 
+  let ocPendingMode = 'normal';   /* the mode chosen in the open Owner-controls dialog */
+  /* ---- round10: owner kit + owner controls cards (owner only) ---- */
+  function ownerKitCard() {
+    const a = getAuth();
+    const has = !!(a.ownerSeal && a.ownerSeal.pub);
+    return '<div class="panel" style="margin-top:10px"><b>Owner recovery kit</b>' +
+      '<p class="small" style="margin:8px 0">Seals the owner signing key and the class-key escrow under the <b>master password</b>. With the kit and the master password the owner account can be restored on any fresh browser - and can sign the school-wide read-only / lock controls. <b>Lose both the kit and the master password and nothing can recover them.</b></p>' +
+      '<div class="flex" style="margin-top:8px">' +
+      (has ? '<button class="btn sm" data-action="owner-kit-dl">Download owner kit again</button><span class="small muted" style="align-self:center">keep the newest copy with the school records</span>'
+           : '<span class="small">Set the master password above first: it seals the kit.</span>') +
+      '</div></div>';
+  }
+  function ownerControlsCard() {
+    const c = ctrlCache();
+    const m = ctrlMode();
+    const mins = c && c.at ? Math.round((Date.now() - c.at) / 60000) : null;
+    const modeWord = m === 'readonly' ? 'read-only' : m;
+    const status = 'Control status: ' + modeWord + (mins === null ? ', never checked yet' : (mins <= 0 ? ', checked just now' : ', checked ' + mins + ' min ago'));
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem(OWNER_HISTORY_KEY) || '[]'); } catch (e) {}
+    const lastIssued = hist.length ? hist[hist.length - 1] : null;
+    return '<div class="panel" id="ownerControls" style="margin-top:10px"><b>Owner controls</b>' +
+      '<p class="small" style="margin:8px 0">Sign a school-wide control record and publish it as <code>control.json</code> next to the app. Every device that goes online checks it. <b>Honest limits:</b> devices that never go online never see it; it cannot delete or change anyone\u2019s local data; it cannot stop someone who already exported data; the file is public - never put names or secrets in the message.</p>' +
+      '<p class="small" id="ocStatus">' + U.esc(status) + (lastIssued ? ' - last issued: ' + U.esc(lastIssued.mode) + ' (#' + lastIssued.counter + ', ' + U.esc(String(lastIssued.at).slice(0, 16).replace('T', ' ')) + ')' : '') + '</p>' +
+      '<div class="flex" style="margin-top:8px;flex-wrap:wrap;gap:8px">' +
+        '<button class="btn sm" data-action="oc-mode" data-mode="normal">Back to normal</button>' +
+        '<button class="btn sm" data-action="oc-mode" data-mode="readonly">Read-only</button>' +
+        '<button class="btn sm danger" data-action="oc-mode" data-mode="locked">Lock</button>' +
+      '</div></div>';
+  }
   function renderManage() {
     const sem = cur();
     const st = DB.settings;
@@ -2908,13 +2971,13 @@
       '<p class="small muted" style="margin-top:8px">Forgot your password? The administrator resets it: Users &rarr; <b>Reset password</b> (Help &amp; training, module 6). Before any experiment with data, use “Download full backup” below.</p></div>' +
       (reviewPanelHtml() || '') +
 
-      ((currentUser() || {}).role === 'admin' && sprMode() === 'legacy' && DB.semesters.length ?
+      (classRole((currentUser() || {}).role) === 'admin' && sprMode() === 'legacy' && DB.semesters.length ?
         '<div class="panel" style="margin-top:10px;border-color:#c9973b"><b>Per-class workbooks available</b>' +
         '<p class="small">Split this single markbook so every class gets its own key, its own teachers and its own audit log. Dry run and backup first: nothing changes until you apply.</p>' +
         '<button class="btn primary" data-action="class-migrate-open">Review migration…</button></div>' : '') +
       /* admin: dormant accounts from the default-password era are a side door until
          rotated or removed: this panel makes that visible and fixable */
-      ((currentUser() || {}).role === 'admin' ?
+      (classRole((currentUser() || {}).role) === 'admin' ?
         '<div class="panel" style="margin-top:10px"><p class="small" style="margin-bottom:8px"><b>Sign-ins on this device</b>: the accounts that can open this browser\u2019s data. <b>Admin</b> sees and controls everything; <b>Management</b> also sees the Ranking view; <b>Teachers</b> get the everyday markbook tools. Add a sign-in to give someone their own password here.</p>' +
         (getAuth().users.length ?
         '<table class="tbl"><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Password</th><th scope="col">Any system</th><th scope="col"></th></tr></thead><tbody>' +
@@ -2927,7 +2990,7 @@
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
             '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + (u.role === 'admin' ? '' : ': reset password to enable') + '</span>') + '</td>' +
-            '<td>' + (selfNow ? '' :
+            '<td>' + (selfNow || u.role === 'owner' ? (u.role === 'owner' ? '<span class="small muted">Owner - protected</span>' : '') :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
         }).join('') +
@@ -2943,8 +3006,10 @@
           ? '<button class="btn sm" data-action="master-set-open">Replace master password</button> <button class="btn sm danger" data-action="master-del">Remove master password</button>'
           : '<button class="btn sm" data-action="master-set-open">Set master password</button>') + '</div></div>'
         : '') +
-      ((currentUser() || {}).role === 'admin' && cryptoOK() ? dsManageCard() : '') +
-      (cryptoOK() && (currentUser() || {}).role !== 'admin' && dsOn()
+      (classRole((currentUser() || {}).role) === 'admin' && cryptoOK() ? dsManageCard() : '') +
+      ((currentUser() || {}).role === 'owner' ? ownerKitCard() : '') +
+      ((currentUser() || {}).role === 'owner' ? ownerControlsCard() : '') +
+      (cryptoOK() && classRole((currentUser() || {}).role) !== 'admin' && dsOn()
         ? '<div class="panel" style="margin-top:10px"><p class="small"><b>Device sync is on for this browser</b>: your changes are saved to the school&rsquo;s encrypted cloud copy automatically, and each sign-in opens the newest version. The administrator manages this channel.</p></div>'
         : '') +
       (isAdmin() ? (function () {
@@ -2957,6 +3022,7 @@
           '<input class="inp" id="ap-date" placeholder="Date (e.g. 2026-10-28)" style="max-width:150px" value="' + U.esc(a.date || '') + '">' +
           '<input class="inp" id="ap-ref" placeholder="Reference (email subject / doc no.)" style="max-width:230px" value="' + U.esc(a.ref || '') + '">' +
           '<button class="btn sm" data-action="approval-save">Save</button></div>' +
+          '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="ap-owner-ok"' + (a.ownerOk ? ' checked' : '') + '><span class="small">The school has agreed that the owner account can open all classes and lock the app.</span></label>' +
           (a.by ? '' : '<p class="small muted" style="margin:8px 0 0">No school approval recorded yet.</p>') + '</div>';
       })() : '') +
       (sprMode() === 'class' && CLS ? auditPanelHtml(DB) : '') +
@@ -3483,8 +3549,11 @@
     const a = (DB.settings && DB.settings.schoolApproval) || null;
     if (a && a.by) return 'Use of SPR at this school was approved by ' + U.esc(a.by) +
       (a.date ? ' on ' + U.esc(a.date) : '') + (a.ref ? ' (ref: ' + U.esc(a.ref) + ')' : '') + '.';
-    if (isAdmin()) return 'No school approval recorded yet. Admins can add it in Manage &amp; setup.';
-    return 'The school approval record is kept by the administrator.';
+    const own = a && a.ownerOk
+      ? ' The school has agreed that the owner account can open all classes and lock the app.'
+      : (isAdmin() ? ' Reminder for the admin: tick "The school has agreed that the owner account can open all classes and lock the app" in Manage &amp; setup once the school has confirmed it.' : '');
+    if (isAdmin()) return 'No school approval recorded yet. Admins can add it in Manage &amp; setup.' + own;
+    return 'The school approval record is kept by the administrator.' + own;
   }
   function noticeSummaryHtml() {
     return '<h3>About SPR and your student data</h3>' +
@@ -3767,6 +3836,9 @@
        instantly close the very dialog this click just opened */
     if (el.tagName === 'A' && el.getAttribute('href') === '#') e.preventDefault();
     const a = el.dataset.action;
+    /* round10: readonly/locked modes pause every mutating action at ONE choke
+       point; viewing, report printing and backup downloads stay open */
+    if (CTRL_MUTATE[a] && ctrlBlock(a)) return;
     const sem = cur();
     if (a === 'class-open') { openClass(el.dataset.id); return; }
     if (a === 'class-new-open') { classNewDialog(); return; }
@@ -3807,10 +3879,10 @@
             '<div class="flex" style="gap:8px;flex-wrap:wrap"><input type="password" id="mrPw" class="inp" style="max-width:210px" placeholder="Master password" autocomplete="new-password">' +
             '<button class="btn" data-action="recovery-master">Set master password</button></div>' +
             '<div class="login-err" id="mrErr" aria-live="assertive"></div></div>' +
-            '<div class="panel" style="margin:10px 0"><b>2. Download a recovery file instead</b>' +
-            '<p class="small muted">What this can and cannot do: the file restores your data <b>as of the moment you save it</b>. Right now that is nothing: the workbook is empty. SPR offers a fresh recovery file at the first backup prompt (when there is real data to protect). Keep the newest copy with the school\u2019s records. A file cannot reset a forgotten password: it only brings data back.</p>' +
-            '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-action="recovery-dl">Download recovery file</button>' +
-            '<span class="small muted" id="recoveryDlState">not downloaded yet</span></div></div>' +
+            '<div class="panel" style="margin:10px 0"><b>2. Download the owner recovery kit (required)</b>' +
+            '<p class="small muted">This account is the <b>protected owner</b> of this markbook. The kit file seals the owner\u2019s signing key and the key escrow under the master password you just set. It can restore the owner account on a fresh browser, and it signs the school-wide read-only / lock controls. <b>Lose both the kit and the master password and nothing can recover them.</b></p>' +
+            '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-action="owner-kit-dl" id="ownerKitBtn" disabled>Download owner recovery kit</button>' +
+            '<span class="small muted" id="kitDlState">set the master password first, then download</span></div></div>' +
             '<div class="login-err" id="recErr" aria-live="assertive"></div>' +
             '<div class="dlg-actions"><button class="btn primary" data-action="recovery-ack" id="recoveryGo" disabled>Continue</button></div>',
             function (d) { d.addEventListener('cancel', function (e) { e.preventDefault(); }); });
@@ -3828,11 +3900,22 @@
           const v2 = readV2() || { fmt: 2, wraps: {}, ts: Date.now() };
           v2.wraps[MASTER_KEY] = await makeWrap(SESSION.dk, mst);
           writeV2(v2);
+          const sealed = await ensureOwnerSeal(mst);
           if (err) err.textContent = '';
-          const go = $('#recoveryGo'); if (go) go.disabled = false;
-          toast('Master password set');
+          /* round10: Continue stays disabled until the kit is DOWNLOADED too */
+          const kb2 = $('#ownerKitBtn');
+          if (kb2) { kb2.disabled = !sealed; }
+          const ks2 = $('#kitDlState');
+          if (ks2 && sealed) ks2.textContent = 'ready - download it now';
+          toast('Master password set' + (sealed ? ' - owner kit ready' : ''));
         } catch (e2) { if (err) err.textContent = 'Could not set the master password: ' + e2.message; }
       })();
+      return;
+    }
+    if (a === 'owner-kit-dl') {
+      if (!downloadOwnerKit()) return;
+      const st = $('#kitDlState'); if (st) st.textContent = 'downloaded: keep it with the school records';
+      const go = $('#recoveryGo'); if (go) go.disabled = false;
       return;
     }
     if (a === 'recovery-dl') {
@@ -3848,7 +3931,9 @@
       const err = $('#recErr');
       const v2 = readV2();
       const masterSet = !!(v2 && v2.wraps && v2.wraps[MASTER_KEY]);
-      if (go && go.disabled) { if (err) err.textContent = 'Choose one of the two options first: set a master password, or download the recovery file.'; return; }
+      const kitDl = !!(getAuth().ownerSeal && $('#kitDlState') && /downloaded/.test($('#kitDlState').textContent));
+      if (go && go.disabled) { if (err) err.textContent = 'Set the master password, then download the owner recovery kit.'; return; }
+      if (!kitDl) { if (err) err.textContent = 'Download the owner recovery kit first: it is the owner account’s only recovery file.'; return; }
       if (!masterSet && !(go && !go.disabled)) { if (err) err.textContent = 'Choose one of the two options first.'; return; }
       try { localStorage.setItem('spr-recovery-ack', String(Date.now())); } catch (e3) {}
       closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
@@ -3860,6 +3945,7 @@
       (async () => {
         if (!isAdmin()) { toast('Admin only.', true); return; }
         const un = el.dataset.user;
+        if (ownerGuard(un, 'Remove sign-in')) return;
         if (!un || un === SESSION.user) return;
         const okGo = await confirmDlg('Remove sign-in ' + U.esc(un) + '?',
           'This deletes <b>' + U.esc(un) + '</b> and the key that opens it <b>from this device only</b>. If this person still uses this browser, they will no longer be able to open the data here. Other devices are not affected.',
@@ -3929,6 +4015,7 @@
     if (a === 'user-toggle') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
+      if (ownerGuard(un, 'Enable/disable')) return;
       const auth = getAuth();
       const u = auth.users.find((x) => x.username === un);
       if (!u || un === SESSION.user) return;
@@ -3998,6 +4085,7 @@
     if (a === 'acct-reset-open') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
+      if (ownerGuard(un, 'Password reset')) return;
       openDlg('<h3>Reset password: ' + U.esc(un) + '</h3>' +
         '<p class="small">Sets a new password for this sign-in. Tell the person their new password: they will need it next time they sign in here.</p>' +
         '<label>New password <input class="inp" type="password" id="rpPass" autocomplete="new-password"></label>' +
@@ -4015,6 +4103,7 @@
         try {
         if (!isAdmin()) { toast('Admin only.', true); return; }
         const err = $('#rpErr');
+        if (ownerGuard(el.dataset.user, 'Password reset')) return;
         const un = el.dataset.user;
         const nw = ($('#rpPass') ? $('#rpPass').value : '') || '';
         const cf = ($('#rpConf') ? $('#rpConf').value : '') || '';
@@ -4347,6 +4436,100 @@
       })();
       return;
     }
+    if (a === 'oc-mode') {
+      if (!isOwnerUser(currentUser())) { toast('Owner only.', true); return; }
+      const mode = el.dataset.mode;
+      ocPendingMode = mode;
+      const words = mode === 'locked'
+        ? 'Everyone except you will be unable to sign in. Their data stays safe on their devices.'
+        : mode === 'readonly' ? 'Nobody can edit, import, delete or push. Viewing, printing and backups keep working.' : 'Everything returns to normal.';
+      openDlg('<h3>Owner controls: ' + (mode === 'readonly' ? 'read-only' : mode) + '</h3>' +
+        '<p class="small">' + words + ' You will download a signed <b>control.json</b> - publish it at <b>https://' + U.esc(location.host) + '/control.json</b> (same site as the app). Devices check it whenever they are online.</p>' +
+        '<label>Message shown to everyone (max 300 chars, public - no names or secrets)<textarea class="inp" id="ocMsg" maxlength="300" rows="2" style="width:100%"></textarea></label>' +
+        '<label>Master password (unseals the owner signing key)<input class="inp" type="password" id="ocMaster" autocomplete="off"></label>' +
+        '<div class="login-err" id="ocErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+        '<button class="btn primary" data-action="oc-issue" id="ocGo">Sign &amp; download control.json</button></div>');
+      return;
+    }
+    if (a === 'oc-issue') {
+      (async () => {
+        if (!isOwnerUser(currentUser())) { toast('Owner only.', true); return; }
+        const err = $('#ocErr');
+        const master = ($('#ocMaster') ? $('#ocMaster').value : '') || '';
+        if (!master) { if (err) err.textContent = 'Enter the master password.'; return; }
+        const msgEl = document.getElementById('ocMsg');
+        const res = await ctrlIssue(ocPendingMode, msgEl ? msgEl.value : '', master);
+        if (!res || !res.ok) { if (err) err.textContent = (res && res.error) || 'Signing failed.'; return; }
+        const aD = document.createElement('a');
+        aD.href = URL.createObjectURL(new Blob([JSON.stringify(res.rec, null, 2)], { type: 'application/json' }));
+        aD.download = 'control.json';
+        document.body.appendChild(aD); aD.click(); aD.remove();
+        closeDlg();
+        toast('control.json #' + res.rec.counter + ' (' + res.rec.mode + ') signed and downloaded. Publish it at https://' + location.host + '/control.json - every online device obeys within 10 minutes.');
+        if (location.hash === '#/manage') renderManage();
+      })();
+      return;
+    }
+    if (a === 'owner-restore-open') {
+      openDlg('<h3>Restore the owner recovery kit</h3>' +
+        '<p class="small">Use the kit file plus its <b>master password</b> to recreate the owner account on this browser. The kit restores the owner role, the signing key and the class-key escrow; class data then arrives by signing in with device sync, or from a backup. A wrong master password writes nothing.</p>' +
+        '<label>Kit file (spr-owner-kit.json)<input type="file" id="orFile" class="inp" accept=".json,application/json"></label>' +
+        '<label>Master password <input class="inp" type="password" id="orMaster" autocomplete="off"></label>' +
+        '<label>New owner password <input class="inp" type="password" id="orPass" autocomplete="new-password"></label>' +
+        '<label>Repeat new password <input class="inp" type="password" id="orConf" autocomplete="new-password"></label>' +
+        '<div class="login-err" id="orErr" aria-live="assertive"></div>' +
+        '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+        '<button class="btn primary" data-action="owner-restore" id="orGo">Restore owner</button></div>');
+      return;
+    }
+    if (a === 'owner-restore') {
+      (async () => {
+        const err = $('#orErr');
+        const f = ($('#orFile') && $('#orFile').files && $('#orFile').files[0]) || null;
+        const master = ($('#orMaster') ? $('#orMaster').value : '') || '';
+        const npw = ($('#orPass') ? $('#orPass').value : '') || '';
+        const cf = ($('#orConf') ? $('#orConf').value : '') || '';
+        if (!f) { if (err) err.textContent = 'Choose the kit file.'; return; }
+        if (!master) { if (err) err.textContent = 'Enter the master password.'; return; }
+        const pwErr = CS.pwOk('admin', npw);
+        if (pwErr) { if (err) err.textContent = pwErr; return; }
+        if (npw !== cf) { if (err) err.textContent = 'New passwords do not match.'; return; }
+        let kit = null;
+        try {
+          const ktxt = (typeof f.text === 'function')
+            ? await f.text()
+            : await new Promise(function (res, rej) { const fr = new FileReader(); fr.onload = function () { res(String(fr.result)); }; fr.onerror = function () { rej(fr.error); }; fr.readAsText(f); });
+          kit = JSON.parse(ktxt);
+        } catch (e) { if (err) err.textContent = 'That file is not a kit.'; return; }
+        if (!kit || kit.kit !== 1 || !kit.seal || !kit.pub) { if (err) err.textContent = 'That file is not an owner kit.'; return; }
+        let inner = null;
+        try { inner = JSON.parse(new TextDecoder().decode(await CS.unwrapKey(kit.seal, master))); }
+        catch (e) { if (err) err.textContent = 'Wrong master password.'; return; }
+        if (!inner || !inner.k) { if (err) err.textContent = 'The kit could not be opened.'; return; }
+        /* create/refresh the owner account: role owner + escrow key under the NEW password */
+        const auth = getAuth();
+        const un = String(kit.username || 'msk').trim();
+        let u = auth.users.find((x) => String(x.username).toLowerCase() === un.toLowerCase());
+        if (u && u.role === 'owner' && SESSION.user !== u.username) { if (err) err.textContent = 'That owner already exists on this device - sign in as them instead.'; return; }
+        if (!u) { u = { username: un, name: un, role: 'owner', keyring: {} }; auth.users.push(u); }
+        u.role = 'owner';
+        u.login = await CS.loginWrap(npw);
+        u.disabled = false;
+        u.keyring = u.keyring || {};
+        u.keyring[ESCROW_SLOT] = await CS.wrapKey(bytesFromB64u(inner.k), npw);
+        auth.ownerSeal = { pub: kit.pub, seal: kit.seal };
+        auth.settings = auth.settings || {}; auth.settings.ownerPub = kit.pub;
+        ensureOwnerAuth(auth);
+        saveAuth(auth);
+        closeDlg();
+        const res = await doLoginFull(un, npw);
+        if (res.error) { toast(res.error, true); renderLogin(); return; }
+        document.body.classList.remove('auth-gate'); buildShell(); route();
+        toast('Owner restored from the kit. Welcome back, ' + un);
+      })();
+      return;
+    }
     if (a === 'ds-enable') { dsEnable(); return; }
     if (a === 'ds-now') { dsPullCheck(true); return; }
     if (a === 'ds-link') { dsLinkModal(); return; }
@@ -4395,7 +4578,7 @@
       const ref = ($('#ap-ref') ? $('#ap-ref').value : '').trim();
       if (!by) { toast('Enter who approved it (name and title).', true); return; }
       if (!DB.settings) DB.settings = {};
-      DB.settings.schoolApproval = { by: by, date: date, ref: ref };
+      DB.settings.schoolApproval = { by: by, date: date, ref: ref, ownerOk: !!($('#ap-owner-ok') && $('#ap-owner-ok').checked) };
       saveDB(); renderManage();
       toast('School approval recorded: it shows at the bottom of the notice.');
       return;
@@ -5342,6 +5525,17 @@
     const auth0 = getAuth();
     let gone = dsGone().concat(Array.isArray(obj.gone) ? obj.gone : []);
     gone = gone.map(function (v) { return String(v).toLowerCase(); });   /* case-insensitive: "Mo" and "mo" are the same account */
+    /* round10: the protected owner can never be tombstoned by a merge - not
+       the local owner, not the cloud-side owner, and not the DESIGNATED owner
+       name (a pre-round10 copy may carry the owner as a plain admin plus a
+       stale tombstone from a long-deleted account of the same name) */
+    const owN = (getAuth().users.find(function (u) { return u.role === 'owner'; }) || {}).username;
+    const protL = [owN, PROTECTED_OWNER_NAME].filter(Boolean).map(function (v) { return String(v).toLowerCase(); });
+    gone = gone.filter(function (v) { return protL.indexOf(v) === -1; });
+    for (const pl of protL) {
+      const cloudOw = (obj.users || []).find(function (u) { return u && String(u.username).toLowerCase() === pl; });
+      if (cloudOw && cloudOw.role !== 'owner') cloudOw.role = 'owner';   /* a stale copy must not downgrade the owner */
+    }
     gone = gone.filter(function (v, i) { return gone.indexOf(v) === i; });
     /* re-creating a username lifts its tombstone at creation time (dsClearGone
        in addUser); a tombstone meeting the account STILL LISTED in an older
@@ -5354,6 +5548,9 @@
     for (const u of auth.users) localBy[u.username] = u;
     const byUn = (dir === 'install') ? Object.assign({}, localBy, cloudBy) : Object.assign({}, cloudBy, localBy);
     for (const un of gone) { for (const k of Object.keys(byUn)) { if (k.toLowerCase() === un) delete byUn[k]; } }
+    /* round10: the LOCAL owner record always wins (role, keyring, login) - a
+       cloud copy can never overwrite, downgrade or strip the owner */
+    if (owN && localBy[owN]) byUn[owN] = localBy[owN];
     const merged = Object.keys(byUn).sort().map(function (k) { return byUn[k]; });
     const changed = merged.length !== auth.users.length ||
       merged.some(function (u) { return acctSig(u) !== acctSig(localBy[u.username] || { username: u.username }); });
@@ -5378,7 +5575,7 @@
       if (byUn[un] === localBy[un] && !wrapForV2(v2, un) && localV2 && localV2.wraps) { const lw = wrapForV2(localV2, un); if (lw) { v2.wraps[un] = lw; wrapChanged = true; } }
     }
     for (const un of gone) { for (const wk of Object.keys(v2.wraps)) { if (wk.toLowerCase() === un && v2.wraps[wk]) { delete v2.wraps[wk]; wrapChanged = true; } } }
-    if (changed) { auth.users = merged; saveAuth(auth); }
+    if (changed) { ensureOwnerAuth(auth); auth.users = merged; ensureOwnerAuth(auth); saveAuth(auth); }
     if (wrapChanged || baseV2 || changed) { try { localStorage.setItem(V2_KEY, JSON.stringify(v2)); } catch (e) {} }   /* direct write: no scheduleSyncPush loop */
     return !!(changed || wrapChanged);
   }
@@ -5512,6 +5709,7 @@
     /* returns: true = sent or already current; 'held' = transient (pull-check
        in flight / signed out this second): retry in 4 s; false = real
        failure: back off 30 s. */
+    if (ctrlReadonly()) { dsLog('skip: control mode ' + ctrlMode() + ' - pushes paused'); return 'held'; }   /* round10: readonly/locked stop pushing */
     if (!dsCanPush()) { dsLog('skip: cannot push (signed out / sync off) | why=' + dsWhy); return 'held'; }
     if (dsHoldPush) { dsLog('skip: a pull-check is deciding local-vs-cloud (dialog open) | why=' + dsWhy); return 'held'; }   /* never overwrite mid-decision */
     if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight - coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
@@ -5994,7 +6192,7 @@
      path checks users.length === 0 && !readV2() before offering it), so real
      data stays wrapped under its own password at all times. */
   function masterWrap() { const v = readV2(); return (v && v.wraps && v.wraps[MASTER_KEY]) || null; }
-  function isAdmin() { return (currentUser() || {}).role === 'admin'; }
+  function isAdmin() { const r = (currentUser() || {}).role; return r === 'admin' || r === 'owner'; }
 
   /* Password verification WITHOUT any stored hash: try (1) the account's
      login wrap, (2) the v2 master-key wrap, (3) a legacy FNV hash: the last
@@ -6035,6 +6233,233 @@
     return d; /* fresh installs stay empty until first-run setup creates a user */
   }
   function saveAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
+  /* ================= round10: the protected owner account =================
+     One account, role 'owner' (the school's designated owner, username msk
+     by convention). Nobody else can disable, delete, rename, demote, reset or
+     re-key it; it can open every class (key escrow); it holds the signing key
+     for the school-wide control record ("pull the plug"). */
+  const ESCROW_SLOT = '__escrow__';
+  const PROTECTED_OWNER_NAME = 'msk';   /* the school's designated owner username (round10 brief) */
+  const OWNER_HISTORY_KEY = 'spr-owner-history-v1';
+  const CTRL_KEY = 'spr-control-v1';
+  const CTRL_MODES = ['normal', 'readonly', 'locked'];
+  function isOwnerUser(u) { return !!(u && u.role === 'owner'); }
+  function ownerUser() { return getAuth().users.find((u) => u.role === 'owner') || null; }
+  function ownerGuard(un, what) {
+    /* returns true (and refuses) when un names the owner and this session is
+       not the owner: every mutating handler calls this first */
+    try {
+      const t = getAuth().users.find((x) => String(x.username).toLowerCase() === String(un || '').toLowerCase());
+      if (t && t.role === 'owner' && SESSION.user !== t.username) { toast(what + ' refused - ' + t.username + ' is the protected owner account.', true); return true; }
+    } catch (e) {}
+    return false;
+  }
+  /* exactly one owner per device: prefer the account named msk, else the sole
+     admin, else the first admin; any second owner is demoted. Pre-round10
+     devices (and stale cloud copies) hold msk as a plain admin - promote. */
+  function ensureOwnerAuth(a) {
+    if (!a || !Array.isArray(a.users) || !a.users.length) return a;
+    const owners = a.users.filter((u) => u.role === 'owner');
+    const msk = a.users.find((u) => String(u.username).toLowerCase() === 'msk');
+    let keep = null;
+    if (owners.length === 1) keep = owners[0];
+    if (owners.length > 1) keep = (msk && owners.indexOf(msk) !== -1) ? msk : owners[0];
+    if (!keep && msk && msk.role === 'admin') keep = msk;
+    if (!keep) { const admins = a.users.filter((u) => u.role === 'admin'); if (admins.length === 1) keep = admins[0]; }
+    if (!keep) return a;
+    for (const u of a.users) {
+      if (u === keep) { if (u.role !== 'owner') u.role = 'owner'; }
+      else if (u.role === 'owner') u.role = 'admin';
+    }
+    return a;
+  }
+  function ensureOwner() {
+    try {
+      /* a tombstone for the designated owner name is always invalid: lift it */
+      try {
+        const g0 = dsGone();
+        const g1 = g0.filter(function (v) { return String(v).toLowerCase() !== PROTECTED_OWNER_NAME; });
+        if (g1.length !== g0.length) localStorage.setItem(DS_GONE_KEY, JSON.stringify(g1));
+      } catch (eG) {}
+      const a = getAuth();
+      const sig = function (x) { return JSON.stringify(x.users.map((u) => [u.username, u.role])); };
+      const before = sig(a);
+      ensureOwnerAuth(a);
+      if (sig(a) !== before) saveAuth(a);
+    } catch (e) {}
+  }
+  /* ---- key escrow: every class key wrapped under a 32-byte escrow key that
+     only the owner can unwrap (own keyring) or the sealed kit can restore ---- */
+  async function escrowKeyBytes() {
+    try {
+      const me = getAuth().users.find((u) => u.username === SESSION.user);
+      const w = me && me.keyring && me.keyring[ESCROW_SLOT];
+      if (!w || !SESSION.pw) return null;
+      return await CS.unwrapKey(w, SESSION.pw);
+    } catch (e) { return null; }
+  }
+  async function addEscrowWrap(cid, keyBytes, kEsc) {
+    try {
+      const ix = classIndex(); const c = ix.find((x) => x.id === cid);
+      if (!c) return;
+      c.escrow = await CS.wrapKey(keyBytes, b64uFromBytes(kEsc));   /* b64u of the escrow key acts as the wrap password */
+      setClassIndex(ix);
+    } catch (e) {}
+  }
+  /* generate the owner signing key (ECDSA P-256) + the escrow key, both sealed
+     under the MASTER password; the escrow key also lands in the owner's own
+     keyring under the login password. Idempotent. */
+  async function ensureOwnerSeal(masterPw) {
+    const a = getAuth();
+    if (!a.users.some((u) => u.role === 'owner')) return false;
+    if (a.ownerSeal && a.ownerSeal.pub && a.ownerSeal.seal) return true;
+    try {
+      const kp = await subtle().generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+      const pub = new Uint8Array(await subtle().exportKey('spki', kp.publicKey));
+      const priv = new Uint8Array(await subtle().exportKey('pkcs8', kp.privateKey));
+      const kEsc = crypto.getRandomValues(new Uint8Array(32));
+      const inner = JSON.stringify({ k: b64uFromBytes(kEsc), priv: b64uFromBytes(priv) });
+      a.ownerSeal = { pub: b64uFromBytes(pub), seal: await CS.wrapKey(new TextEncoder().encode(inner), masterPw) };
+      a.settings = a.settings || {}; a.settings.ownerPub = a.ownerSeal.pub;
+      const me = a.users.find((u) => u.username === SESSION.user);
+      if (me && SESSION.pw) { me.keyring = me.keyring || {}; me.keyring[ESCROW_SLOT] = await CS.wrapKey(kEsc, SESSION.pw); }
+      saveAuth(a);
+      return true;
+    } catch (e) { return false; }
+  }
+  function ownerKitJson() {
+    const a = getAuth();
+    if (!a.ownerSeal || !a.ownerSeal.pub) return null;
+    const ow = a.users.find((u) => u.role === 'owner');
+    return { kit: 1, v: 1, school: schoolName(), username: ow ? ow.username : (SESSION.user || ''), pub: a.ownerSeal.pub, seal: a.ownerSeal.seal };
+  }
+  function downloadOwnerKit() {
+    const kit = ownerKitJson();
+    if (!kit) { toast('Set the master password first: it seals the owner kit.', true); return false; }
+    const a2 = document.createElement('a');
+    a2.href = URL.createObjectURL(new Blob([JSON.stringify(kit, null, 2)], { type: 'application/json' }));
+    a2.download = 'spr-owner-kit.json';
+    document.body.appendChild(a2); a2.click(); a2.remove();
+    return true;
+  }
+  /* the owner signs in: any class whose wrap went missing is re-issued from
+     the escrow (class keys are escrow-wrapped inside the class index) */
+  async function ownerEscrowHeal() {
+    try {
+      if (!SESSION.user || !SESSION.pw) return;
+      const a = getAuth();
+      const me = a.users.find((u) => u.username === SESSION.user);
+      if (!me || me.role !== 'owner') return;
+      const w = me.keyring && me.keyring[ESCROW_SLOT];
+      if (!w) return;
+      const kEsc = await CS.unwrapKey(w, SESSION.pw);
+      const escPw = b64uFromBytes(kEsc);
+      let healed = 0;
+      for (const c of classIndex()) {
+        if (!c.escrow) continue;
+        if (me.keyring[c.id] && SESSION.keys[c.id]) continue;
+        try {
+          const k = await CS.unwrapKey(c.escrow, escPw);
+          SESSION.keys[c.id] = k;
+          me.keyring[c.id] = await CS.wrapKey(k, SESSION.pw);
+          healed++;
+        } catch (e2) {}
+      }
+      if (healed) { saveAuth(a); classKeysToSession(); }
+    } catch (e) {}
+  }
+  /* ---- the signed school-wide control record ("pull the plug") ---- */
+  const CTRL_MUTATE = {
+    'user-toggle': 1, 'acct-add-open': 1, 'acct-add': 1, 'acct-reset-open': 1, 'acct-reset': 1, 'acct-del': 1,
+    'class-new-open': 1, 'class-roster-btn': 1, 'class-import-btn': 1, 'class-pair-open': 1, 'class-share': 1,
+    'class-migrate-open': 1, 'start-fresh': 1, 'reset-sample': 1, 'excel-import': 1, 'stu-del': 1,
+    'sem-del': 1, 'pair-save': 1, 'ds-enable': 1
+  };
+  function ctrlCache() { try { return JSON.parse(localStorage.getItem(CTRL_KEY) || 'null'); } catch (e) { return null; } }
+  function ctrlMode() { const c = ctrlCache(); return (c && c.rec && CTRL_MODES.indexOf(c.rec.mode) !== -1) ? c.rec.mode : 'normal'; }
+  function ctrlReadonly() { const m = ctrlMode(); return m === 'readonly' || m === 'locked'; }
+  function ctrlBlock(what) {
+    if (!ctrlReadonly()) return false;
+    const c = ctrlCache();
+    toast((ctrlMode() === 'locked' ? 'Locked' : 'Read-only') + ' mode' + (c && c.rec && c.rec.message ? ' - ' + c.rec.message : '') + ' (' + what + ' is paused; viewing and printing still work)', true);
+    return true;
+  }
+  function ctrlOwnerPub() {
+    try { if (window.SPR_OWNER_PUB) return window.SPR_OWNER_PUB; } catch (e) {}
+    try { return (getAuth().settings || {}).ownerPub || null; } catch (e2) { return null; }
+  }
+  function ctrlCanonical(rec) { return JSON.stringify([1, rec.counter, rec.issued_at, rec.mode, rec.message]); }
+  async function ctrlVerify(rec, lastCounter) {
+    try {
+      if (!rec || rec.version !== 1) return false;
+      if (typeof rec.counter !== 'number' || !Number.isInteger(rec.counter) || rec.counter <= (lastCounter || 0)) return false;
+      if (CTRL_MODES.indexOf(rec.mode) === -1) return false;
+      if (typeof rec.message !== 'string' || rec.message.length > 300) return false;
+      if (typeof rec.issued_at !== 'number' || rec.issued_at > Date.now() + 24 * 3600 * 1000) return false;
+      const pub = ctrlOwnerPub();
+      if (!pub || typeof rec.sig !== 'string') return false;
+      const key = await subtle().importKey('spki', bytesFromB64u(pub), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      return await subtle().verify({ name: 'ECDSA', hash: 'SHA-256' }, key, bytesFromB64u(rec.sig), new TextEncoder().encode(ctrlCanonical(rec)));
+    } catch (e) { return false; }
+  }
+  async function ctrlPoll() {
+    /* a failed or invalid fetch NEVER locks anyone: the last accepted record
+       stays applied; no valid record ever accepted means normal mode */
+    const last = (ctrlCache() || {}).rec;
+    for (const u of ['control.json', '/control.json']) {
+      try {
+        const ac = new AbortController();
+        const tO = setTimeout(function () { try { ac.abort(); } catch (e) {} }, 6000);
+        const res = await fetch(u, { cache: 'no-store', signal: ac.signal });
+        clearTimeout(tO);
+        if (!res || !res.ok) continue;
+        const rec = await res.json();
+        if (await ctrlVerify(rec, last ? last.counter : 0)) {
+          try { localStorage.setItem(CTRL_KEY, JSON.stringify({ rec: rec, at: Date.now() })); } catch (e) {}
+          ctrlApply();
+          return;
+        }
+      } catch (e) { /* keep last accepted */ }
+    }
+  }
+  function ctrlApply() {
+    const m = ctrlMode();
+    let b = document.getElementById('ctrlBanner');
+    if (m === 'normal') { if (b) b.remove(); return; }
+    const rec = ((ctrlCache() || {}).rec) || {};
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'ctrlBanner';
+      b.setAttribute('role', 'status');
+      b.style.cssText = 'position:sticky;top:0;z-index:60;background:#7c2d12;color:#fed7aa;padding:10px 14px;font-size:14px;text-align:center;border-bottom:1px solid #fdba74';
+      const host = document.querySelector('.app') || document.body;
+      host.insertBefore(b, host.firstChild);
+    }
+    b.textContent = (m === 'locked' ? 'LOCKED by the owner' : 'READ-ONLY by the owner') + (rec.message ? ' - ' + rec.message : '') + (m === 'readonly' ? ' - you can still view, print and download backups' : ' - only the owner account can sign in');
+  }
+  async function ctrlIssue(mode, message, masterPw) {
+    /* returns {ok, rec} or {error} - builds and signs the control record */
+    try {
+      const a = getAuth();
+      if (!a.ownerSeal || !a.ownerSeal.seal) return { error: 'No owner kit on this device: set the master password in Manage & setup first.' };
+      let inner;
+      try { inner = JSON.parse(new TextDecoder().decode(await CS.unwrapKey(a.ownerSeal.seal, masterPw))); }
+      catch (e) { return { error: 'Wrong master password.' }; }
+      if (!inner || !inner.priv) return { error: 'The sealed kit could not be opened.' };
+      let hist = [];
+      try { hist = JSON.parse(localStorage.getItem(OWNER_HISTORY_KEY) || '[]'); } catch (e2) {}
+      const acc = ctrlCache();
+      const lastCounter = Math.max(acc && acc.rec ? (acc.rec.counter || 0) : 0, hist.length ? Math.max.apply(null, hist.map(function (h) { return h.counter || 0; })) : 0);
+      const rec = { version: 1, counter: lastCounter + 1, issued_at: Date.now(), mode: mode, message: String(message || '').slice(0, 300) };
+      const pk = await subtle().importKey('pkcs8', bytesFromB64u(inner.priv), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+      const sig = await subtle().sign({ name: 'ECDSA', hash: 'SHA-256' }, pk, new TextEncoder().encode(ctrlCanonical(rec)));
+      rec.sig = b64uFromBytes(new Uint8Array(sig));
+      hist.push({ counter: rec.counter, at: new Date().toISOString(), mode: rec.mode });
+      try { localStorage.setItem(OWNER_HISTORY_KEY, JSON.stringify(hist)); } catch (e3) {}
+      return { ok: true, rec: rec };
+    } catch (e) { return { error: 'Could not sign the record: ' + (e.message || e) }; }
+  }
+
 
   function isLoggedIn() {
     /* online: a session exists only while this tab holds the unlocked master
@@ -6081,6 +6506,11 @@
     /* username matching is case-insensitive: the cloud channel already
        lowercases (dsChan), and users type "mo"/"Mo"/"MO" interchangeably */
     const user = auth.users.find((u) => String(u.username).toLowerCase() === username.toLowerCase());
+    /* round10: LOCKED by the owner - everyone except the owner is refused */
+    if (user && ctrlMode() === 'locked' && user.role !== 'owner') {
+      const rec = ((ctrlCache() || {}).rec) || {};
+      return { error: 'SPR is locked' + (rec.message ? ' - ' + rec.message : '') + '. Only the owner account can sign in.' };
+    }
     if (user && user.disabled) return { error: 'This account is disabled \u2014 ask your administrator.' };
     if (!user) {
       if (auth.users.length === 0) {
@@ -6132,8 +6562,10 @@
     SESSION = { user: user.username, dk: dk, pw: password, keys: {} };
     /* class mode: unwrap this account's class keys (wrapped under the same password) */
     for (const cid of Object.keys(user.keyring || {})) {
+      if (cid === ESCROW_SLOT) continue;
       try { SESSION.keys[cid] = await CS.unwrapKey(user.keyring[cid], password); } catch (e) { /* wrong-wrap: skip */ }
     }
+    await ownerEscrowHeal();   /* round10: re-issue any missing class keys from the escrow */
     auth.session = { username: user.username, name: user.name, role: user.role };
     saveAuth(auth);
     classKeysToSession();
@@ -6168,6 +6600,7 @@
     location.reload();
   }
   async function addUser(username, password, name, role) {
+    if (role === 'owner') return 'the Owner role cannot be created: exactly one owner exists, created at first setup';
     const auth = getAuth();
     username = String(username || '').trim();
     if (auth.users.some((u) => String(u.username).toLowerCase() === username.toLowerCase())) return 'username taken';
@@ -6196,6 +6629,7 @@
   /* rotate an account password completely: hash + master-key wrap, so a
      generated password from pairing/rostering is a REAL new password */
   async function rotateUserPassword(username, password) {
+    if (String(arguments[0] || '').toLowerCase() === (ownerUser() || {}).username.toLowerCase() && SESSION.user !== (ownerUser() || {}).username) return 'the owner account is protected';
     const auth = getAuth();
     const u = auth.users.find((x) => x.username === username);
     if (!u) return 'no such user';
@@ -6296,7 +6730,9 @@
           (masterWrap() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="master-recover-open">Forgot the admin password?</button></div>' : '') +
           '<div class="small" style="margin-top:10px;opacity:.75">Teacher and forgot your password? Ask the administrator to reset it (<b>Users &rarr; Reset password</b>).</div>' +
           (cryptoOK() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="login-other-device">I use SPR on another device &rarr;</button></div>' : '') +
-          (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
+          (ctrlMode() === 'locked' ? '<div id="lockMsg" style="margin-top:12px;padding:10px 12px;background:#7c2d12;color:#fed7aa;border-radius:8px;font-size:14px"><b>SPR is locked by the owner.</b> ' + U.esc((((ctrlCache() || {}).rec) || {}).message || '') + ' Only the owner account can sign in.</div>' : '') +
+      (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
+      (cryptoOK() ? '<div style="margin-top:6px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="owner-restore-open">Restore the owner recovery kit &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
     openDlg(card);
@@ -6306,8 +6742,8 @@
     const auth = getAuth();
     if (auth.users.some((u) => u.username === username)) return { error: 'That username already exists on this device.' };
     if (!cryptoOK()) {
-      auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
-      auth.session = { username: username, name: username, role: 'admin' };
+      auth.users.push({ username: username, name: username, role: 'owner', keyring: {}, login: await CS.loginWrap(password) });
+      auth.session = { username: username, name: username, role: 'owner' };
       saveAuth(auth);
       return { user: auth.session };
     }
@@ -6318,8 +6754,8 @@
     v2.data = await sealDB(DB, dk);
     writeV2(v2);
     try { localStorage.removeItem(LS_KEY); } catch (e) {}
-    auth.users.push({ username: username, name: username, role: 'admin', keyring: {}, login: await CS.loginWrap(password) });
-    auth.session = { username: username, name: username, role: 'admin' };
+    auth.users.push({ username: username, name: username, role: 'owner', keyring: {}, login: await CS.loginWrap(password) });
+    auth.session = { username: username, name: username, role: 'owner' };
     saveAuth(auth);
     SESSION = { user: username, dk: dk, pw: password, keys: {} };
     try { sessionStorage.setItem('spr-session', JSON.stringify({ user: username, dk: b64uFromBytes(dk) })); } catch (e) {}
@@ -6330,6 +6766,11 @@
 
   async function init() {
     chartTheme();
+    ensureOwner();                 /* round10: exactly one protected owner */
+    ctrlApply();                   /* round10: apply the last accepted control mode */
+    ctrlPoll();                    /* ...and check for a newer record now */
+    setInterval(ctrlPoll, 10 * 60 * 1000);   /* every 10 minutes while open */
+    window.addEventListener('online', function () { ctrlPoll(); });
     DS_BOOT_TS = (readV2() || {}).ts || 0;   /* boot-time data age, for device-sync pull checks */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */
     KNOWN_STORE_TS = DS_BOOT_TS;             /* stale-tab guard baseline (item 1) */

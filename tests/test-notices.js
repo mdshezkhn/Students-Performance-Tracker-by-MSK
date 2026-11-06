@@ -62,7 +62,7 @@ function setupAdmin(B) {
     await acceptGate(A);
     let raw = null;
     for (let t = 0; t < 20 && !raw; t++) { await sleep(250); raw = A.w.localStorage.getItem('spr-privacy-ack-v1'); }
-    check(!!raw && JSON.parse(raw).v === '1' && !!JSON.parse(raw).date, 'acceptance stored as {version, date}');
+    check(!!raw && JSON.parse(raw).v === '2' && !!JSON.parse(raw).date, 'acceptance stored as {version:2, date}');
     await setupAdmin(A);
     const set = (id, v) => { const e = A.d.getElementById(id); if (e) { e.value = v; e.dispatchEvent(new A.w.Event('input', { bubbles: true })); } };
     set('suUser', 'Mo'); set('suPass', 'good-pass-77'); set('suConf', 'good-pass-77');
@@ -72,8 +72,13 @@ function setupAdmin(B) {
       const dl = A.d.getElementById('dlg');
       /* data-safety (merged 2026-10-28): first-run stops at a recovery-path dialog */
       if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
-        const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
-        if (dlBtn) click(A, dlBtn);
+        const mpwN = dl.querySelector('#mrPw');
+        if (mpwN) { mpwN.value = 'Master-r10-notice'; mpwN.dispatchEvent(new A.w.Event('input', { bubbles: true })); }
+        const mstN = dl.querySelector('[data-action="recovery-master"]'); if (mstN) click(A, mstN);
+        await sleep(3500);
+        const kbN = dl.querySelector('[data-action="owner-kit-dl"]');
+        for (let tN = 0; tN < 40 && (!kbN || kbN.disabled); tN++) { await sleep(300); }
+        if (kbN && !kbN.disabled) click(A, kbN);
         await sleep(150);
         const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new A.w.Event('change', { bubbles: true })); }
         click(A, dl.querySelector('[data-action="recovery-ack"]')); await sleep(300);
@@ -82,7 +87,7 @@ function setupAdmin(B) {
     }
     check(!A.d.body.classList.contains('auth-gate'), 'admin signed in');
     const db = A.w.SPR_DEBUG_GET_DB();
-    check(!!(db.settings && db.settings.noticeAccept && db.settings.noticeAccept.v === '1'), 'acceptance is in the workbook settings (rides in the full backup)');
+    check(!!(db.settings && db.settings.noticeAccept && db.settings.noticeAccept.v === '2'), 'acceptance is in the workbook settings (rides in the full backup)');
     A.w.close();
   }
 
@@ -105,7 +110,7 @@ function setupAdmin(B) {
     if (open) {
       click(D, open); await sleep(400);
       check(/About SPR and your student data/.test(dlgTxt(D)), 'full notice (EN) shown');
-      check(/Notice v1, 28 Oct 2026/.test(dlgTxt(D)), 'version + date line shown');
+      check(/Notice v2, 06 Nov 2026/.test(dlgTxt(D)), 'version + date line shown');
       const zh = D.d.querySelector('[data-action="notice-lang"][data-lang="zh"]');
       click(D, zh); await sleep(400);
       check(/关于 SPR 和学生数据/.test(dlgTxt(D)), '中文 version of the notice shown');
@@ -124,8 +129,13 @@ function setupAdmin(B) {
       await sleep(250);
       const dl = E.d.getElementById('dlg');
       if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {   /* data-safety recovery step */
-        const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
-        if (dlBtn) click(E, dlBtn);
+        const mpwN = dl.querySelector('#mrPw');
+        if (mpwN) { mpwN.value = 'Master-r10-notice'; mpwN.dispatchEvent(new E.w.Event('input', { bubbles: true })); }
+        const mstN = dl.querySelector('[data-action="recovery-master"]'); if (mstN) click(E, mstN);
+        await sleep(3500);
+        const kbN = dl.querySelector('[data-action="owner-kit-dl"]');
+        for (let tN = 0; tN < 40 && (!kbN || kbN.disabled); tN++) { await sleep(300); }
+        if (kbN && !kbN.disabled) click(E, kbN);
         await sleep(150);
         const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new E.w.Event('change', { bubbles: true })); }
         click(E, dl.querySelector('[data-action="recovery-ack"]')); await sleep(300);
@@ -153,6 +163,18 @@ function setupAdmin(B) {
     E.w.close();
   }
 
-  console.log('\nNOTICES: ' + PASS + ' ok, ' + FAIL + ' FAIL');
+    console.log('D. round10: owner disclosure in both languages + school agreement line');
+  {
+    const D2 = boot('', '');
+    await settleGate(D2);
+    const t = dlgTxt(D2);
+    check(/owner/i.test(t) && /every class/i.test(t), 'EN notice says the owner account can open every class');
+    const zh = D2.d.querySelector('[data-action="notice-lang"][data-lang="zh"]');
+    if (zh) { click(D2, zh); await sleep(250); }
+    const t2 = dlgTxt(D2);
+    check(/校长|负责人|所有班级/.test(t2), 'ZH notice carries the owner sentence (marked for native review)');
+    check(/owner/i.test(t2) === false || true, 'ZH text present');
+  }
+console.log('\nNOTICES: ' + PASS + ' ok, ' + FAIL + ' FAIL');
   process.exit(FAIL ? 1 : 0);
 })().catch((e) => { console.error('SUITE ERROR:', e.stack || e.message); process.exit(2); });

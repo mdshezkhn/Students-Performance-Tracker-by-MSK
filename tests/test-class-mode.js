@@ -89,8 +89,15 @@ const ADMIN = 'mo';
     await sleep(250);
     const dl = B.d.getElementById('dlg');
     if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
-      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
-      if (dlBtn) dlBtn.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      /* round10 first-run: master password, then the required owner-kit download */
+      const mpw = dl.querySelector('#mrPw');
+      if (mpw) { mpw.value = 'Master-r10-' + Math.random().toString(36).slice(2, 8); mpw.dispatchEvent(new B.w.Event('input', { bubbles: true })); }
+      const mst = dl.querySelector('[data-action="recovery-master"]');
+      if (mst) mst.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+      await sleep(3500);
+      const kb = dl.querySelector('[data-action="owner-kit-dl"]');
+      for (let t = 0; t < 30 && (!kb || kb.disabled); t++) { await sleep(300); }
+      if (kb && !kb.disabled) kb.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
       await sleep(150);
       const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
       await sleep(150);

@@ -20,6 +20,16 @@ REPO = ROOT.parent
 SRC, LIBS = ROOT, ROOT / 'libs'
 DIST, DEPLOY = REPO / 'dist', REPO / 'deploy'
 
+# round10: optionally embed the OWNER PUBLIC KEY at build time (rotation = put
+# the new SPKI b64u in source/owner-pub.key and rebuild; devices that cannot
+# verify a control record against a build key fall back to the key learned via
+# device sync from auth.settings.ownerPub).
+OWNER_PUB = ''
+_op = SRC / 'owner-pub.key'
+if _op.exists():
+    OWNER_PUB = _op.read_text(encoding='utf-8').strip()
+
+
 def read(p):
     # read with the file's own endings, then NORMALISE to LF: git autocrlf
     # differences between machines must never leak into the build. The output
@@ -80,13 +90,15 @@ sw = read(SRC / 'sw-template.js').replace('__SW_VERSION__', sw_version, 1)
 assert '__SW_VERSION__' not in sw
 app_html = app_html.replace('__SPR_BUILD__', sw_version, 1)
 assert '__SPR_BUILD__' not in app_html, 'build marker unreplaced'
+app_html = app_html.replace('__OWNER_PUB__', (json.dumps(OWNER_PUB) if OWNER_PUB else 'null'), 1)
+assert '__OWNER_PUB__' not in app_html, 'owner-pub marker unreplaced'
 
 # ---------- the notice: one text, two languages, three places (2026-10-28) ----------
 # Single source of truth: source/notice.en.html + source/notice.zh.html.
 # They are (a) injected into the app as window.SPR_NOTICE and (b) rendered into
 # the standalone notice.html linked from the landing footer.
 import json as _json
-NOTICE_VERSION, NOTICE_DATE = '1', '28 Oct 2026'
+NOTICE_VERSION, NOTICE_DATE = '2', '06 Nov 2026'
 def _notice(src):
     t = read(SRC / src)
     # strip the leading build comment (lines starting with <!-- up to -->)
@@ -155,3 +167,4 @@ print(f'app:          dist/app/index.html — {len(app_html):,} bytes')
 print(f'sw version:   {sw_version}  (spr-app-shell-{sw_version})')
 print(f'landing:      dist/index.html — {len(landing):,} bytes')
 print('deploy ready: deploy/  (copy deploy/* to repo root to publish)')
+

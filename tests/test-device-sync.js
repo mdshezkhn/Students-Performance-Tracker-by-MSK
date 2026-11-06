@@ -199,8 +199,15 @@ async function loginCloudAs(B, user, pass) {
     await sleep(250);
     const dl = A.d.getElementById('dlg');
     if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
-      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
-      if (dlBtn) dlBtn.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
+      /* round10 first-run: master password, then the required owner-kit download */
+      const mpw = dl.querySelector('#mrPw');
+      if (mpw) { mpw.value = 'Master-r10-' + Math.random().toString(36).slice(2, 8); mpw.dispatchEvent(new A.w.Event('input', { bubbles: true })); }
+      const mst = dl.querySelector('[data-action="recovery-master"]');
+      if (mst) mst.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
+      await sleep(3500);
+      const kb = dl.querySelector('[data-action="owner-kit-dl"]');
+      for (let t = 0; t < 30 && (!kb || kb.disabled); t++) { await sleep(300); }
+      if (kb && !kb.disabled) kb.dispatchEvent(new A.w.MouseEvent('click', { bubbles: true }));
       await sleep(150);
       const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new A.w.Event('change', { bubbles: true })); }
       await sleep(150);
@@ -345,8 +352,14 @@ async function loginCloudAs(B, user, pass) {
     await sleep(250);
     const dl = D.d.getElementById('dlg');
     if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
-      const dlBtn = dl.querySelector('[data-action="recovery-dl"]');
-      if (dlBtn) dlBtn.dispatchEvent(new D.w.MouseEvent('click', { bubbles: true }));
+      const mpw10 = dl.querySelector('#mrPw');
+      if (mpw10) { mpw10.value = 'Master-r10-' + Math.random().toString(36).slice(2, 8); mpw10.dispatchEvent(new D.w.Event('input', { bubbles: true })); }
+      const mst10 = dl.querySelector('[data-action="recovery-master"]');
+      if (mst10) mst10.dispatchEvent(new D.w.MouseEvent('click', { bubbles: true }));
+      await sleep(3500);
+      const kb10 = dl.querySelector('[data-action="owner-kit-dl"]');
+      for (let t10 = 0; t10 < 40 && (!kb10 || kb10.disabled); t10++) { await sleep(300); }
+      if (kb10 && !kb10.disabled) kb10.dispatchEvent(new D.w.MouseEvent('click', { bubbles: true }));
       await sleep(150);
       const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new D.w.Event('change', { bubbles: true })); }
       await sleep(150);

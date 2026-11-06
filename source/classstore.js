@@ -334,7 +334,7 @@
       index.push({ id: c.id, name: c.name, school: c.school, eal: pair.eal || '', support: pair.support || '', createdAt: Date.now(), updatedAt: Date.now() });
       /* who gets this class's key? admin + managers: all; eal/support: their own */
       for (const u of opts.users || []) {
-        const mine = u.role === 'admin' || u.role === 'manager' || pair.eal === u.username || pair.support === u.username;
+        const mine = u.role === 'admin' || u.role === 'manager' || u.role === 'owner' || pair.eal === u.username || pair.support === u.username;
         if (!mine) continue;
         let pw = (opts.passwords || {})[u.username];
         if (!pw) { pw = (opts.generatePassword ? opts.generatePassword(u.username) : null) || ('spr-' + Math.random().toString(36).slice(2, 10)); newPasswords[u.username] = pw; }
@@ -355,7 +355,10 @@
     for (const [re, v] of CLASS_ROLE_ALIASES) if (re.test(x)) return v;
     return null;
   }
-  function parseSheetCsv(text) {
+  function parseSheetCsv(text, ownerUsername) {
+    /* round10: rows naming the protected owner account are SKIPPED (with a
+       visible note in the preview); a row trying to CREATE a second owner is
+       an error — the owner role can never arrive through an import. */
     const rows = csvRows(String(text || '').replace(/^﻿/, ''));
     const errors = [], warnings = [];
     if (!rows.length) return { users: [], classes: [], errors: ['empty file'], warnings: warnings, unpicked: [] };
@@ -371,6 +374,10 @@
       const un = String(c[iU] || '').trim().toLowerCase();
       const roleRaw = String(c[iR] || '').trim();
       if (!un) { if (rows[r].some((x) => String(x || '').trim())) errors.push('row ' + (r + 1) + ': missing username'); continue; }
+      /* the OWNER'S OWN row is skipped quietly (round-trip exports carry it);
+         any OTHER row claiming the Owner role is an import error */
+      if (ownerUsername && un === String(ownerUsername).toLowerCase()) { warnings.push(un + ' is the protected owner account, row skipped'); continue; }
+      if (/^owner$/i.test(roleRaw)) { errors.push('row ' + (r + 1) + ': the Owner role cannot be created by import - there is exactly one protected owner account'); continue; }
       if (!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(un)) { errors.push('row ' + (r + 1) + ': bad username "' + un.slice(0, 20) + '" (letters, digits, - and _ only)'); continue; }
       const role = normalizeRole(roleRaw);
       if (!role) { errors.push('row ' + (r + 1) + ': unknown role "' + roleRaw.slice(0, 30) + '"'); continue; }
