@@ -1220,12 +1220,17 @@
       for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
       const picks = r.unpicked || [];
       const rowsAcc = r.users.map((u) => '<tr><td>' + U.esc(u.username) + '</td><td>' + U.esc(u.display_name || u.username) + '</td><td>' + U.esc(roleLabel(u.role)) + '</td><td>' + U.esc((u.classes || []).join(', ')) + '</td></tr>').join('');
-      const pickRows = picks.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is EAL in each class?</b> The file does not say, so pick below. SPR never guesses.</p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Class</th><th>EAL / Supporting</th></tr></thead><tbody>' +
-        picks.map((c, i) => {
-          const members = (r.users.filter((u) => (u.classes || []).indexOf(c) !== -1).map((u) => u.username));
-          const opts = members.map((m) => '<option value="' + U.esc(m) + '">' + U.esc(m) + '</option>').join('');
-          return '<tr><td>' + U.esc(c) + '</td><td><label>EAL <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="eal"><option value="">(pick)</option>' + opts + '</select></label> <label>Supporting <select class="inp" data-rolepick="' + U.esc(c) + '" data-slot="support"><option value="">(pick)</option>' + opts + '</select></label></td></tr>';
-        }).join('') + '</tbody></table></div>' : '';
+      /* one decision per PARTNERSHIP: the same two teachers share several classes, so asking per class made 26 dropdowns for 13 classes */
+      const groups = [], gIdx = {};
+      picks.forEach((c) => {
+        const mem = r.users.filter((u) => (u.classes || []).indexOf(c) !== -1).map((u) => u.username).sort();
+        const k = mem.join('|');
+        if (!(k in gIdx)) { gIdx[k] = groups.length; groups.push({ members: mem, classes: [] }); }
+        groups[gIdx[k]].classes.push(c);
+      });
+      const pickRows = groups.length ? '<p class="small" style="margin:8px 0 2px"><b>Who is the EAL teacher in each pair?</b> The file does not say, so choose once per pair. It applies to all of that pair&rsquo;s classes, and the other teacher is Supporting. SPR never guesses. <b id="pairCount">0 of ' + groups.length + ' decided.</b></p><div class="sheet" style="max-height:200px;overflow:auto"><table class="tbl"><thead><tr><th>Classes</th><th>EAL teacher is</th></tr></thead><tbody>' +
+        groups.map((g, i) => '<tr><td>' + U.esc(g.classes.join(', ')) + '<div class="small muted">' + U.esc(g.members.join(' + ')) + '</div></td><td><select class="inp" data-rolepick="' + i + '"><option value="">(pick)</option>' +
+          g.members.map((m) => '<option value="' + U.esc(m) + '">' + U.esc(m) + '</option>').join('') + '</select></td></tr>').join('') + '</tbody></table></div>' : '';
       openDlg(
         '<h3>Import roster sheet: ' + r.users.length + ' account(s), ' + r.classes.length + ' class(es)</h3>' +
         (r.errors.length ? '<div class="login-err">' + r.errors.map((e) => U.esc(e)).join('<br>') + '</div>' : '') +
@@ -1238,13 +1243,15 @@
           const apply = () => {
             /* decisions: class -> {eal, support} from pickers where the file was silent */
             const decided = {};
+            const open = [];
             d.querySelectorAll('select[data-rolepick]').forEach((sel) => {
-              const c = sel.getAttribute('data-rolepick'), slot = sel.getAttribute('data-slot');
-              if (!decided[c]) decided[c] = {};
-              if (sel.value) decided[c][slot] = sel.value;
+              const g = groups[Number(sel.getAttribute('data-rolepick'))];
+              if (!g) return;
+              if (!sel.value) { open.push(g.classes.join(', ')); return; }
+              const other = g.members.find((m) => m !== sel.value);
+              g.classes.forEach((c) => { decided[c] = { eal: sel.value, support: other }; });
             });
-            const stillOpen = picks.filter((c) => { const dd = decided[c] || {}; return !dd.eal || !dd.support; });
-            if (stillOpen.length) { toast('Pick EAL and Supporting for: ' + stillOpen.join(', '), true); return; }
+            if (open.length) { toast('Choose the EAL teacher for: ' + open.join(' / '), true); return; }
             applySheetImport(r, decided);
           };
           d.onclick = async (e) => {
@@ -1254,13 +1261,16 @@
             if (b.disabled) return;
             apply();
           };
-          d.addEventListener('change', (e) => {
-            /* enable Apply once every pick is made */
+          d.onchange = (e) => {   /* onchange, not addEventListener: a second import must not stack a stale handler */
+            /* enable Import once every pair is decided; show the running count */
             const btn = d.querySelector('[data-x="1"]');
-            if (!btn || !picks.length) return;
+            if (!btn || !groups.length) return;
             const sels = Array.from(d.querySelectorAll('select[data-rolepick]'));
-            btn.disabled = sels.some((sel) => !sel.value);
-          });
+            const done = sels.filter((sel) => sel.value).length;
+            const cnt = d.querySelector('#pairCount');
+            if (cnt) cnt.textContent = done + ' of ' + groups.length + ' decided.';
+            btn.disabled = !!r.errors.length || done < groups.length;
+          };
         });
     };
     fr.readAsText(file);
@@ -3914,7 +3924,9 @@
       a2.download = 'spr-accounts.csv';
       document.body.appendChild(a2); a2.click(); a2.remove();
       return;
-    }    if (a === 'user-toggle') {
+    }
+    if (a === 'go-back') { location.hash = (sprMode() === 'class' && !CLS) ? '#/classes' : '#/dashboard'; return; }
+    if (a === 'user-toggle') {
       if (!isAdmin()) { toast('Admin only.', true); return; }
       const un = el.dataset.user;
       const auth = getAuth();
