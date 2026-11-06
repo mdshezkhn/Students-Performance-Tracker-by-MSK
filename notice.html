@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Notice — Student's Performance Report (SPR)</title>
+<style>
+body{margin:0;background:#fbfaf5;color:#22312c;font-family:Georgia,"Times New Roman",serif;line-height:1.65}
+.wrap{max-width:720px;margin:0 auto;padding:48px 22px 64px}
+h1{font-size:26px;margin:0 0 4px}h4{margin:22px 0 6px;font-size:16.5px}
+p{margin:0 0 12px;font-size:15.5px}
+.sub{color:#5b6a62;font-family:system-ui,sans-serif;font-size:14px;margin:0 0 20px}
+.bar{display:flex;gap:8px;margin:0 0 18px}
+button{font-family:system-ui,sans-serif;font-size:14px;border-radius:8px;border:1px solid #c9c5b2;background:#fff;padding:6px 14px;cursor:pointer}
+button.on{background:#1e3b32;border-color:#1e3b32;color:#fff}
+.meta{margin-top:26px;color:#5b6a62;font-size:13.5px;font-family:system-ui,sans-serif}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Notice</h1>
+<p class="sub">Student’s Performance Report (SPR) — about SPR and your student data</p>
+<div class="bar"><button id="btn-en" class="on" onclick="setLang('en')">English</button><button id="btn-zh" onclick="setLang('zh')">中文</button></div>
+<div id="body-en"><h4>About SPR and your student data</h4>
+<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>
+<h4>Whose data this is</h4>
+<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data and has no way to open your classes.</p>
+<h4>Where data is kept</h4>
+<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>
+<h4>When data leaves the device</h4>
+<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>
+<h4>Your part</h4>
+<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>
+<h4>No warranty</h4>
+<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>
+<h4>Questions or problems</h4>
+<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p></div>
+<div id="body-zh" style="display:none"><h4>关于 SPR 和学生数据</h4>
+<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>
+<h4>数据归属</h4>
+<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据,也无法打开您的班级数据。</p>
+<h4>数据存放位置</h4>
+<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>
+<h4>数据何时离开设备</h4>
+<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>
+<h4>您的责任</h4>
+<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>
+<h4>免责声明</h4>
+<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>
+<h4>问题反馈</h4>
+<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p></div>
+<p class="meta">Notice v1, 28 Oct 2026.</p>
+<p class="meta"><a href="app/">Open the app</a></p>
+</div>
+<script>
+function setLang(l){document.getElementById("body-en").style.display=l==="en"?"":"none";document.getElementById("body-zh").style.display=l==="zh"?"":"none";document.getElementById("btn-en").className=l==="en"?"on":"";document.getElementById("btn-zh").className=l==="zh"?"on":"";}
+</script>
+</body>
+</html>
