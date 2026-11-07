@@ -138,6 +138,7 @@ function snapshotSeed(B) {
   await waitFor(() => JSON.parse(A.w.localStorage.getItem('spr-auth-v1') || '{"users":[]}').users.length >= 9, 60000);
   await waitFor(() => JSON.parse(A.w.localStorage.getItem('spr-class-index-v1') || '[]').length >= 13, 120000);
   const dDone = dlgEl(A, '[data-x="1"]'); if (dDone) click(A, dDone);
+  await waitFor(() => (A.w.__SHEET_DONE || 0) >= 1, 300000);   /* let A's import tail settle BEFORE booting D evicts this window */
   await sleep(400);
 
   const csvBtn = A.d.querySelector('[data-action="users-csv"]');
@@ -171,6 +172,7 @@ function snapshotSeed(B) {
   await waitFor(() => JSON.parse(D.w.localStorage.getItem('spr-class-index-v1') || '[]').length >= 13, 300000);
   await sleep(1500);
   const dDone2 = dlgEl(D, '[data-x="1"]'); if (dDone2) click(D, dDone2);
+  await waitFor(() => (D.w.__SHEET_DONE || 0) >= 1, 300000);   /* let the import tail (rekeys + escrow) settle: jsdom runs it past window.close */
   await sleep(400);
   const strip = (B) => JSON.stringify({
     users: auth(B).users.map((u) => [u.username, u.role]).sort(),

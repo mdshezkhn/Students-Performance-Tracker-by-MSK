@@ -5,7 +5,9 @@
 (function () {
   'use strict';
   const C = window.Calc, U = window.Util, EB = window.ExcelBridge, XLSX = window.XLSX, A = window.Analysis;
-  const $ = (s, el) => (el || document).querySelector(s);
+  /* teardown-safe: async tails may call $ after the page is gone (closed tab,
+     torn-down test window) - returning null beats crashing the tail */
+  const $ = (s, el) => { const root = el || (typeof document === 'undefined' ? null : document); return root ? root.querySelector(s) : null; };
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const SKILLS = C.SKILLS;
   const GRADE_HEX = { 'A*': '#1d7a4a', A: '#58a05f', B: '#c9973b', C: '#ce7b33', D: '#c4453c', U: '#9aa0a0' };
@@ -604,6 +606,7 @@
   }
   function closeDlg() {
     const d = $('#dlg');
+    if (!d) return;
     if (d.open) { try { d.close(); } catch (e) {} }
     d.innerHTML = '';
   }
@@ -1243,7 +1246,7 @@
   function rosterImportGo(file) {
     const fr = new FileReader();
     fr.onload = async () => {
-      const r = CS.parseSheetCsv(fr.result, (ownerUser() || {}).username);
+      const r = CS.parseSheetCsv(fr.result, [(ownerUser() || {}).username, PROTECTED_OWNER_NAME].filter(Boolean));
       const school = schoolName();
       const schoolWarn = [];
       for (const c of r.classes) if (c.school && school && c.school !== school) schoolWarn.push(c.name);
@@ -1393,13 +1396,16 @@
        (AFTER setClassIndex: addEscrowWrap reads the live class index) */
     {
       const kEsc0 = await escrowKeyBytes();
-      try { window.__ESC_DBG = { k: !!kEsc0, pw: !!SESSION.pw, user: SESSION.user, keys: Object.keys(SESSION.keys || {}).length }; } catch (e) { window.__ESC_DBG = { err: String(e) }; }
       if (kEsc0) for (const c of classIndex()) { if ((SESSION.keys || {})[c.id] && !c.escrow) await addEscrowWrap(c.id, SESSION.keys[c.id], kEsc0); }
     }
+    /* the rekey/escrow awaits above can outlive the page (tab closed mid-import,
+       torn-down test window): stop instead of touching a gone DOM */
+    if (!document || !document.body || !$('#app')) return;
     closeDlg();
     if (Object.keys(fresh).length) passwordsOnceDialog(fresh, 'Accounts created: passwords (shown once)');
     else toast('Roster sheet imported: ' + r.classes.length + ' class(es) ready.');
     renderUsers();
+    try { window.__SHEET_DONE = 1 + (window.__SHEET_DONE || 0); } catch (e) {}   /* harness marker: the whole import tail (rekeys + escrow + UI) has settled */
   }
   /* ---- export / restore EVERYTHING (admin) ---- */
   /* nuke this device's app state and reload to the sign-in screen. The cloud

@@ -154,7 +154,7 @@ const OWNER = [
   A.w.location.hash = '#/users'; await sleep(700);
   giveFile(A, '#file-roster', OWNER, 'roster.csv'); await sleep(900);
   let dlg = A.d.getElementById('dlg');
-  check(dlg && dlg.open && /9 account\(s\), 13 class\(es\)/.test(dlg.textContent), 'preview shows 9 accounts, 13 classes');
+  check(dlg && dlg.open && /8 account\(s\), 13 class\(es\)/.test(dlg.textContent), 'preview shows 8 accounts + 13 classes (owner row skipped)');
   const pk = Array.from(dlg.querySelectorAll('select[data-rolepick]'));
   check(pk.length === 6, 'exactly 6 pair decisions, one per partnership (got ' + pk.length + ')');
   const go = dlg.querySelector('[data-x="1"]');

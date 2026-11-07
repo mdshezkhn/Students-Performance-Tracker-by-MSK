@@ -128,8 +128,8 @@ function snapshotSeed(B) {
 (async () => {
   console.log('== A: import the owner fixture into an empty app ==');
   const A = boot(DLG_POLY + CHART_STUB, '');
-  await firstRunAdmin(A, 'MSK', PW);
-  check(A.w.localStorage.getItem('spr-auth-v1') !== null, 'first-run admin MSK created');
+  await firstRunAdmin(A, 'zed', PW);   /* round10: a first-run 'MSK' would become the protected owner; this suite tests the round9 mechanics with a neutral admin */
+  check(A.w.localStorage.getItem('spr-auth-v1') !== null, 'first-run admin zed created');
   A.w.location.hash = '#/users'; await sleep(500);
   if (!A.d.getElementById('file-roster')) console.log('  [dbg] gate=' + A.d.body.classList.contains('auth-gate') + ' h1=' + ((A.d.querySelector('#app h1') || {}).textContent || 'none') + ' dlg=' + (((A.d.getElementById('dlg') || {}).open) ? (A.d.getElementById('dlg').textContent || '').replace(/\s+/g, ' ').slice(0, 90) : 'closed'));
   check(!!A.d.getElementById('file-roster'), 'Users screen shows the roster import');
@@ -137,13 +137,13 @@ function snapshotSeed(B) {
   await sleep(600);
   const dlgA = A.d.getElementById('dlg');
   check(!!dlgA && dlgA.open, 'import preview dialog opened');
-  check(dlgA && /9 account\(s\), 13 class\(es\)/.test(dlgA.textContent), 'preview counts 9 accounts + 13 classes');
+  check(dlgA && /8 account\(s\), 13 class\(es\)/.test(dlgA.textContent), 'preview counts 8 accounts + 13 classes (owner row skipped)');
+  check(dlgA && /protected owner/i.test(dlgA.textContent), 'preview notes the skipped owner row');
   check(dlgA && !/class_role/i.test(dlgA.textContent) || true, 'class_role present in fixture: no picker needed');
   const goBtn = dlgEl(A, '[data-x="1"]');
   check(!!goBtn && !goBtn.disabled, 'Apply is enabled (fixture fully specified)');
   if (goBtn) { click(A, goBtn); }
-  /* 8 accounts x PBKDF2-310k wraps + 13 class seals: slow by design. Wait for
-     the passwords-once dialog (or full state) up to 150 s. */
+  await waitFor(() => (A.w.__SHEET_DONE || 0) >= 1, 300000);   /* the whole tail (rekeys + owner escrow wraps) must settle - it outlives every shorter wait */
   await waitFor(() => { const dl = A.d.getElementById('dlg'); return dl && dl.open && /password/i.test(dl.textContent); }, 150000);
   await waitFor(() => JSON.parse(A.w.localStorage.getItem('spr-auth-v1') || '{"users":[]}').users.length >= 9, 60000);
   await waitFor(() => JSON.parse(A.w.localStorage.getItem('spr-class-index-v1') || '[]').length >= 13, 60000);
@@ -157,7 +157,7 @@ function snapshotSeed(B) {
   const users = auth(A).users;
   check(users.length === 9, '9 accounts exactly (got ' + users.length + ')');
   const byUn = {}; users.forEach((u) => byUn[u.username.toLowerCase()] = u);
-  check(!!byUn.msk && byUn.msk.role === 'admin', 'MSK is admin');
+  check(!!byUn.zed && byUn.zed.role === 'owner', 'first-run admin zed is the owner (exactly one owner per device)');
   check(['anush', 'lily', 'tina', 'kay', 'sarah', 'mo', 'lisa', 'william'].every((u) => byUn[u] && ['eal', 'support', 'teacher'].indexOf(byUn[u].role) !== -1), 'the other 8 are plain teacher accounts');
   const ix = index(A);
   check(ix.length === 13, '13 classes created (got ' + ix.length + ')');
@@ -172,7 +172,8 @@ function snapshotSeed(B) {
 
   console.log('== B: keyrings match the assignments ==');
   const ring = (un) => Object.keys((byUn[un] || {}).keyring || {}).length;
-  check(ring('msk') === 13, 'admin holds all 13 class keys (got ' + ring('msk') + ')');
+  const ringZ = (un) => Object.keys(((JSON.parse(A.w.localStorage.getItem('spr-auth-v1') || '{}').users.find((u) => u.username === un) || {}).keyring || {})).filter((k) => k !== '__escrow__').length;
+  check(ringZ('zed') === 13, 'the importing owner holds all 13 class keys (got ' + ringZ('zed') + ')');
   if (ring('anush') !== 4 || ring('lisa') !== 6) console.log('  [dbg] rings: ' + ['anush','lily','tina','kay','sarah','lisa','mo','william'].map((u) => u + '=' + ring(u)).join(' '));
   check(ring('anush') === 4 && ring('tina') === 2 && ring('kay') === 3 && ring('sarah') === 2 && ring('lisa') === 6 && ring('mo') === 3 && ring('william') === 3 && ring('lily') === 3, 'each teacher keyring size = their class count');
 
@@ -186,9 +187,12 @@ function snapshotSeed(B) {
   const anushRows = Array.from(rowsC).filter((r) => r.cells[0].textContent.trim() === 'anush');
   check(anushRows.length === 2, 'anush appears on two rows (with Lily, with Tina)');
   check(anushRows.some((r) => /P1C1, P1C2, P1C3/.test(r.cells[3].textContent)) && anushRows.some((r) => /P2C2/.test(r.cells[3].textContent)), 'anush rows carry the right class lists');
-  const mskRow = Array.from(rowsC).find((r) => r.cells[0].textContent.trim().split(' ')[0].toLowerCase() === 'msk');
-  check(mskRow && /All classes/.test(mskRow.cells[3].textContent) && /All/.test(mskRow.cells[4].textContent), 'admin row: All classes / School All');
-  check(mskRow && (mskRow.cells[5].textContent.trim() === '' || mskRow.cells[5].textContent.trim() === '—'), 'admin row has no partner (got: ' + (mskRow ? mskRow.cells[5].textContent.trim() : 'no row') + ')');
+  /* round10: the owner row (zed here) plays the old admin-row role; the CSV's
+     msk row was skipped by the protected-name guard, so no msk row exists */
+  const ownRow = Array.from(rowsC).find((r) => /All classes/.test(r.cells[3].textContent));
+  check(!!ownRow, 'owner row present with All classes');
+  check(ownRow && (ownRow.cells[5].textContent.trim() === '' || ownRow.cells[5].textContent.trim() === '—'), 'owner row has no partner (got: ' + (ownRow ? ownRow.cells[5].textContent.trim() : 'no row') + ')');
+  check(!Array.from(rowsC).some((r) => r.cells[0].textContent.trim().split(' ')[0].toLowerCase() === 'msk'), 'no msk row: the protected owner name cannot arrive by import');
 
 
   /* jsdom: long async apply chains stall when several windows are alive, so
@@ -229,7 +233,7 @@ function snapshotSeed(B) {
 
   console.log('== F: unassign re-keys the class ==');
   const F = boot(DLG_POLY + CHART_STUB + stateSeed, '');
-  await loginAs(F, 'MSK', PW);
+  await loginAs(F, 'zed', PW);
   await waitFor(() => String(F.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
   { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
     const d2 = F.d.getElementById('dlg');
@@ -283,7 +287,7 @@ function snapshotSeed(B) {
   console.log('== G: supporting-teacher rule is per class (class_role), not per account ==');
   shut(F);
   const G = boot(DLG_POLY + CHART_STUB + stateSeed, '');
-  await loginAs(G, 'MSK', PW);
+  await loginAs(G, 'zed', PW);
   await waitFor(() => String(G.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
   { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
     const d2 = G.d.getElementById('dlg');
@@ -301,7 +305,7 @@ function snapshotSeed(B) {
   const noRole = FIXTURE.split(/\r?\n/).map((l, i) => i === 0 ? l.replace(',class_role', '') : l.split(',').filter((_, j) => j !== 6).join(',')).join('\n');
   shut(G);
   const H = boot(DLG_POLY + CHART_STUB + stateSeed, '');
-  await loginAs(H, 'MSK', PW);
+  await loginAs(H, 'zed', PW);
   await waitFor(() => String(H.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
   { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
     const d2 = H.d.getElementById('dlg');
@@ -321,7 +325,7 @@ function snapshotSeed(B) {
   const threeTeach = FIXTURE + '\nkay2,Kay2,teacher,P3C2,Demo School,zzz,eal,active\n';
   shut(H);
   const I = boot(DLG_POLY + CHART_STUB + stateSeed, '');
-  await loginAs(I, 'MSK', PW);
+  await loginAs(I, 'zed', PW);
   await waitFor(() => String(I.w.__SPR_OC || '').indexOf('success-tail') !== -1, 30000);   /* the auto-open tail rewrites the route; let it settle */
   { /* the recovery nudge can steal the single dialog at any moment: dismiss it */
     const d2 = I.d.getElementById('dlg');

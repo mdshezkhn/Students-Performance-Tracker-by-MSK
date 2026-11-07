@@ -355,10 +355,13 @@
     for (const [re, v] of CLASS_ROLE_ALIASES) if (re.test(x)) return v;
     return null;
   }
-  function parseSheetCsv(text, ownerUsername) {
+  function parseSheetCsv(text, ownerNames) {
     /* round10: rows naming the protected owner account are SKIPPED (with a
-       visible note in the preview); a row trying to CREATE a second owner is
-       an error — the owner role can never arrive through an import. */
+       visible note in the preview) - both the current owner's own row and any
+       row claiming the school's designated owner name; a row trying to CREATE
+       a second owner is an error — the owner role can never arrive through an
+       import. ownerNames: a string or array of protected usernames. */
+    const prot = (Array.isArray(ownerNames) ? ownerNames : (ownerNames ? [ownerNames] : [])).map(function (v) { return String(v).toLowerCase(); });
     const rows = csvRows(String(text || '').replace(/^﻿/, ''));
     const errors = [], warnings = [];
     if (!rows.length) return { users: [], classes: [], errors: ['empty file'], warnings: warnings, unpicked: [] };
@@ -376,7 +379,7 @@
       if (!un) { if (rows[r].some((x) => String(x || '').trim())) errors.push('row ' + (r + 1) + ': missing username'); continue; }
       /* the OWNER'S OWN row is skipped quietly (round-trip exports carry it);
          any OTHER row claiming the Owner role is an import error */
-      if (ownerUsername && un === String(ownerUsername).toLowerCase()) { warnings.push(un + ' is the protected owner account, row skipped'); continue; }
+      if (prot.indexOf(un) !== -1) { warnings.push(un + ' is the protected owner account, row skipped'); continue; }
       if (/^owner$/i.test(roleRaw)) { errors.push('row ' + (r + 1) + ': the Owner role cannot be created by import - there is exactly one protected owner account'); continue; }
       if (!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(un)) { errors.push('row ' + (r + 1) + ': bad username "' + un.slice(0, 20) + '" (letters, digits, - and _ only)'); continue; }
       const role = normalizeRole(roleRaw);
