@@ -110,6 +110,11 @@ function boot(preStorage, preSession) {
      them) — inject Node's so the app's crypto paths work */
   if (!w.TextEncoder) w.TextEncoder = TextEncoder;
   if (!w.TextDecoder) w.TextDecoder = TextDecoder;
+  /* jsdom has no URL.createObjectURL (and its Blob keeps no text) — the round10
+     owner-kit download needs both. Same stub as the other migrated suites. */
+  const RBd = w.Blob; const RUd = w.URL || {};
+  w.Blob = function (parts, opts) { const b = new RBd(parts, opts); if (parts && parts.length && typeof parts[0] === 'string') b.__TEXT = parts[0]; return b; };
+  w.URL.createObjectURL = w.URL.createObjectURL || (function () { return 'blob:ds-' + (++bootId); });
   return { dom, w, d: w.document };
 }
 

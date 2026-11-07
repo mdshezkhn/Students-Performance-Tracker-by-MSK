@@ -200,7 +200,7 @@
   /* classes a user may see at all (admin/manager: all; eal/support: theirs) */
   function classesFor(user, index) {
     if (!user) return [];
-    if (user.role === 'admin' || user.role === 'manager') return index.slice();
+    if (user.role === 'admin' || user.role === 'manager' || user.role === 'owner') return index.slice();
     return index.filter((c) => isClassOf(user, c));
   }
 

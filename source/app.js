@@ -781,8 +781,8 @@
 
   function classCard(c) {
     const me = myUser() || {};
-    const mine = c.eal === me.username ? 'EAL teacher' : c.support === me.username ? 'Supporting teacher' : (me.role === 'manager' ? 'Read-only' : me.role === 'admin' ? 'Admin' : '');
-    const pend = (c.pendingCount || 0) && (me.role === 'admin' || c.eal === me.username) ? '<span class="pend-badge">' + c.pendingCount + ' to review</span>' : '';
+    const mine = c.eal === me.username ? 'EAL teacher' : c.support === me.username ? 'Supporting teacher' : (me.role === 'manager' ? 'Read-only' : (me.role === 'admin' || me.role === 'owner') ? 'Admin' : '');
+    const pend = (c.pendingCount || 0) && (me.role === 'admin' || me.role === 'owner' || c.eal === me.username) ? '<span class="pend-badge">' + c.pendingCount + ' to review</span>' : '';
     const when = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '';
     return '<div class="class-card">' +
       '<div class="cc-main"><b class="cc-name">' + U.esc(c.name) + '</b>' +
@@ -798,7 +798,7 @@
     const me = myUser() || { username: '', role: 'teacher' };
     const ix = classIndex();
     const mine = CS.classesFor(me, ix);
-    const admin = me.role === 'admin';
+    const admin = me.role === 'admin' || me.role === 'owner';
     const legacySource = admin && sprMode() === 'legacy' && DB && DB.semesters && DB.semesters.length;
     /* simple-ui: this screen is a plain chooser. Everything technical lives in
        the admin-only Advanced panel below; teachers see class name + Open. */
@@ -2995,11 +2995,11 @@
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
           const dsc = dsCfg();
-          const ptrOk = u.role === 'admin' ? dsOn() : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
+          const ptrOk = (u.role === 'admin' || u.role === 'owner') ? dsOn() : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
-            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + (u.role === 'admin' ? '' : ': reset password to enable') + '</span>') + '</td>' +
+            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + ((u.role === 'admin' || u.role === 'owner') ? '' : ': reset password to enable') + '</span>') + '</td>' +
             '<td>' + (selfNow || u.role === 'owner' ? (u.role === 'owner' ? '<span class="small muted">Owner - protected</span>' : '') :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
@@ -3570,6 +3570,7 @@
       '<div class="privacy-body"><ul>' +
       '<li>Student data stays <b>in this browser</b> on this device, encrypted with your password.</li>' +
       '<li><b>Nothing is sent anywhere</b> unless an admin turns on Device sync or someone uses Save &amp; Share. Then an encrypted copy goes to Supabase.</li>' +
+      '<li><b>The school’s owner account</b> can open every class and switch the app to read-only or locked for everyone; it never deletes data. 学校指定的负责人账户可以打开每一个班级，并可将应用切换为只读或锁定；它不会删除数据。</li>' +
       '<li>Exported Excel and backup files are <b>not encrypted</b>. Keep them on school-approved storage.</li>' +
       '<li>SPR is provided as is. Grades and comments must be checked by a teacher before use.</li></ul>' +
       '<p class="small muted">Notice v' + NOTICE.version + ', ' + NOTICE.date + '. The full text is available in English and 中文.</p></div>';
@@ -4191,7 +4192,7 @@
         try { dk = await unwrapWrap(w, master); }
         catch (e) { if (err) err.textContent = 'Wrong master password.'; return; }
         const auth = getAuth();
-        const admin = auth.users.find((u) => u.role === 'admin') || auth.users[0];
+        const admin = auth.users.find((u) => u.role === 'owner') || auth.users.find((u) => u.role === 'admin') || auth.users[0];
         if (!admin) { if (err) err.textContent = 'No admin account exists on this device.'; return; }
         try {
           v2.wraps[admin.username] = await makeWrap(dk, nw);
@@ -5565,9 +5566,19 @@
     for (const u of auth.users) localBy[u.username] = u;
     const byUn = (dir === 'install') ? Object.assign({}, localBy, cloudBy) : Object.assign({}, cloudBy, localBy);
     for (const un of gone) { for (const k of Object.keys(byUn)) { if (k.toLowerCase() === un) delete byUn[k]; } }
-    /* round10: the LOCAL owner record always wins (role, keyring, login) - a
-       cloud copy can never overwrite, downgrade or strip the owner */
-    if (owN && localBy[owN]) byUn[owN] = localBy[owN];
+    /* round10: the owner record can never be REMOVED, downgraded or stripped by
+       a cloud copy - but a legitimately fresher cloud login (the owner's own
+       newer device) must still arrive on install. Field-wise merge:
+       role is always owner; keyring is a union; the fresher login wins. */
+    if (owN && localBy[owN]) {
+      const lo = localBy[owN]; const cl = cloudBy[owN] || {};
+      const base = (dir === 'install') ? Object.assign({}, cl, { username: lo.username }) : Object.assign({}, lo);
+      base.role = 'owner';
+      base.keyring = Object.assign({}, (cl.keyring || {}), (lo.keyring || {}));
+      const lv = (lo.login && lo.login.v) || 0; const cv = (cl.login && cl.login.v) || 0;
+      base.login = (cv > lv) ? cl.login : (lo.login || cl.login || null);
+      byUn[owN] = base;
+    }
     const merged = Object.keys(byUn).sort().map(function (k) { return byUn[k]; });
     const changed = merged.length !== auth.users.length ||
       merged.some(function (u) { return acctSig(u) !== acctSig(localBy[u.username] || { username: u.username }); });
@@ -6029,7 +6040,7 @@
       const u = (obj.users || []).find(function (x) { return String(x.username).toLowerCase() === String(username).toLowerCase(); });
       if (!u) return false;
       const vr = await verifyUserPw(u, password, obj.v2); if (!vr || !vr.ok) return false;
-      const owner = ((obj.users || []).find(function (x) { return x.role === 'admin'; }) || {}).username || username;
+      const owner = (((obj.users || []).find(function (x) { return x.role === 'owner'; })) || ((obj.users || []).find(function (x) { return x.role === 'admin'; })) || {}).username || username;
       return { chan: pt.chan, keyB64: keyB64, obj: obj, by: row.pushed_by || 'another device', at: row.pushed_at, owner: owner };
     }
     if (env.sprDS !== 1 || !env.wrap) return null;   /* legacy pairing-only row: needs the link */

@@ -25,6 +25,14 @@ function boot(preExtra) {
   const w = dom.window;
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle, configurable: true }); } catch (e) {}
   if (!w.TextEncoder) { w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder; }
+  /* jsdom ships neither URL.createObjectURL nor a usable Blob.text - the round10
+     forced owner-kit download needs both or first-run can never finish. */
+  if (!w.URL.createObjectURL) {
+    w.Blob = function (parts, o) { this._parts = parts; this.type = (o && o.type) || ''; };
+    w.Blob.prototype.text = function () { return Promise.resolve(String(this._parts.join(''))); };
+    w.URL.createObjectURL = function () { return 'blob:spr-test'; };
+    w.URL.revokeObjectURL = function () {};
+  }
   return { w, d: w.document };
 }
 const dlgTxt = (B) => (B.d.getElementById('dlg') || { textContent: '' }).textContent || '';
@@ -97,7 +105,7 @@ function setupAdmin(B) {
     const B = boot(pre); await sleep(700);
     check(await settleGate(B), 'an older accepted version re-opens the gate');
     B.w.close();
-    const C = boot(pre.replace('"0"', '"1"')); await sleep(900);
+    const C = boot(pre.replace('"0"', '"2"')); await sleep(900);
     check(!C.d.getElementById('notice-read'), 'the current version does not re-ask');
     C.w.close();
   }
@@ -114,7 +122,7 @@ function setupAdmin(B) {
       const zh = D.d.querySelector('[data-action="notice-lang"][data-lang="zh"]');
       click(D, zh); await sleep(400);
       check(/关于 SPR 和学生数据/.test(dlgTxt(D)), '中文 version of the notice shown');
-      check(/Notice v1, 28 Oct 2026/.test(dlgTxt(D)), 'version line survives the toggle');
+      check(/Notice v2, 06 Nov 2026/.test(dlgTxt(D)), 'version line survives the toggle');
     }
     D.w.close();
   }
