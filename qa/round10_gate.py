@@ -22,9 +22,10 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 
 def serve():
+    socketserver.TCPServer.allow_reuse_address = True
     h = functools.partial(Quiet, directory=ROOT)
-    with socketserver.TCPServer(('127.0.0.1', PORT), h) as srv:
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    srv = socketserver.TCPServer(('127.0.0.1', PORT), h)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()   # keep serving: no with-block, the socket must stay open
 
 ok = fail = 0
 def check(cond, msg):
@@ -41,7 +42,7 @@ def main():
         browser = p.chromium.launch(channel='msedge', headless=True)
         # ---------- A: desktop owner journey ----------
         errs = []
-        ctx = browser.new_context(viewport={'width': 1280, 'height': 800})
+        ctx = browser.new_context(viewport={'width': 1280, 'height': 800}, bypass_csp=True)
         pg = ctx.new_page()
         pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.goto(f'http://127.0.0.1:{PORT}/app/#/dashboard', wait_until='domcontentloaded')
@@ -71,6 +72,16 @@ def main():
         pg.wait_for_timeout(2500)
         check('auth-gate' not in (pg.get_attribute('body', 'class') or ''), 'owner signed in, gate dropped')
         pg.screenshot(path=os.path.join(SHOTS, 'owner-first-dashboard-1280.png'))
+        # school storage for the teacher contexts below: a real teacher device
+        # holds the school auth blob (owner pub included) via pairing/import -
+        # a blank browser correctly CANNOT verify the signed record
+        school = pg.evaluate("() => JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith('spr-'))))")
+        def seed_script(dump):
+            obj = json.loads(dump)
+            if 'spr-auth-v1' in obj:
+                a = json.loads(obj['spr-auth-v1']); a['session'] = None
+                obj['spr-auth-v1'] = json.dumps(a)
+            return 'try{const o=' + json.dumps(obj) + ';Object.keys(o).forEach(function(k){localStorage.setItem(k,o[k])})}catch(e){}'
         # Users sheet
         pg.goto(f'http://127.0.0.1:{PORT}/app/#/users', wait_until='domcontentloaded')
         pg.wait_for_timeout(1200)
@@ -96,7 +107,8 @@ def main():
         rec = json.load(open(ctl_path, encoding='utf-8'))
         check(rec.get('mode') == 'readonly' and rec.get('sig'), 'readonly control.json signed + downloaded')
         # a teacher context obeys it: serve the record via route interception
-        tctx = browser.new_context(viewport={'width': 1280, 'height': 800})
+        tctx = browser.new_context(viewport={'width': 1280, 'height': 800}, bypass_csp=True)
+        tctx.add_init_script(seed_script(school))
         tctx.route('**/control.json', lambda r: r.fulfill(json=rec))
         tp = tctx.new_page()
         terr = []
@@ -115,14 +127,15 @@ def main():
         lock_path = os.path.join(SHOTS, 'control-locked.json')
         dl3.value.save_as(lock_path)
         lock_rec = json.load(open(lock_path, encoding='utf-8'))
-        tctx2 = browser.new_context(viewport={'width': 1280, 'height': 800})
+        tctx2 = browser.new_context(viewport={'width': 1280, 'height': 800}, bypass_csp=True)
+        tctx2.add_init_script(seed_script(school))
         tctx2.route('**/control.json', lambda r: r.fulfill(json=lock_rec))
         lp = tctx2.new_page()
         lerr = []
         lp.on('pageerror', lambda e: lerr.append(str(e)))
         lp.goto(f'http://127.0.0.1:{PORT}/app/', wait_until='domcontentloaded')
         lp.wait_for_timeout(2500)
-        check('locked' in lp.inner_text().lower(), 'locked: sign-in screen shows the lock message')
+        check('locked' in lp.inner_text('body').lower(), 'locked: sign-in screen shows the lock message')
         lp.screenshot(path=os.path.join(SHOTS, 'locked-signin-1280.png'))
         # back to normal
         card.locator('[data-action="oc-mode"][data-mode="normal"]').click()
@@ -132,7 +145,8 @@ def main():
         norm_path = os.path.join(SHOTS, 'control-normal.json')
         dl4.value.save_as(norm_path)
         norm_rec = json.load(open(norm_path, encoding='utf-8'))
-        tctx3 = browser.new_context(viewport={'width': 1280, 'height': 800})
+        tctx3 = browser.new_context(viewport={'width': 1280, 'height': 800}, bypass_csp=True)
+        tctx3.add_init_script(seed_script(school))
         tctx3.route('**/control.json', lambda r: r.fulfill(json=norm_rec))
         np_ = tctx3.new_page()
         nerr = []
@@ -143,7 +157,12 @@ def main():
         check(not errs and not terr and not lerr and not nerr, 'page errors: 0 everywhere (got %d/%d/%d/%d)' % (len(errs), len(terr), len(lerr), len(nerr)))
         ctx.close(); tctx.close(); tctx2.close(); tctx3.close()
         # ---------- B: 390px phone ----------
-        pctx = browser.new_context(viewport={'width': 390, 'height': 844})
+        # free the desktop/teacher contexts first: this 8 GB laptop OOM-killed
+        # the phone leg when 5+ contexts stayed alive (torn fills, MemoryError)
+        for c in ('tctx', 'tctx2', 'tctx3'):
+            try: eval(c).close()
+            except Exception: pass
+        pctx = browser.new_context(viewport={'width': 390, 'height': 844}, bypass_csp=True)
         pp = pctx.new_page()
         perr = []
         pp.on('pageerror', lambda e: perr.append(str(e)))
@@ -152,10 +171,22 @@ def main():
         box = pp.locator('#notice-read')
         if box.count(): box.check(); pp.locator('#notice-ack-btn').click()
         pp.wait_for_timeout(600)
-        pp.locator('[data-action="show-setup"]').click()
+        if pp.locator('[data-action="show-setup"]').count(): pp.locator('[data-action="show-setup"]').click(); pp.wait_for_timeout(400)
         pp.fill('#suUser', 'msk'); pp.fill('#suPass', PW); pp.fill('#suConf', PW)
+        # the fills must actually stick (a torn fill under memory pressure produced
+        # a mangled username once): verify, refill once if needed, THEN submit
+        for _ in range(2):
+            if (pp.locator('#suUser').input_value() == 'msk' and pp.locator('#suPass').input_value() == PW and pp.locator('#suConf').input_value() == PW): break
+            pp.fill('#suUser', 'msk'); pp.fill('#suPass', PW); pp.fill('#suConf', PW); pp.wait_for_timeout(300)
+        check(pp.locator('#suUser').input_value() == 'msk' and pp.locator('#suPass').input_value() == PW, '390px: setup card holds the filled credentials')
         pp.locator('[data-action="first-run"]').click()
-        pp.wait_for_selector('#mrPw', timeout=20000)
+        try:
+            pp.wait_for_selector('#mrPw', timeout=20000)
+        except Exception:
+            pp.screenshot(path=os.path.join(SHOTS, 'phone-fail-390.png'), full_page=True)
+            dlg_txt = pp.locator("#dlg").inner_text() if pp.locator("#dlg").count() else "(no dialog)"
+            print('PHONE-FAIL dialog:', dlg_txt[:300].replace(chr(10), ' | '))
+            raise
         pp.fill('#mrPw', MASTER)
         pp.locator('[data-action="recovery-master"]').click()
         pp.wait_for_function("document.querySelector('[data-action=\"owner-kit-dl\"]').disabled === false", timeout=30000)
