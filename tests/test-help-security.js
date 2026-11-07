@@ -36,12 +36,16 @@ function boot(preExtra) {
     virtualConsole: vc, storageQuota: 10000000,
   });
   const w = dom.window;
+  /* jsdom ships no URL.createObjectURL (the owner-kit / backup downloads need it);
+     Blob is wrapped so tests can read the payload if they want to */
+  if (!w.URL.createObjectURL) w.URL.createObjectURL = function () { return 'blob:test-hs'; };
+  { const RBl = w.Blob; w.Blob = function (parts, opts) { const b = new RBl(parts, opts); if (parts && parts.length && typeof parts[0] === 'string') b.__TEXT = parts[0]; return b; }; }
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
   if (!w.TextEncoder) w.TextEncoder = TextEncoder;
   if (!w.TextDecoder) w.TextDecoder = TextDecoder;
   return { w, d: w.document };
 }
-const click = (B, el) => el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
+const click = (B, el) => { if (!el) { console.log('  [!] click target missing (an earlier check already failed)'); return; } el.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true })); };
 const setVal = (B, el, v) => { if (!el) { console.log('  [!] setVal target missing'); return; } el.value = v; el.dispatchEvent(new B.w.Event('input', { bubbles: true })); };
 const go = async (B, hash) => { B.w.location.hash = hash; B.w.dispatchEvent(new B.w.Event('hashchange')); await sleep(500); };
 const txt = (B) => { const c = B.d.body.cloneNode(true); c.querySelectorAll('script,style').forEach((n) => n.remove()); return c.textContent || ''; };
@@ -51,30 +55,24 @@ async function ackPrivacy(B) {
   for (const a of ['privacy-gate-ack', 'privacy-ack']) { const b = B.d.querySelector('[data-action="' + a + '"]'); if (b) { click(B, b); await sleep(200); } }
 }
 async function firstRun(B, user, pw) {
-  const su = B.d.querySelector('[data-action="show-setup"]'); if (su) { click(B, su); await sleep(200); }
+  /* round10 flow, same as test-users-sheet.js: setup card -> recovery dialog ->
+     master pw + "Set master password" (runs the owner seal, enables the kit) ->
+     kit download (enables Continue) -> Continue */
+  await waitFor(() => B.d.getElementById('suUser') || B.d.querySelector('[data-action="show-setup"]') || B.d.getElementById('loginUser'), 15000);
+  if (!B.d.getElementById('suUser')) { const s = B.d.querySelector('[data-action="show-setup"]'); if (s) { click(B, s); await sleep(400); } }
+  await waitFor(() => B.d.getElementById('suConf'), 10000);
   setVal(B, B.d.getElementById('suUser'), user);
   setVal(B, B.d.getElementById('suPass'), pw);
   setVal(B, B.d.getElementById('suConf'), pw);
   click(B, B.d.querySelector('[data-action="first-run"]'));
-  for (let t = 0; t < 40; t++) {
-    await sleep(250);
-    const dl = B.d.getElementById('dlg');
-    if (dl && dl.open && dl.querySelector('[data-action="recovery-ack"]')) {
-      const mpw10 = dl.querySelector('#mrPw');
-      if (mpw10) { mpw10.value = 'Master-r10-' + Math.random().toString(36).slice(2, 8); mpw10.dispatchEvent(new B.w.Event('input', { bubbles: true })); }
-      const mst10 = dl.querySelector('[data-action="recovery-master"]');
-      if (mst10) mst10.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
-      await sleep(3500);
-      const kb10 = dl.querySelector('[data-action="owner-kit-dl"]');
-      for (let t10 = 0; t10 < 40 && (!kb10 || kb10.disabled); t10++) { await sleep(300); }
-      if (kb10 && !kb10.disabled) kb10.dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
-      await sleep(150);
-      const cb = dl.querySelector('#recoverySaved'); if (cb && !cb.disabled) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); }
-      await sleep(150);
-      dl.querySelector('[data-action="recovery-ack"]').dispatchEvent(new B.w.MouseEvent('click', { bubbles: true }));
-      break;
-    }
-  }
+  await waitFor(() => B.d.getElementById('mrPw'), 20000);
+  setVal(B, B.d.getElementById('mrPw'), 'master-pw-10hs');
+  click(B, B.d.querySelector('[data-action="recovery-master"]'));
+  await waitFor(() => { const k = B.d.querySelector('[data-action="owner-kit-dl"]'); return k && !k.disabled; }, 20000);
+  click(B, B.d.querySelector('[data-action="owner-kit-dl"]'));
+  await sleep(300);
+  await waitFor(() => { const r = B.d.querySelector('[data-action="recovery-ack"]'); return r && !r.disabled; }, 10000);
+  click(B, B.d.querySelector('[data-action="recovery-ack"]'));
   return waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000);
 }
 
