@@ -162,9 +162,10 @@ function sprSnapshot(B, skip) {
 async function verifySig(pubB64u, rec) {
   try {
     if (!rec || rec.version !== 1) return false;
+    const b64 = function (s) { s = String(s || '').replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return s; };   /* app stores base64url; Node stops at -/_ */
     const msg = JSON.stringify([1, rec.counter, rec.issued_at, rec.mode, rec.message]);
-    const key = await webcrypto.subtle.importKey('spki', Buffer.from(pubB64u, 'base64'), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-    return await webcrypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, Buffer.from(rec.sig, 'base64'), new TextEncoder().encode(msg));
+    const key = await webcrypto.subtle.importKey('spki', Buffer.from(b64(pubB64u), 'base64'), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    return await webcrypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, Buffer.from(b64(rec.sig), 'base64'), new TextEncoder().encode(msg));
   } catch (e) { return false; }
 }
 
@@ -655,7 +656,8 @@ function runS() {
   let kit = null; let seedStr = '';
   await sec('P1/P2', async () => { const r = await runP(); kit = r.kit; });
   await sec('P3-P5', async () => {
-    const r = await runP(); await runP3(r.A);
+    const r = await runP(); if (r && r.kit) kit = r.kit;
+    await runP3(r.A);
     const seedP = await runP45(r.A); shut(r.A);
     seedStr = 'try{var _o=' + JSON.stringify(seedP) + ';Object.keys(JSON.parse(_o)).forEach(function(k){localStorage.setItem(k,JSON.parse(_o)[k])})}catch(e){};';
   });

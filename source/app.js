@@ -4266,17 +4266,23 @@
       if (!u || !p) { $('#loginErr').textContent = 'Enter username and password.'; return; }
       const btn = document.querySelector('[data-action="do-login"]'); if (btn) btn.disabled = true;
       (async () => {
+        /* the async tail may outlive the page (tab closed mid-sign-in, or the
+           test harness tearing the window down): never touch the DOM once the
+           document is gone */
+        const alive = function () { try { return !!(document && document.body); } catch (eA) { return false; } };
         try {
           let res = await doLoginFull(u, p);
-          if (res.error) { if (res.error !== '__shown__') { const eEl = $('#loginErr'); if (eEl) eEl.textContent = res.error; } return; }
+          if (res.error) { if (res.error !== '__shown__') { const eEl = alive() ? $('#loginErr') : null; if (eEl) eEl.textContent = res.error; } return; }
+          if (!alive()) return;
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
           /* single-class auto-open then takes the landing: on success it points
              #/dashboard itself; on failure its honest dialog shows over the
              working chooser (never a blank screen, never a dead end) */
           if (SPR_LOGIN_AUTO_CLASS) { const cid0 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid0); }
+          if (!alive()) return;
           toast('Welcome back, ' + res.user.name); maybeJoin();
-        } catch (err) { $('#loginErr').textContent = 'Sign-in failed: ' + err.message; }
-        finally { const b2 = document.querySelector('[data-action="do-login"]'); if (b2) b2.disabled = false; }
+        } catch (err) { if (alive()) { const eEl2 = $('#loginErr'); if (eEl2) eEl2.textContent = 'Sign-in failed: ' + err.message; } }
+        finally { const b2 = alive() ? document.querySelector('[data-action="do-login"]') : null; if (b2) b2.disabled = false; }
       })();
       return;
       if (!DB.settings.privacyAck) openPrivacy();
