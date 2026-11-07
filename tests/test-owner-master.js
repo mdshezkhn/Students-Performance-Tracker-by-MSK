@@ -353,7 +353,7 @@ async function runE(seedStr) {
   }
   await waitFor(() => { const c = index(A).find((x) => x.name === 'P7C1'); return c && c.escrow && c.escrow.ct; }, 20000);
   const p7 = index(A).find((c) => c.name === 'P7C1') || {};
-  check(!!p7.id && !!(ownerOf(A).keyring || {})[p7.id], 'class created later: owner keyring wrap exists');
+  check(!!p7.id && !!((ownerOf(A) || {}).keyring || {})[p7.id], 'class created later: owner keyring wrap exists');
   check(!!p7.escrow && !!p7.escrow.ct, 'class created later: escrow wrap exists');
 
   /* escrow heal: owner loses a wrap (drift), reboot, sign in — class reopens */
@@ -364,14 +364,17 @@ async function runE(seedStr) {
     a.session = null;
     A.w.localStorage.setItem('spr-auth-v1', JSON.stringify(a));
   }
-  const seed2 = sprSnapshot(A, ['spr-control-v1']);
+  /* hand the next section a proper BOOT SCRIPT, not the bare JSON snapshot
+     (string-concatenating raw JSON into the <script> pre is a SyntaxError) */
+  const seed2 = 'try{var _o=' + sprSnapshot(A, ['spr-control-v1']) + ';Object.keys(_o).forEach(function(k){localStorage.setItem(k,_o[k])})}catch(e){};';
   shut(A);
-  const H = boot(DLG_POLY + CHART_STUB + 'try{var _s=' + JSON.stringify(seed2) + ';Object.keys(JSON.parse(_s)).forEach(function(k){localStorage.setItem(k,JSON.parse(_s)[k])})}catch(e){}', '');
+  const H = boot(DLG_POLY + CHART_STUB + seed2, '');   /* seed2 is already a replay script */
   await loginAs(H, 'msk', PW);
   await waitFor(() => !H.d.body.classList.contains('auth-gate'), 25000);
   /* the heal is PBKDF2-bound (escrow slot unwrap + re-wrap per missing class) */
-  await waitFor(() => (ownerOf(H).keyring || {})[cid0], 25000);
-  const healed = (ownerOf(H).keyring || {})[cid0];
+  const wrapOf = (B) => ((ownerOf(B) || {}).keyring || {});
+  await waitFor(() => wrapOf(H)[cid0], 25000);
+  const healed = wrapOf(H)[cid0];
   check(!!healed, 'escrow heal: owner wrap for the lost class restored after sign-in');
   check(index(H).length >= 13, 'all classes still listed after reboot');
   shut(H);
@@ -405,6 +408,11 @@ async function issueControl(seedStr, mode, message) {
   const O = boot(DLG_POLY + CHART_STUB + seedStr, '', { control: null });
   await loginAs(O, 'msk', PW);
   await waitFor(() => !O.d.body.classList.contains('auth-gate'), 25000);
+  /* class mode without an open class shows only the chooser: open a class so
+     the full Manage page (with the Owner controls card) renders */
+  O.w.location.hash = '#/classes'; await sleep(700);
+  const ob = O.d.querySelector('[data-action="class-open"]');
+  if (ob) { click(O, ob); await waitFor(() => O.d.querySelector('#content'), 30000); await sleep(400); }
   O.w.location.hash = '#/manage'; await sleep(900);
   const card = O.d.getElementById('ownerControls');
   if (!card) { shut(O); return { missing: true }; }
@@ -427,6 +435,8 @@ async function issueThree(seedStr) {
   await loginAs(O, 'msk', PW);
   await waitFor(() => !O.d.body.classList.contains('auth-gate'), 25000);
   const out = {};
+  O.w.location.hash = '#/classes'; await sleep(700);
+  { const ob = O.d.querySelector('[data-action="class-open"]'); if (ob) { click(O, ob); await waitFor(() => O.d.querySelector('#content'), 30000); await sleep(400); } }
   for (const spec of [['locked', 'Summer maintenance - back soon', 'lock'], ['readonly', 'Marks freeze while reports are printed', 'ro'], ['normal', '', 'norm']]) {
     O.w.location.hash = '#/manage'; await sleep(900);
     const card = O.d.getElementById('ownerControls');

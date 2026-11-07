@@ -593,7 +593,11 @@
     setTimeout(fin, ms || 10000);
   }
   function openDlg(html, onmount) {
+    /* the dialog may be requested from an async tail that outlived the page
+       (closed tab / torn-down test window): a no-op beats a crash */
+    if (!document || !document.body) return null;
     const d = $('#dlg');
+    if (!d) return null;
     d.innerHTML = html;
     if (!d.open) d.showModal();
     if (onmount) onmount(d);
@@ -4278,6 +4282,7 @@
           /* single-class auto-open then takes the landing: on success it points
              #/dashboard itself; on failure its honest dialog shows over the
              working chooser (never a blank screen, never a dead end) */
+          if (!alive()) return;
           if (SPR_LOGIN_AUTO_CLASS) { const cid0 = SPR_LOGIN_AUTO_CLASS; SPR_LOGIN_AUTO_CLASS = null; openClass(cid0); }
           if (!alive()) return;
           toast('Welcome back, ' + res.user.name); maybeJoin();
