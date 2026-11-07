@@ -11,6 +11,12 @@ const appHtmlPath = ['../app/index.html', '../dist/app/index.html']
   .map((rel) => path.join(__dirname, rel)).find((p) => fs.existsSync(p));
 if (!appHtmlPath) { console.log('FAIL: no app build'); process.exit(1); }
 const html0 = fs.readFileSync(appHtmlPath, 'utf8');
+/* the REAL round9 build (commit a49a233, build 1f6a33a87c) for section M: a
+   genuine pre-round10 device. Regenerate with:
+     git show round9:app/index.html | gzip -9 > tests/fixtures/app-round9.html.gz */
+let htmlR9 = '';
+try { htmlR9 = require('zlib').gunzipSync(fs.readFileSync(path.join(__dirname, 'fixtures', 'app-round9.html.gz'))).toString('utf8'); }
+catch (eR9) { htmlR9 = ''; }
 
 let ok = 0, bad = 0;
 function check(cond, msg) { if (cond) { ok++; console.log('  ok: ' + msg); } else { bad++; console.log('  FAIL: ' + msg); } }
@@ -42,13 +48,16 @@ function boot(pre, hash, opts) {
       'if(!' + (ctl === null ? 'true' : 'false') + '){return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(' + (ctl || 'null') + ')},text:function(){return Promise.resolve(' + (ctl ? JSON.stringify(ctl) : '""') + ')}});}' +
       'return Promise.resolve({ok:false,status:404,json:function(){return Promise.resolve(null)},text:function(){return Promise.resolve("")}});') +
     ' }' +
+    ' if(url.indexOf("/rpc/spr_channel_write")!==-1){return Promise.resolve().then(function(){var b=JSON.parse(oo.body);window.__SB[b.p_id]={id:b.p_id,pushed_by:b.p_pushed_by||null,pushed_at:b.p_pushed_at,share_name:b.p_share_name||null,payload:b.p_payload};return {ok:true,status:200,json:function(){return Promise.resolve({ok:true})},text:function(){return Promise.resolve("true")}};});}' +
+    ' if(url.indexOf("/rpc/")!==-1){return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve({ok:true})},text:function(){return Promise.resolve("true")}});}' +
     ' var i=url.indexOf("/rest/v1/spr_channels");' +
     ' if(i!==-1){var q=url.indexOf("id=eq.",i);var ch=q===-1?null:url.slice(q+6,url.indexOf("&",q));var SB=window.__SB;' +
     '  if(oo.method==="POST"){return Promise.resolve().then(function(){var b=JSON.parse(oo.body);if(SB[b.id])return {ok:false,status:409,json:function(){return Promise.resolve({})}};SB[b.id]={id:b.id,pushed_by:b.pushed_by||null,pushed_at:b.pushed_at,payload:b.payload};return {ok:true,status:201,json:function(){return Promise.resolve({})}};});}' +
     '  if(oo.method==="PATCH"){return Promise.resolve().then(function(){if(!SB[ch])return {ok:false,status:404,json:function(){return Promise.resolve({})}};var p=JSON.parse(oo.body);Object.keys(p).forEach(function(k){SB[ch][k]=p[k]});return {ok:true,status:204,json:function(){return Promise.resolve({})}};});}' +
     '  return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(ch&&SB[ch]?[SB[ch]]:[])},text:function(){return Promise.resolve("[]")}});}' +
     ' return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve([])},text:function(){return Promise.resolve("[]")}});};';
-  const html = html0.slice(0, html0.lastIndexOf('</body>')) + '<script>' + (pre || '') + fetchSrc + '</script>' + html0.slice(html0.lastIndexOf('</body>'));
+  const base = opts.html || html0;
+  const html = base.slice(0, base.lastIndexOf('</body>')) + '<script>' + (pre || '') + fetchSrc + '</script>' + base.slice(base.lastIndexOf('</body>'));
   const dom = new JSDOM(html, {
     url: 'http://localhost/app/index.html' + (hash || ''),
     runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc, storageQuota: 30000000,
@@ -80,15 +89,17 @@ function setVal(B, el, v) { if (!el) return; el.value = v; el.dispatchEvent(new 
 function dlgEl(B, sel) { const dlg = B.d.getElementById('dlg'); return (dlg && dlg.open) ? dlg.querySelector(sel) : null; }
 function dlgOpen(B) { const dlg = B.d.getElementById('dlg'); return !!(dlg && dlg.open); }
 async function ackGate(B) {
+  /* boot gates (round10 notice AND the round9 privacy gate) share the shape:
+     a #notice-read checkbox enabling an ack button - tick, wait, click */
   for (let i = 0; i < 8; i++) {
-    if (!dlgOpen(B)) return;
+    if (!dlgOpen(B)) { await sleep(300); if (!dlgOpen(B)) return; continue; }
     const dlg2 = B.d.getElementById('dlg');
-    const b = dlg2.querySelector('[data-action="privacy-gate-ack"]');
+    const b = dlg2.querySelector('[data-action="privacy-gate-ack"], [data-action="notice-ack"], #notice-ack-btn');
     if (!b) return;
     const cb = dlg2.querySelector('#notice-read');
-    if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); await sleep(200); }
+    if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new B.w.Event('change', { bubbles: true })); await sleep(250); }
     if (b.disabled) { await sleep(250); continue; }
-    click(B, b); await sleep(350);
+    click(B, b); await sleep(400);
   }
 }
 /* replay another window's spr-* localStorage as a pre-script (cross-window seed) */
@@ -101,7 +112,9 @@ function seedFrom(B, mutate) {
       js += 'try{localStorage.setItem(' + JSON.stringify(k) + ',' + JSON.stringify(B.w.localStorage.getItem(k)) + ')}catch(e){}';
     }
   }
-  return 'try{var a=JSON.parse(localStorage.getItem("spr-auth-v1")||"{}");' + patch + ';localStorage.setItem("spr-auth-v1",JSON.stringify(a))}catch(e){};' + js;
+  /* the replay FIRST, the mutation AFTER - the replay would otherwise
+     overwrite the mutated spr-auth-v1 with the source window's copy */
+  return js + 'try{var a=JSON.parse(localStorage.getItem("spr-auth-v1")||"{}");' + patch + ';localStorage.setItem("spr-auth-v1",JSON.stringify(a))}catch(e){};';
 }
 async function firstRunOwner(B, user, pw, master) {
   await sleep(700);
@@ -572,45 +585,53 @@ async function runM() {
   const sbA = A.sbSync();
   const row = Object.keys(sbA)[0];
   check(!!row && !!sbA[row].payload, 'owner device pushed a cloud copy (fake Supabase)');
+  /* sbSync hands back the LIVE shared store (that IS the cloud here): freeze
+     A's timestamp now, or C's later push mutates it under us */
+  const aPushedAt = (sbA[row] || {}).pushed_at || '';
   const pubB64u = (auth(A).ownerSeal || {}).pub;
 
-  /* C = a PAIRED pre-round10 device of the SAME channel (A's storage seeded),
-     surgically returned to its old shape: msk as plain admin + stale tombstone */
+  /* C = a genuine PRE-ROUND10 DEVICE: the REAL round9 build (no round10
+     guards), booted with A's storage, msk demoted to plain admin + a stale
+     tombstone - exactly what an old phone still holding the channel would
+     push. Its sign-in tail merges + seals with the shared sync key, and its
+     round9 merge has no owner rules: the row it publishes IS the hostile
+     copy (msk:admin + gone[msk]). The current app cannot produce this row
+     itself (its push path filters owner tombstones and forces the owner
+     role) - which is the point. */
+  check(!!htmlR9, 'round9 build available as the hostile device (fixtures/app-round9.html.gz)');
   const seedA = seedFrom(A, function (a) {
     const m = a.users.find(function (u) { return String(u.username).toLowerCase() === 'msk'; });
     if (m) m.role = 'admin';
     a.session = null;
   });
-  const C = boot(DLG_POLY + CHART_STUB + seedA + 'try{localStorage.setItem("spr-ds-gone-v1",JSON.stringify(["msk"]))}catch(e){}', '', { sb: sbA });
-  /* sign in as msk (login wrap travelled with the seed) - ensureOwner at boot
-     would have re-promoted msk, so demote AGAIN post-boot, then push */
-  {
-    const a = auth(C);
-    const m = a.users.find((u) => String(u.username).toLowerCase() === 'msk');
-    if (m) m.role = 'admin';
-    C.w.localStorage.setItem('spr-auth-v1', JSON.stringify(a));
-  }
+  /* arm the old device's pending push (round9 re-arms it 2.5 s after boot and
+     retries every 4 s until someone is signed in - the same behaviour as a
+     phone that made a change offline and came back online) */
+  const armPending = 'try{var _c=JSON.parse(localStorage.getItem("spr-devicesync-v1")||"{}");_c.pendingPush=true;localStorage.setItem("spr-devicesync-v1",JSON.stringify(_c))}catch(e){}';
+  const C = boot(DLG_POLY + CHART_STUB + seedA + 'try{localStorage.setItem("spr-ds-gone-v1",JSON.stringify(["msk"]))}catch(e){}' + armPending, '', { sb: sbA, html: htmlR9 });
   await loginAs(C, 'msk', PW);
   await waitFor(() => !C.d.body.classList.contains('auth-gate'), 25000);
   await waitFor(() => (C.w.__FETCHES || []).some(function (f) { return f.indexOf('POST') === 0 || f.indexOf('PATCH') === 0; }), 30000);
   await sleep(6000);
   const sbC = C.sbSync();
-  const rowC = row;   /* the paired device pushes the SAME channel row */
-  const hostile = rowC && sbC[rowC] && sbC[rowC].payload && (sbC[rowC].pushed_at || '') > (sbA[row].pushed_at || '');
-  check(!!hostile, 'hostile copy pushed: msk downgraded + tombstoned, newer than the owner copy');
+  const hostile = row && sbC[row] && sbC[row].payload && (sbC[row].pushed_at || '') > aPushedAt;
+  check(!!hostile, 'hostile copy pushed by the round9 device: newer than the owner copy');
 
-  /* B = fresh device of the OWNER: sign in as msk -> installs the newest copy */
-  const B = boot(DLG_POLY + CHART_STUB, '', { sb: sbC });
-  await sleep(700); await ackGate(B);
-  await waitFor(() => B.d.getElementById('loginUser'), 15000);
-  setVal(B, B.d.getElementById('loginUser'), 'msk');
-  setVal(B, B.d.getElementById('loginPass'), PW);
-  click(B, B.d.querySelector('[data-action="do-login"]'));
-  await waitFor(() => !B.d.body.classList.contains('auth-gate') || /Invalid|password/i.test(B.d.body.textContent), 30000);
+  /* B = the owner's OTHER round10 device, still holding the owner copy: its
+     sign-in pull-check installs the NEWER hostile row - the round10 merge
+     must refuse both the tombstone and the downgrade */
+  const seedB = seedFrom(A, function (a) { a.session = null; });
+  const B = boot(DLG_POLY + CHART_STUB + seedB, '', { sb: sbC });
+  await loginAs(B, 'msk', PW);
+  await waitFor(() => !B.d.body.classList.contains('auth-gate'), 25000);
+  await sleep(3000);   /* let the sign-in pull-check + install settle */
   const bMsk = byName(B, 'msk');
   check(!!bMsk, 'install from the hostile copy: msk was NOT removed by the tombstone');
   if (bMsk) check(bMsk.role === 'owner', 'msk lands as owner (never downgraded), got ' + bMsk.role);
-  shut(B); shut(C);
+  let goneB = [];
+  try { goneB = JSON.parse(B.w.localStorage.getItem('spr-ds-gone-v1') || '[]'); } catch (eG) {}
+  check(goneB.indexOf('msk') === -1, 'the owner tombstone was lifted from the deletion list');
+  shut(B); shut(C); shut(A);
   return pubB64u;
 }
 
