@@ -3,12 +3,12 @@
   "v": 1,
   "school": "Demo School",
   "username": "modemo",
-  "pub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEDMZXfOBcp-FGqUj5AZknJlUOwxNlYwfoCaBaxBK4LNamrcuyvYLX2AR791weIRx6667O-q1q0Y3-7hBh_PsI5A",
+  "pub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEA_jV4Tf8uuDNF5VYyKEc6JA_aA3tp43IoATssjNB36aVR9fErMrMcVuQ3Ev7vqfaPW-XbxddqopYnvih0juDeg",
   "seal": {
     "v": 2,
     "it": 600000,
-    "salt": "62adnb9uTHHf01ER8LmBPg",
-    "iv": "-6RpfNgIJbsxTgZ-",
-    "ct": "0OB8td82yWqJfVnJ1tDTXrqBQVQQTxvEL-fa9LF0XaRmVabo-kuqKSAkKruJijE6UHHEJv4jaod-N0fdBhlRcJxs1S91px-Yb4Y3Pue61ZzAqwGhHkCROFgenySeZKUujQtcxyzq9SD7poVIlc7NcHKa5xo7B9wg0XvqtXUYAtOiLS7SVbawRdyIo8-venxhtCgVWMV0sLcTPs2SPNZUKEyvILQcclPgXrvMBKHDrqvUv9u1Z076eiJxEQFASk8sLy3-BVSIK1NBNOxDlGPLEmonuDh06Df7xoleCdZAZ7olbkHOvzGO6FR5p6BHCbu6ke6X6H7pm9HwY6sNNSU-ZlHTksGo"
+    "salt": "9PnoRhBuTnO6qUf1noSEWQ",
+    "iv": "WQc-eUWff57--lYh",
+    "ct": "YrhojHo8iPbfhZXUMxk0zBlnTeGk9I9MgCInDi0hcxVRcU0OJmtlfOTsSBxcwM5H-IIgMiYCUx0T_f3u6POoydSyeAbdlTfNdlKUj2QY33Q1H3QE7VCTq21fo8pvu4M5EhoaVImY44FSYlBgWAy-Z29JYuS5YrIeDBqPvWpnzsPDM3e3jckB16xZseSjALn6c-bMzobbpqDZ0MaOqbGJTQ31wv5CIn2MDdHOPHRWtGtGSnV4y2Bw-Wis5y8Ij8kfc26jiRrFH0rBuK89lP57rl40hdMFGKZEc9AHE3UrFsPTGHVTxu85klU5ibRmenQ-k50AD2dwFFtx5T10tQG72YfGz9G6"
   }
 }
