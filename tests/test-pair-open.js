@@ -91,6 +91,8 @@ function boot(pre, hash) {
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
   w.__CRYPTO_OK = true;
   if (!w.TextEncoder) w.TextEncoder = TextEncoder;
+  /* jsdom ships no URL.createObjectURL (owner-kit/backup downloads need it) */
+  if (!w.URL.createObjectURL) w.URL.createObjectURL = function () { return 'blob:stub-' + Math.random().toString(36).slice(2); };
   if (!w.TextDecoder) w.TextDecoder = TextDecoder;
   /* keep only the last few windows alive (stale jsdom timers stall
      hashchange delivery for later windows) */

@@ -107,6 +107,8 @@ function boot(preExtra) {
   w.__logs = logs;
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle, configurable: true }); } catch (e) {}
   if (!w.TextEncoder) { w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder; }
+  /* jsdom ships no URL.createObjectURL (owner-kit/backup downloads need it) */
+  if (!w.URL.createObjectURL) w.URL.createObjectURL = function () { return 'blob:stub-' + Math.random().toString(36).slice(2); };
   w.fetch = (u, o) => fetch(String(u).replace('http://localhost', 'http://127.0.0.1:' + MOCK_PORT), o);   /* real HTTP to the mock */
   return { w, d: w.document };
 }
@@ -405,10 +407,11 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(!dl.querySelector('#recoverySaved'), 'the self-tick checkbox is gone');
     const mpw5 = dl.querySelector('#mrPw');
     if (mpw5) { mpw5.value = 'Master-K3y!9x'; mpw5.dispatchEvent(new A.w.Event('input', { bubbles: true })); }
-    click(A, dl.querySelector('[data-action="recovery-master"]')); await sleep(3500);
+    const kb5pre = dl.querySelector('[data-action="owner-kit-dl"]');
+    check(kb5pre && kb5pre.disabled, 'kit button stays disabled until the master password is set');
+    click(A, dl.querySelector('[data-action="recovery-master"]'));
+    for (let t5 = 0; t5 < 40; t5++) { await sleep(300); const kb5x = dl.querySelector('[data-action="owner-kit-dl"]'); if (kb5x && !kb5x.disabled) break; }
     const kb5b = dl.querySelector('[data-action="owner-kit-dl"]');
-    check(kb5b && kb5b.disabled, 'kit button stays disabled until the master password is set');
-    for (let t5 = 0; t5 < 40 && (!kb5b || kb5b.disabled); t5++) { await sleep(300); }
     check(kb5b && !kb5b.disabled, 'kit button enabled after the master password is set');
     click(A, kb5b); await sleep(400);
     check(ackBtn.disabled === false, 'Continue enables only after the kit download actually fired');

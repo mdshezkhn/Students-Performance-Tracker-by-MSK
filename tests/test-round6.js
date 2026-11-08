@@ -107,6 +107,8 @@ function boot(preExtra, urlExtra) {
   const w = dom.window;
   try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle, configurable: true }); } catch (e) {}
   if (!w.TextEncoder) { w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder; }
+  /* jsdom ships no URL.createObjectURL (owner-kit/backup downloads need it) */
+  if (!w.URL.createObjectURL) w.URL.createObjectURL = function () { return 'blob:stub-' + Math.random().toString(36).slice(2); };
   if (!w.fetch) w.fetch = fetch.bind(globalThis);   /* jsdom has no fetch; the mock runs on 127.0.0.1 */
   w.__logs = logs;
   return { w, d: w.document };

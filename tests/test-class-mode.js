@@ -499,7 +499,9 @@ const ADMIN = 'mo';
   {
     const log = (B.w.__fetchLog || []);
     const sb = log.filter((u) => /supabase\.co/.test(u));
-    ok(log.length === 0, 'ZERO network requests while sync is off (got: ' + log.length + ': ' + log.slice(0, 2).join(' | ').slice(0, 160) + ')');
+    /* round10+: the spec-mandated control.json poll (own-origin, static, cache:no-store) is not cloud traffic */
+    const net = log.filter((u) => !/(^|\/|https?:\/\/[^/]+\/)control\.json$/.test(u));
+    ok(net.length === 0, 'ZERO network requests while sync is off (control.json poll excluded; got: ' + net.length + ': ' + net.slice(0, 2).join(' | ').slice(0, 160) + ')');
   }
 
   console.log(fails ? '\n' + fails + ' FAILURES' : '\nALL CLASS-MODE CHECKS PASSED');
