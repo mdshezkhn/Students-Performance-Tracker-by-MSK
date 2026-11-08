@@ -261,6 +261,10 @@ const navIds = (B) => Array.from(B.d.querySelectorAll('.nav a')).map((a) => a.da
   /* the login tail auto-opens the single class ASYNC — wait for it to finish
      before navigating, or its completion re-routes over the navigation */
   await waitFor(() => M.w.location.hash.indexOf('#/dashboard') === 0, 25000);   /* auto-open settles first */
+  /* the dashboard hash can appear BEFORE the async class-open finishes; on a fast
+     runner that leaves CLS null and Manage renders its no-class branch (no #content).
+     The "Saved …" page-head only exists once a class is truly open — wait for THAT. */
+  await waitFor(() => /Saved/.test(((M.d.querySelector('.page-head') || {}).textContent || '')), 25000);
   M.w.location.hash = '#/manage';
   M.w.dispatchEvent(new M.w.Event('hashchange'));   /* same convention the W-section uses */
   await waitFor(() => ((M.d.getElementById('content') || {}).innerHTML || '').indexOf('Advanced') !== -1, 20000);
