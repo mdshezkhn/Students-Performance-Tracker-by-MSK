@@ -1,0 +1,14 @@
+{
+  "kit": 1,
+  "v": 1,
+  "school": "Demo School",
+  "username": "probetest",
+  "pub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEU8TEkoH7OWjctdr_Xpy8vXyvHBWSY_4Usx-zIJ_nONiUgMDPW648InmR5DYrWb9NPbxP6Up0L5tD7AN36U1kGA",
+  "seal": {
+    "v": 2,
+    "it": 600000,
+    "salt": "ePgX69mS3-YPCkYX5b3ehQ",
+    "iv": "FRWulvXSgFwePxWQ",
+    "ct": "AwN8J3p6FfN_jH4Py5zDWmvKbLVyd8ACKvohQT5alSMQoAF-FXnITHlewyoExtOFEFRYlRk8VC0MjqdqE7ym28xAzOlQjb3S5A9ZjCFypTE4ZFBS2II3LQydyva8P0su6b9A_f2myiGbcXpxJfzccoxPDmrQXWPCNFXyBZNePYpJPRsTxj1W4TXCNrJNTR-54uhrBXRleEmXXHqj9YXSvMXDKBVcu9zBdapA5dLmkB7dmBPrmnLklxpcdJ6DX2NDVEPqHDBaqLqv6PmNoqXGp4z01JtU4TaN5pmtGFEhICM2oVrXmA8h4sJCwhn6AEpCjeMh7BUiK6FFApboYjQhHui43opZ"
+  }
+}

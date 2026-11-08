@@ -850,7 +850,11 @@
       '<div style="margin-top:14px;border-top:1px solid rgba(127,127,127,.25);padding-top:10px">' +
         '<button class="uc-out" data-action="start-fresh" style="color:#8c3a2b;border-color:#d8b0a6">Start fresh on this device</button>' +
         '<span class="small muted" style="margin-left:8px">Wipes SPR from this browser and starts over: a backup download is offered first.</span></div>' +
-      '</details>';
+      '</details>' +
+      /* round10 demo fix: the owner kit + signed-control cards lived only on the
+         legacy (no-class) Manage panel — in class mode (any class open) the owner
+         could never reach the pull-the-plug. Render them here for the owner. */
+      ((currentUser() || {}).role === 'owner' ? ownerKitCard() + ownerControlsCard() : '');
   }
 
   /* ---- support teacher proposes an observation change ---- */
@@ -4720,7 +4724,12 @@
         DB = seedFromWindow();
         if (cryptoOK() && SESSION.dk) { await persistNow(true); }
         else { try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); } catch (e) {} }
-        location.reload();
+        /* re-render in place instead of location.reload(): a reload restores the
+           session from sessionStorage WITHOUT the in-memory password, which would
+           downgrade the rest of the first-run journey (roster import, account
+           creation) to "sign in again". SESSION stays intact here. */
+        buildShell(); location.hash = '#/dashboard'; route();
+        toast('Sample class loaded.');
       })();
       return;
     }
