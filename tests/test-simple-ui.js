@@ -78,7 +78,11 @@ function boot(pre, hash) {
       try { Object.defineProperty(w.crypto, 'subtle', { value: webcrypto.subtle }); } catch (e) {}
       w.__CRYPTO_OK = true;
       w.__FETCHES = [];
-      w.fetch = function (url) { w.__FETCHES.push(String(url)); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]') }); };
+      w.fetch = function (url) { const u = String(url); if (u.indexOf('control.json') === -1) w.__FETCHES.push(u); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]), text: () => Promise.resolve('[]') }); };
+  /* round10: every device polls the own-origin static control.json (signed
+     owner control record) - a GET of a public file that sends no data. The
+     zero-requests checks below guard "no DATA leaves to the cloud", so the
+     control poll is filtered out at capture time */
       w.URL.createObjectURL = w.URL.createObjectURL || function () { return 'blob:test'; };
       const RealBlob = w.Blob;
       w.Blob = function (parts, opts) { if (parts && parts.length && typeof parts[0] === 'string') w.__LAST_BLOB_TEXT = parts[0]; return new RealBlob(parts, opts); };

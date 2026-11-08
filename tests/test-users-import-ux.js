@@ -74,6 +74,10 @@ async function firstRunAdmin(B, user, pw) {
   setVal(B, B.d.getElementById('mrPw'), 'master-pw-9round');
   const rm = B.d.querySelector('[data-action="recovery-master"]');
   if (rm) click(B, rm);
+  /* round10: the owner must also DOWNLOAD the owner recovery kit before Continue */
+  await waitFor(() => { const k = B.d.querySelector('[data-action="owner-kit-dl"]'); return k && !k.disabled; }, 15000);
+  const kb = B.d.querySelector('[data-action="owner-kit-dl"]');
+  if (kb) click(B, kb);
   await waitFor(() => { const g = B.d.getElementById('recoveryGo'); return g && !g.disabled; }, 15000);
   const ra = B.d.querySelector('[data-action="recovery-ack"]');
   if (ra) click(B, ra);
@@ -150,7 +154,7 @@ const OWNER = [
   A.w.location.hash = '#/users'; await sleep(700);
   giveFile(A, '#file-roster', OWNER, 'roster.csv'); await sleep(900);
   let dlg = A.d.getElementById('dlg');
-  check(dlg && dlg.open && /9 account\(s\), 13 class\(es\)/.test(dlg.textContent), 'preview shows 9 accounts, 13 classes');
+  check(dlg && dlg.open && /8 account\(s\), 13 class\(es\)/.test(dlg.textContent), 'preview shows 8 accounts + 13 classes (owner row skipped)');
   const pk = Array.from(dlg.querySelectorAll('select[data-rolepick]'));
   check(pk.length === 6, 'exactly 6 pair decisions, one per partnership (got ' + pk.length + ')');
   const go = dlg.querySelector('[data-x="1"]');

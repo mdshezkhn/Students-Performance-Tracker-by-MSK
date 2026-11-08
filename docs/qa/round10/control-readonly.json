@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "counter": 1,
+  "issued_at": 1794023794976,
+  "mode": "readonly",
+  "message": "Gate check: read-only for one minute",
+  "sig": "XPDHzRuCkjP_t0MVU0_bn3kOVGACAB75v51EuDuo0BvQJBS9ZWZVSU5yPWm5DEvt4YOxu5Ow_P1ZCmA7iYgbkg"
+}
