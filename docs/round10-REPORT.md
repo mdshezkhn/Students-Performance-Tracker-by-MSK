@@ -42,7 +42,52 @@ read before go-live (REVIEW-NOTES).
 
 ## Suite last lines
 
-<!-- SUITE-LINES -->
+Full chain (`npm test`, head `7fcf39f`, 2026-11-08, this machine — log `/tmp/chain_r10fix4.log`):
+
+```
+completeness: 62 passed, 0 failed
+calc-regression: 329 passed, 0 failed   (grading untouched)
+excel-import: 24 passed, 0 failed
+classstore: 145 passed, 0 failed
+HELP-SECURITY: 38 ok, 0 FAIL
+DATA-SAFETY: 36 ok, 0 FAIL
+NOTICES: 28 ok, 0 FAIL
+ROUND5: 45 ok, 0 FAIL
+ROUND6: 32 ok, 0 FAIL
+ROUND7: 38 ok, 0 FAIL
+LOAD: 6 ok, 0 FAIL
+SIMPLE-UI PASSED (44)
+ALL CLASS-MODE CHECKS PASSED
+ALL DEVICE-SYNC CHECKS PASSED
+ESCAPE-CHECK PASSED (20)
+PAIR-OPEN PASSED (9)
+LIVE-RETIRE: 13 ok, 0 FAIL
+RECOVERY-GONE: 9 ok, 0 FAIL
+USERS-SHEET: 51 ok, 0 FAIL
+ROUND-TRIP: 6 ok, 0 FAIL
+USERS-IMPORT-UX: 13 ok, 0 FAIL
+OWNER-MASTER: 80 ok, 0 FAIL (217s)
+```
+
+## Endurance + gate (this machine, 2 cores, sequential)
+
+- Owner suite ×10 consecutive: **10 × "80 ok, 0 FAIL"** (marathon attempt 2, 2026-11-08, `/tmp/marathon10b.log`).
+- Device-sync ×30 consecutive: **30 × exit=0** (same marathon; Windows has no `taskset`, runs were sequential).
+- Real-Chromium gate `qa/round10_gate.py`: **16 ok, 0 FAIL** — owner first-run (forced kit download), Users sheet (protected Owner row), Owner controls card, two-browser readonly banner, two-browser locked sign-in, normal lift, 390 px owner row; 0 page errors; screenshots + signed records in `docs/qa/round10/`.
+- Build byte-identity: `source/build2.py` output committed unchanged at every push (`spr-app-shell-7b29c58ad5` on the final head); app artifacts identical from `e3fe53e` through `7fcf39f` (test-only commits after `e3fe53e`), so the marathon endurance evidence covers the shipped build bit-for-bit.
+
+## Fresh-clone gate (origin/round10)
+
+<!-- FC-LINES: filled when the fresh-clone chain completes -->
+
+## Real bugs found by the endurance gate (fixed, disclosed)
+
+1. Cloud adoption re-keyed the channel to the signing teacher (every "find the admin" lookup matched `role === 'admin'`, which no longer matches the promoted owner) — 8 sites + classstore patched to accept owner.
+2. Owner merge rule could strip a fresher cloud `login` from a stale pre-round10 device (owner lockout there) — replaced with field-level merge (role/keyring protected, login newest-wins).
+3. `classesFor` hid all classes from the owner on the chooser path.
+4. Owner-kit download could crash closed windows (`URL.createObjectURL` teardown race) — hardened.
+
+Harness migrations (test-only, 6 suites: help-security, notices, device-sync, round5/6/7 + class-mode/pair-open checks): the round10 forced owner-kit first-run needs a `URL.createObjectURL` stub jsdom does not ship; two stale round9 expectations (v1 notice line; "disabled 3.5 s later" timing) rewritten; the zero-network privacy checks now exclude same-origin `control.json` polls (spec-mandated).
 
 ## Not tested here
 
