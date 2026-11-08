@@ -116,7 +116,9 @@ async function loginAs(B, u, p) {
   await sleep(300);
   await loginAs(C2, 'Mo', PW);
   await waitFor(() => C2.w.location.hash.indexOf('#/dashboard') === 0, 15000);
-  await sleep(400);
+  // round10 login does more async work (notice v2 + owner seal) — the cloud-copy line lands
+  // after the sync-status pass, so wait for it instead of assuming a fixed delay (CI flake fix).
+  await waitFor(() => /Cloud copy/.test((C2.d.querySelector('.page-head') || {}).textContent || ''), 10000);
   const head3 = (C2.d.querySelector('.page-head') || {}).textContent || '';
   check(/Cloud copy/.test(head3), 'header adds "Cloud copy: <time>" when device sync is on (got: ' + head3.trim().slice(0, 110) + ')');
 
