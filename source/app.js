@@ -2776,9 +2776,20 @@
         '<p class="small muted" style="margin-top:8px">Accounts on this device. A teacher sees exactly the classes assigned to them; the partner column is derived from the class assignments.</p>';
     }
     const host = $('#app');
+    /* demo fix (2026-11-11): the admin checks sync state on the Users page
+       before demoing — one honest line, same data the Manage card shows */
+    const dsC = dsCfg();
+    const dsStat = '<div id="dsSyncStatus" class="panel no-print" style="margin:0 0 4px;padding:10px 14px;font-size:13.5px">' +
+      ((dsC && dsC.on)
+        ? '<b>Device sync: ON</b> \u2014 sign-ins created here also work on other devices. Last cloud save: ' +
+          (dsC.lastPush ? new Date(dsC.lastPush).toLocaleString() : 'not saved yet') +
+          (dsC.lastResult === 'fail' ? ' \u2014 <span style="color:#b45309">last save failed; your data on this device is safe. Details in Manage &amp; setup.</span>' : '')
+        : '<b>Device sync: OFF</b> \u2014 accounts stay on this device only. To let a sign-in work on another device, turn it on in Manage &amp; setup (Device sync).') +
+      '</div>';
     host.innerHTML = '<div class="app"><main class="page" style="max-width:1080px;margin:0 auto;width:100%">' +
       '<header class="page-head"><div><h1>Users</h1><div class="sub">who can sign in on this device, and which classes they see</div></div>' +
       '<div class="actions"><button class="btn" data-action="go-back">Back</button></div></header>' +
+      dsStat +
       '<div class="tabs" style="margin:12px 0">' + tabBtn('sheet', 'Sheet') + tabBtn('byclass', 'By class') + '</div>' + body +
       '<input type="file" id="file-roster" accept=".csv,text/csv" hidden></main></div>';
     window.scrollTo(0, 0);
@@ -4287,7 +4298,27 @@
         const alive = function () { try { return !!(document && document.body); } catch (eA) { return false; } };
         try {
           let res = await doLoginFull(u, p);
-          if (res.error) { if (res.error !== '__shown__') { const eEl = alive() ? $('#loginErr') : null; if (eEl) eEl.textContent = res.error; } return; }
+          if (res.error) {
+            if (res.error !== '__shown__') {
+              const eEl = alive() ? $('#loginErr') : null;
+              if (eEl) {
+                eEl.textContent = res.error;
+                /* demo fix (2026-11-11): a device with no accounts gets a one-tap
+                   route to the cloud copy instead of a dead end that only names
+                   a link further down the card */
+                if (!document.getElementById('loginOdGo') && getAuth().users.length === 0 && !readV2() && cryptoOK()) {
+                  const go = document.createElement('button');
+                  go.type = 'button'; go.id = 'loginOdGo';
+                  go.className = 'btn primary';
+                  go.style.cssText = 'width:100%;margin-top:10px';
+                  go.setAttribute('data-action', 'login-other-device');
+                  go.textContent = 'I use SPR on another device \u2014 pull my cloud copy';
+                  eEl.insertAdjacentElement('afterend', go);
+                }
+              }
+            }
+            return;
+          }
           if (!alive()) return;
           closeDlg(); document.body.classList.remove('auth-gate'); buildShell(); route();
           /* single-class auto-open then takes the landing: on success it points
@@ -6722,9 +6753,17 @@
           try {
             let hit = null;
             try { hit = await dsAccountLookup(un, pw); }
-            catch (e2) { throw new Error('cannot reach the cloud (' + e2.message + '): check your internet'); }
+            catch (e2) {
+              /* demo fix (2026-11-11): school networks can block the SPR cloud;
+                 the teacher must never see raw fetch jargon — say what happened
+                 and what to do next */
+              if (/cannot reach the cloud copy/.test(String(e2.message || ''))) {
+                throw new Error('The SPR cloud could not be reached from this network. Nothing is wrong with SPR or your data. Try again on a network where it loads, or ask the administrator for a backup file.');
+              }
+              throw new Error('cannot reach the cloud (' + e2.message + '): check your internet');
+            }
             if (hit === false) { $('#odErr').textContent = 'Wrong password for that account.'; return; }
-            if (!hit) { $('#odErr').textContent = 'No cloud copy found for that account (device sync may not be set up). First-run setup or a backup file also work.'; return; }
+            if (!hit) { $('#odErr').textContent = 'No cloud copy exists for "' + un + '" yet. To make sign-in work here, the administrator turns on Device sync on the main SPR device (Manage & setup \u2192 Device sync \u2192 Turn on) and signs in once. Until then: set this device up fresh, or restore a backup file (Manage & setup \u2192 Backups).'; return; }
             const okGo = await confirmDlg('Open the cloud copy here?',
               'An encrypted copy saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b>' + (hit.by ? ' by <b>' + U.esc(String(hit.by)) + '</b>' : '') + ' was found.' +
               (readV2() ? '<br><br>This device\u2019s current data is kept as a safety copy you can restore (Manage &rarr; Backups).' : ''),
