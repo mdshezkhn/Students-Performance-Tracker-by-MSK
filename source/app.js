@@ -2999,7 +2999,7 @@
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
-            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only' + ((u.role === 'admin' || u.role === 'owner') ? '' : ': reset password to enable') + '</span>') + '</td>' +
+            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only</span>' + ((u.role === 'admin' || u.role === 'owner') ? '' : ' <button class="btn sm primary" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '" title="Set their password again so they can sign in from any device">Enable anywhere</button>')) + '</td>' +
             '<td>' + (selfNow || u.role === 'owner' ? (u.role === 'owner' ? '<span class="small muted">Owner - protected</span>' : '') :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
@@ -4086,7 +4086,7 @@
         if (dsCanPush()) scheduleSyncPush(0, 'account event: sign-in created');   /* account event: push promptly, not on the edit debounce */
         toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + '): works on any system they sign in from'
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
-             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ')');
+             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only: turn on Device sync (Manage & setup), then press Enable anywhere on their row');
         if (location.hash === '#/manage') renderManage();
         else if (location.hash === '#/users') renderUsers();   /* the new row appears immediately on the Users tab */
         } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Create sign-in'; } }
@@ -4156,7 +4156,7 @@
         closeDlg();
         toast((ptr === 'ok' ? 'Password updated for ' + un + ': sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
-             : 'Password updated for ' + un) + rewrapFail, !!rewrapFail);
+             : 'Password updated for ' + un + ' on this device only: turn on Device sync (Manage & setup) and the cloud must be reachable, then try Enable anywhere again') + rewrapFail, !!rewrapFail);
         if (location.hash === '#/manage') renderManage();
         } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Save password'; } }
       })();
@@ -6620,6 +6620,15 @@
        so a legacy channel migrates home and the owner's password wrap lands on
        the row (a fresh device cannot bootstrap until the wrap exists) */
     if (SESSION.pw && dsCanPush()) scheduleSyncPush(4000, 'sign-in repair');
+    /* self-heal: a teacher/manager who signs in on THIS (paired) device while their
+       cloud pointer is missing gets it written now: the typed password is the only
+       moment it can be sealed. Fire-and-forget; never blocks or fails the sign-in. */
+    try {
+      const hc = dsCfg();
+      if (!installedFromCloud && hc && hc.on && hc.adoptedAcct === true && user.role !== 'owner' && user.role !== 'admin' && !(hc.pointers && hc.pointers[user.username])) {
+        setTimeout(function () { dsWritePointer(user.username, password).then(function (r) { if (r === 'ok' && location.hash === '#/manage') renderManage(); }, function () {}); }, 2500);
+      }
+    } catch (e) { /* pointer repair is best-effort */ }
     if (installedFromCloud) toast('Welcome back: your data arrived from the cloud');
     return { user: auth.session };
   }
@@ -6715,7 +6724,7 @@
             try { hit = await dsAccountLookup(un, pw); }
             catch (e2) { throw new Error('cannot reach the cloud (' + e2.message + '): check your internet'); }
             if (hit === false) { $('#odErr').textContent = 'Wrong password for that account.'; return; }
-            if (!hit) { $('#odErr').textContent = 'No cloud copy found for that account (device sync may not be set up). First-run setup or a backup file also work.'; return; }
+            if (!hit) { $('#odErr').textContent = 'No cloud copy found for "' + un + '". Ask the administrator to turn on Device sync and press Enable anywhere on your row (Manage & setup), then try again. A backup file also works.'; return; }
             const okGo = await confirmDlg('Open the cloud copy here?',
               'An encrypted copy saved <b>' + new Date(hit.at || Date.now()).toLocaleString() + '</b>' + (hit.by ? ' by <b>' + U.esc(String(hit.by)) + '</b>' : '') + ' was found.' +
               (readV2() ? '<br><br>This device\u2019s current data is kept as a safety copy you can restore (Manage &rarr; Backups).' : ''),
