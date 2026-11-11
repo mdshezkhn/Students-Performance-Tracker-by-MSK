@@ -4,6 +4,7 @@
    ========================================================================= */
 (function () {
   'use strict';
+  /* cache-bust 2026-11-11: notice v2.1 wording travels to cached installs (sw hash covers app.js, notice injects later) */
   const C = window.Calc, U = window.Util, EB = window.ExcelBridge, XLSX = window.XLSX, A = window.Analysis;
   /* teardown-safe: async tails may call $ after the page is gone (closed tab,
      torn-down test window) - returning null beats crashing the tail */
