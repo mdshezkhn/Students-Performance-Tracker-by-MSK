@@ -6057,6 +6057,25 @@
   /* install a verified cloud copy on this device and join its sync channel */
   function dsInstallFrom(hit, owner) {
     try {
+      /* a device that was first-run set up on its own (someone pressed "Set up
+         this browser") holds a LOCAL owner who is not the school's owner. The
+         cloud copy is the school's truth: that local island must not keep owner
+         rights over it, or a manager (or anyone) who set up their own browser
+         first would arrive as Owner/Admin of the school data. The previous
+         data is already kept as a safety copy by every caller. */
+      try {
+        const cloudOwner = ((hit.obj.users || []).find(function (u) { return u && u.role === 'owner'; }) || {}).username || owner || '';
+        const a0 = getAuth();
+        const localOwner = (a0.users.find(function (u) { return u.role === 'owner'; }) || {}).username || '';
+        if (cloudOwner && localOwner && String(cloudOwner).toLowerCase() !== String(localOwner).toLowerCase()) {
+          a0.users = a0.users.filter(function (u) {
+            return u.role !== 'owner' && u.role !== 'admin' &&
+              (hit.obj.users || []).some(function (c) { return c && String(c.username).toLowerCase() === String(u.username).toLowerCase(); });
+          });
+          a0.session = null;
+          saveAuth(a0);
+        }
+      } catch (eIsl) { /* never block an install on this clean-up */ }
       dsMergeAccounts(hit.obj, 'install', hit.obj.v2);
       try { localStorage.removeItem(LS_KEY); } catch (e2) {}
       if (hit.obj.v3 && hit.obj.v3.index) {   /* class workbooks travel here too: otherwise the device lands class-less */
@@ -6754,6 +6773,7 @@
           '<div class="login-field"><label for="suPass">Password: this sign-in is the admin</label><input type="password" id="suPass" autocomplete="new-password"></div>' +
           '<div class="login-field"><label for="suConf">Confirm password</label><input type="password" id="suConf" autocomplete="new-password"></div>' +
           '<div class="login-err" id="suErr" aria-live="assertive"></div>' +
+          '<p class="small" style="margin:8px 0 0;padding:8px 10px;border:1px solid #c9973b;border-radius:8px"><b>Administrator only.</b> This creates a brand-new, separate SPR on this browser and makes you its owner. If your school already uses SPR (you are a teacher, manager or principal), do <b>not</b> use this: go back and press <b>I use SPR on another device</b>.</p>' +
           '<button class="login-btn" data-action="first-run">Create sign-in</button>' +
           '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-signin">&larr; I already use SPR: sign in instead</button></div>' +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
