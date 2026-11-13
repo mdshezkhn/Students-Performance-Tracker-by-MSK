@@ -17,6 +17,7 @@ verified**.
 | C5 plaintext safety copies | **Fixed+Tested** | sealed with the session data key (AES-GCM) on write; old plaintext entries migrated on next stash; restore path reads sealed form; unsealable leftovers dropped with notice |
 | C6 anonymous channel enumeration | Partially (app side) | refusal stops new unarmed rows; deleting the 88 existing rows + running the arming SQL = **owner action** (checklist item 7/8) |
 | Backend API (P2) | **Implemented+Tested (staged)** | server/spr-server.mjs + schema.sql — scrypt password hashing, HttpOnly+SameSite sessions, CSRF, login rate-limit, per-route RBAC (FET/CET/admin/manager), school+class isolation, record-level sync with versions/idempotency/conflicts-return-both-sides, soft delete, since-pulls, append-only payload-free audit. RBAC 40/0, SYNC 26/0 on PGlite (synthetic data) |
+| SchoolSync client (browser side) | **Implemented+Tested (staged)** | source/schoolsync.js in the bundle; Settings → School server panel (admin, off by default); SCHOOLSYNC 22/0 against the real PGlite backend |
 | SPR import & audit (P3) | **Implemented+Tested** | source/spraudit.js engine (profile → checks A–E → CRITICAL/WARNING/INFO findings with cell refs); wizard in app.js: local-only parse, mapping preview, traffic-light results, CSV/PDF-ready report download, explicit "Import now" gate; SPRAUDIT 20/0 |
 | Teacher UX (P4) | Implemented (shipped in build) | dashboard button now "Import existing SPR" (primary); import flow plain-English, no jargon; FET/CET flows unchanged where already role-scoped (p1-classes work); full UX test = **Not yet verified** (needs the §12.6 tester pass) |
 | Calculations | **Unchanged+Tested** | calc-regression 329/0 after all changes; no thresholds touched |
@@ -44,10 +45,13 @@ migration per DATA-FLOW-INVENTORY.md §2. **Partially awaiting migration.**
 
 ## Honest gaps
 
-- Browser→backend wiring (login screen against spr-server, record push/pull
-  UI) is the remaining P2 front-end work; the API contract is stable and
-  tested, the app-side adapter is not written yet. This is the top of the
-  next work list.
+- Browser→backend wiring: DONE at the client level — source/schoolsync.js
+  (durable outbox, idempotent retries, conflict surfacing, auth/permission
+  loss handling) is in the shipped bundle behind an admin-only Settings
+  panel (School server, staging; OFF until a URL + sign-in). Tested against
+  the REAL backend: SCHOOLSYNC 22/0. What remains is mapping SPR's internal
+  cell model onto the backend record model (the adapter layer), i.e. the
+  data-shape translation, plus the full UX tester pass.
 - UX tester pass (§12.6) not performed.
 - No real deployment exists; all infra actions are owner actions.
 - The 88 legacy channel rows still sit in prod Supabase until the owner acts.

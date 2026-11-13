@@ -533,6 +533,17 @@ export async function createApp(opts = {}) {
           await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'membership.set', target: usr.username, class_id: cls.id, req_id: reqId, detail: { duty } });
           return ok(res, { ok: true });
         }
+        if (p === '/api/admin/memberships' && req.method === 'DELETE') {
+          const classId = String(u.searchParams.get('class_id') || '');
+          const userId = String(u.searchParams.get('user_id') || '');
+          const cls = (await store.query('select id from classes where id=$1 and school_id=$2', [classId, ctx.user.school_id]))[0];
+          if (!cls) return bad(res, 404, 'no such class');
+          const usr = (await store.query('select id, username from users where id=$1 and school_id=$2', [userId, ctx.user.school_id]))[0];
+          if (!usr) return bad(res, 404, 'no such user');
+          await store.query('delete from class_memberships where class_id=$1 and user_id=$2', [classId, userId]);
+          await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'membership.remove', target: usr.username, class_id: classId, req_id: reqId });
+          return ok(res, { ok: true });
+        }
         if (p === '/api/admin/users' && req.method === 'GET') {
           const rows = await store.query('select u.id, u.username, u.display_name, u.role, u.active, u.must_change_pw from users u where u.school_id=$1 order by u.username', [ctx.user.school_id]);
           const mem = await store.query('select class_id, user_id, duty from class_memberships');

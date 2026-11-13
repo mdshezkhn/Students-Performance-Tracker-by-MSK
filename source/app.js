@@ -35,6 +35,27 @@
   const r1x = (v) => (v === null ? null : Math.round(v * 10) / 10);
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
+  /* School server (staging): admin-controlled, OFF until a URL is set and an
+     account signs in. Nothing contacts any server before that. The client is
+     inert otherwise; see source/schoolsync.js + server/spr-server.mjs. */
+  const SS_KEY = 'spr-schoolserver-v1';
+  function ssCfgRead() { try { return JSON.parse(localStorage.getItem(SS_KEY) || 'null'); } catch (e) { return null; } }
+  function ssCfgWrite(c) { try { localStorage.setItem(SS_KEY, JSON.stringify(c || {})); } catch (e) {} }
+  let SS_CLIENT = null;
+  function ssClient() {
+    if (SS_CLIENT) return SS_CLIENT;
+    const c = ssCfgRead();
+    if (!c || !c.baseUrl) return null;
+    SS_CLIENT = (window.SchoolSync || (typeof SchoolSync !== 'undefined' ? SchoolSync : null)) && SchoolSync.create({
+      baseUrl: c.baseUrl,
+      persist: {
+        get: function (k) { const cc = ssCfgRead(); return cc ? (cc['ss_' + k] === undefined ? null : cc['ss_' + k]) : null; },
+        set: function (k, v) { const cc = ssCfgRead() || {}; if (v === null) delete cc['ss_' + k]; else cc['ss_' + k] = v; ssCfgWrite(cc); }
+      }
+    });
+    return SS_CLIENT;
+  }
+
   /* ================================ state ================================ */
   const LS_KEY = 'p4c4-markbook-v1';
   const V2_KEY = 'p4c4-markbook-v2';
@@ -2996,6 +3017,20 @@
         })() + '</span>' +
         '<button class="btn" data-action="restore">Restore backup</button>' +
       '</div>' +
+      '<div class="panel" style="margin-top:14px">' +
+        '<h3 style="margin:0 0 6px">School server <span class="small muted">(staging)</span></h3>' +
+        '<p class="small muted" style="margin:0 0 10px">For the school&rsquo;s own SPR server once the school sets one up. Nothing is sent anywhere until an administrator connects and signs in here.</p>' +
+        '<div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<input class="inp" id="ss-url" style="flex:1;min-width:220px" placeholder="https://spr.example.edu.cn" value="' + U.esc((ssCfgRead() || {}).baseUrl || '') + '">' +
+          '<button class="btn" data-action="ss-save">Save URL</button>' +
+        '</div>' +
+        '<div class="flex mt" style="gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<input class="inp" id="ss-user" style="min-width:140px" placeholder="Username">' +
+          '<input class="inp" id="ss-pass" type="password" style="min-width:140px" placeholder="Password">' +
+          '<button class="btn" data-action="ss-login">Sign in</button>' +
+        '</div>' +
+        '<p class="small" id="ss-status" style="margin:8px 0 0">' + (ssCfgRead() && ssCfgRead().me ? ('Signed in as ' + U.esc(ssCfgRead().me.username) + ' (' + U.esc(ssCfgRead().me.role) + '). Pending sync actions: ' + (function () { try { return ((ssCfgRead().ss_outbox || {}).q || []).length; } catch (e) { return 0; } })()) : 'Not connected.') + '</p>' +
+      '</div>' +
       '<p class="small muted" style="margin:-6px 0 18px">Excel export = one semester, for reports &amp; printing. Full backup = every semester + settings, to move to another computer or keep safe (the file is <b>unencrypted</b>: store it only in approved storage). &ldquo;Restore backup&rdquo; loads a backup file back in.</p>' +
       (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
         '<b>Safety copies</b> <span class="small muted">Kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
@@ -4704,6 +4739,33 @@
         document.body.classList.remove('auth-gate'); buildShell(); route();
         toast('Owner restored from the kit. Welcome back, ' + un);
       })();
+      return;
+    }
+    if (a === 'ss-save') {
+      const inp = $('#ss-url');
+      const url = (inp ? inp.value : '').trim().replace(/\/+$/, '');
+      if (url && !/^https:/i.test(url)) { toast('The school server address must start with https:', true); return; }
+      const c = ssCfgRead() || {};
+      if (!url) { ssCfgWrite({}); SS_CLIENT = null; toast('School server disconnected'); try { $('#ss-status').textContent = 'Not connected.'; } catch (e) {} return; }
+      c.baseUrl = url; ssCfgWrite(c); SS_CLIENT = null;
+      toast(url === ((ssCfgRead() || {}).baseUrl) ? 'School server address saved' : 'School server address saved');
+      try { $('#ss-status').textContent = 'Address saved. Sign in to connect.'; } catch (e) {}
+      return;
+    }
+    if (a === 'ss-login') {
+      const u1 = $('#ss-user'), p1 = $('#ss-pass');
+      const c = ssCfgRead() || {};
+      if (!c.baseUrl) { toast('Save the school server address first', true); return; }
+      if (!u1 || !p1 || !u1.value || !p1.value) { toast('Enter both username and password', true); return; }
+      const cli = ssClient();
+      if (!cli) { toast('School server client unavailable in this build', true); return; }
+      cli.login(u1.value, p1.value).then(function (me) {
+        p1.value = '';
+        toast('Signed in to the school server as ' + me.username);
+        try { $('#ss-status').textContent = 'Signed in as ' + me.username + ' (' + me.role + '). Pending sync actions: ' + cli.pendingCount(); } catch (e) {}
+      }, function (e) {
+        toast('School server sign-in failed: ' + e.message, true);
+      });
       return;
     }
     if (a === 'ds-enable') { dsEnable(); return; }
