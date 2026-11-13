@@ -3011,11 +3011,19 @@
           const legacy = u.hash === LEGACY_DEFAULT_HASH;
           const selfNow = u.username === SESSION.user;
           const dsc = dsCfg();
-          const ptrOk = (u.role === 'admin' || u.role === 'owner') ? dsOn() : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
+          const isAdminRow = (u.role === 'admin' || u.role === 'owner');
+          /* honest badge: the owner row says "signs in anywhere" only once THIS
+             pairing has actually saved or confirmed the cloud copy (lastPush) —
+             sync merely being ON proved nothing (2026-11-12: sync on, cloud row
+             unwritable, badge lied). Teachers: once their pointer exists. */
+          const ptrOk = isAdminRow ? !!(dsc && dsc.on && dsc.lastPush) : !!(dsc && dsc.pointers && dsc.pointers[u.username]);
+          const anyCell = ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>'
+            : '<span class="muted small">' + (isAdminRow && dsOn() ? 'sync on: not cloud-verified yet (press Test cloud connection)' : 'this device only') + '</span>'
+              + (isAdminRow ? '' : ' <button class="btn sm primary" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '" title="Set their password again so they can sign in from any device">Enable anywhere</button>');
           return '<tr><td>' + U.esc(u.username) + (selfNow ? ' <span class="muted small">(you)</span>' : '') + '</td>' +
             '<td>' + roleLabel(u.role) + '</td>' +
             '<td>' + (legacy ? '<span class="g g-none">Shared default password</span>' : '<span class="g g-none">Personal password</span>') + '</td>' +
-            '<td>' + (ptrOk ? '<span class="g g-ok">✓ signs in anywhere</span>' : '<span class="muted small">this device only</span>' + ((u.role === 'admin' || u.role === 'owner') ? '' : ' <button class="btn sm primary" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '" title="Set their password again so they can sign in from any device">Enable anywhere</button>')) + '</td>' +
+            '<td>' + anyCell + '</td>' +
             '<td>' + (selfNow || u.role === 'owner' ? (u.role === 'owner' ? '<span class="small muted">Owner - protected</span>' : '') :
               '<button class="btn sm" data-action="acct-reset-open" data-user="' + U.esc(u.username) + '">Reset password</button> ' +
               '<button class="btn sm danger" data-action="acct-del" data-user="' + U.esc(u.username) + '">Remove</button>') + '</td></tr>';
@@ -4102,7 +4110,11 @@
         if (dsCanPush()) scheduleSyncPush(0, 'account event: sign-in created');   /* account event: push promptly, not on the edit debounce */
         toast(ptr === 'ok' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + '): works on any system they sign in from'
              : ptr === 'name-taken' ? 'Created on this device, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
-             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only: turn on Device sync (Manage & setup), then press Enable anywhere on their row');
+             : ptr === 'sync-off' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only. To make it work everywhere: turn on Device sync (Manage & setup), then press Enable anywhere on their row'
+             : ptr === 'not-armed' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only. The first cloud save has not succeeded yet: make a small change, wait until "Last cloud save" shows a time, then press Enable anywhere on their row'
+             : ptr === 'no-session' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only. Sign out and sign back in (SPR needs your password to seal it), then press Enable anywhere on their row'
+             : ptr === 'network' ? 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only. The cloud could not be reached just now: check the internet, then press Enable anywhere on their row'
+             : 'Sign-in created: ' + un + ' (' + roleLabel(role) + ') on this device only: press Enable anywhere on their row (Manage & setup \u2192 Device sync must be on and working first)');
         if (location.hash === '#/manage') renderManage();
         else if (location.hash === '#/users') renderUsers();   /* the new row appears immediately on the Users tab */
         } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Create sign-in'; } }
@@ -4172,7 +4184,11 @@
         closeDlg();
         toast((ptr === 'ok' ? 'Password updated for ' + un + ': sign-in on any system uses this password now'
              : ptr === 'name-taken' ? 'Password updated, but the username is taken in the SPR cloud by another school: rename it so it works everywhere'
-             : 'Password updated for ' + un + ' on this device only: turn on Device sync (Manage & setup) and the cloud must be reachable, then try Enable anywhere again') + rewrapFail, !!rewrapFail);
+             : ptr === 'sync-off' ? 'Password updated for ' + un + ' on this device only. To make it work everywhere: turn on Device sync (Manage & setup), then press Enable anywhere on their row'
+             : ptr === 'not-armed' ? 'Password updated for ' + un + ' on this device only. The first cloud save has not succeeded yet: make a small change, wait until "Last cloud save" shows a time, then press Enable anywhere on their row'
+             : ptr === 'no-session' ? 'Password updated for ' + un + ' on this device only. Sign out and sign back in, then press Enable anywhere on their row (SPR needs your password to seal it)'
+             : ptr === 'network' ? 'Password updated for ' + un + ' on this device only. The cloud could not be reached just now: check the internet, then press Enable anywhere on their row'
+             : 'Password updated for ' + un + ' on this device only: press Enable anywhere on their row again (Manage & setup \u2192 Device sync must be on and working first)') + rewrapFail, !!rewrapFail);
         if (location.hash === '#/manage') renderManage();
         } finally { if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Save password'; } }
       })();
@@ -4473,8 +4489,8 @@
           const chan = c.channel || await dsChan(c.owner || SESSION.user);
           const r = await sbPing(chan, c.writeToken);
           msg = r === 'ok' ? 'Cloud connection is good: the server knows this device\u2019s write token, and pushes are protected.'
-              : r === 'no-token' ? 'Connected, but the cloud channel has no write token enrolled yet. Your next change will enrol it automatically. Until then the server refuses pushes (they fail safely).'
-              : r === 'bad-token' ? 'Connected, but the server rejected this device\u2019s write token: turn device sync off and on to rotate it.'
+              : r === 'no-token' ? 'Connected, but this cloud channel is not armed for this device yet. Your next change should arm it automatically. If changes keep failing, the cloud copy was saved by a different (older or test) setup, and only the owner can clear it: Supabase dashboard \u2192 SQL editor \u2192 delete that one channel row, then Turn device sync off and on here. Nothing on this device is at risk: the exact repair steps are in docs/OWNER-RUNBOOK-supabase.md (Repair a stale cloud row).'
+              : r === 'bad-token' ? 'Connected, but the server rejected this device\u2019s write token: turn device sync off and on to rotate it. If that keeps failing, the owner can clear the row in the Supabase dashboard (see docs/OWNER-RUNBOOK-supabase.md).'
               : r === 'no-row' ? 'Connected: no cloud copy exists yet. It is created on your first change.'
               : r === 'not-installed' ? 'Connected, but the server-side protection is NOT installed yet: the cloud copy can still be overwritten by anyone. See docs/supabase-write-token.sql (three copy-paste steps).'
               : 'Unexpected answer from the server: ' + r;
@@ -4486,7 +4502,7 @@
           }
         }
         openDlg('<h3>Cloud connection</h3><p class="small">' + U.esc(msg) + '</p>' +
-          '<div class="dlg-actions"><button class="btn primary" data-x="close">Close</button></div>');
+          '<div class="dlg-actions"><button class="btn primary" data-action="dlg-close">Close</button></div>');
       })();
       return;
     }
@@ -5095,7 +5111,7 @@
         (subtle() ? '' : ', and this browser only has the offline version: it needs the https website') +
         '. Nothing leaves this device.</p>' +
         '<div class="dlg-actions"><button class="btn" data-action="dl-backup">Download backup</button>' +
-        '<button class="btn" data-x="close">Close</button></div>');
+        '<button class="btn" data-action="dlg-close">Close</button></div>');
       return;
     }
     const whenTxt = c.lastPush ? new Date(c.lastPush).toLocaleString() + (c.lastPushBy ? ', by ' + c.lastPushBy : '') : 'never';
@@ -5432,8 +5448,15 @@
   }
   /* returns 'ok' | 'name-taken' | 'off' (sync not on / not this account's device) */
   async function dsWritePointer(username, password) {
+    /* returns WHY the pointer was not written, so the Users page can say
+       something specific instead of a generic "this device only":
+       ok | name-taken | sync-off | not-armed (no successful push yet on this
+       pairing) | no-session (restored session, password not in memory) |
+       network | error */
     const cfg = dsCfg();
-    if (!dsOn() || !cfg || cfg.adoptedAcct !== true || !SESSION.dk) return 'off';
+    if (!dsOn() || !cfg) return 'sync-off';
+    if (cfg.adoptedAcct !== true) return 'not-armed';
+    if (!SESSION.dk) return 'no-session';
     try {
       const id = await dsChan(username);
       const env = await ptrSeal({ chan: cfg.channel, key: cfg.key }, password);
@@ -5457,7 +5480,7 @@
       cfg.pointers[username] = new Date().toISOString();
       dsSaveCfg(cfg);
       return 'ok';
-    } catch (e) { return 'off'; }
+    } catch (e) { return (e && (e.name === 'TypeError' || /fetch|networkfailed/i.test(String(e && e.message)))) ? 'network' : 'error'; }
   }
   async function dsKillPointer(username) {
     const cfg = dsCfg();
@@ -5977,9 +6000,9 @@
       /* this device's pairing key cannot read the row any more (sync was set
          up or reset elsewhere): with the account password we can still adopt
          the row's own key instead of dead-ending */
-      if (/integrity check/.test(e.message || '') && SESSION.pw) {
+      if (/integrity check/.test(e.message || '')) {
         let hit = null;
-        try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; }
+        if (SESSION.pw) { try { hit = await dsAccountLookup(SESSION.user, SESSION.pw); } catch (e2) { hit = null; } }
         if (hit) {
           if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: 'another device' }; dsSaveCfg(cfg); toast('This device\u2019s pairing is out of date: Manage \u2192 Device sync \u2192 Check for newer copy'); return; }
           const okA = await confirmDlg('Cloud data found for ' + U.esc(SESSION.user),
@@ -5989,6 +6012,15 @@
           else if (interactive) toast('Kept this device’s data: its pairing key no longer matches the cloud copy', true);
           return;
         }
+        /* no password wrap on the row either: adoption is impossible and the
+           app cannot fix the row (direct writes are revoked). Say what IS
+           true, keep it calm, and name the exact owner repair — never
+           overwrite a row whose key we do not hold, never touch local data. */
+        const repair = 'This device cannot open the cloud copy: it was saved by a different device-sync setup (nothing here was changed or lost). A normal change will not repair this: the cloud copy must be cleared once by the owner (Supabase dashboard, SQL editor: delete this channel\u2019s row), then Turn device sync off and on. The exact steps are in docs/OWNER-RUNBOOK-supabase.md (Repair a stale cloud row).';
+        if (!interactive) { cfg.cloudAhead = { at: new Date().toISOString(), by: 'unreadable copy' }; dsSaveCfg(cfg); }
+        toast(repair, true);
+        dsLog('pull-check: integrity fail with no wrap to adopt: owner repair required');
+        return;
       }
       if (interactive) toast(e.message, true); return;
     }

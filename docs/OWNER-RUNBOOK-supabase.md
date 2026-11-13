@@ -140,3 +140,63 @@ And if rows look wrong, restore from step 2's backup (the truncate +
 insert pair). Data damage is recoverable; this was proven in our test
 harness, scenario E: after the rollback the old direct write works again and
 the row content is untouched.
+
+## 7. Repair a stale cloud row (added 2026-11-12)
+
+**When you need this:** Manage & setup shows "Last cloud save: —", **Check
+for newer copy** says *"failed its integrity check (wrong pairing key…)"*,
+and **Test cloud connection** says *"no write token enrolled yet"* even after
+making a change. That means the cloud row was written by a different/older
+device-sync setup (in our case the 2026-10-31 QA test rig), so this device's
+key cannot open it and the server refuses to let anyone re-arm it. The app
+cannot fix this by design (that protection is the point) — the owner clears
+the one bad row here, and the app rebuilds it on the next change. Nothing on
+your computer is touched.
+
+**Step 1 — look at the stale row (safe, read-only).** Paste, Run:
+
+```sql
+select id, pushed_by, pushed_at, write_token_hash, share_name
+from public.spr_channels
+where share_name = 'devicesync'
+order by pushed_at desc nulls last
+limit 10;
+```
+
+You are looking for your username's row: `pushed_by` ends with your admin
+name and the date is old (the stale one is `f7e8f917-b48f-491e-90f5-17cacde78de2`,
+pushed by `test: Mo` on 2026-10-31). Rows ending in `qa-cleanup` / `turned off`
+are old test leftovers — leave them alone unless you want to tidy up later.
+
+**Step 2 — back up first (safe).** Paste, Run:
+
+```sql
+create table public.spr_channels_backup_2026_11_12 as
+  select * from public.spr_channels;
+```
+
+Check it worked (should print the full row count):
+
+```sql
+select count(*) from public.spr_channels_backup_2026_11_12;
+```
+
+**Step 3 — delete ONLY the stale row.** Paste, Run (one row disappears):
+
+```sql
+delete from public.spr_channels
+where id = 'f7e8f917-b48f-491e-90f5-17cacde78de2';
+```
+
+**Step 4 — in SPR (main computer, admin):**
+1. Manage & setup → Device sync → **Turn off** (NOT "Turn off & delete").
+2. **Turn on device sync** → confirm. Wait for "cloud copy saved".
+3. Make a small change (move any score by 1 and back). Manage & setup →
+   **Last cloud save** must now show a fresh time.
+4. **Test cloud connection** must say: *"Cloud connection is good: the server
+   knows this device's write token, and pushes are protected."*
+5. Users page → **Enable anywhere** on each teacher/manager row (type their
+   password once) — that is what lets them sign in on any other device.
+
+If anything shows something you did not expect: screenshot, stop, don't
+improvise. The backup from step 2 puts everything back.

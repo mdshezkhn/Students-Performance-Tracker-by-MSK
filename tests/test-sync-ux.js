@@ -298,6 +298,29 @@ function cfgOf(B) { try { return JSON.parse(B.w.localStorage.getItem('spr-device
   ok(!!sess && sess.session && sess.session.username === MGR, 'signed-in account is the manager (' + ((sess && sess.session && sess.session.username) || 'none') + ')');
   ok(!!sess && (sess.users || []).some((u) => u.username === ADMIN) && (sess.users || []).some((u) => u.username === MGR), 'both accounts arrived on store B');
 
+  /* ---------- U6 (regression, 2026-11-12): the Cloud-connection dialog's
+     Close button used data-x="close" with no handler — clicking it did
+     nothing (a reload was needed). The fix routes it through the global
+     data-action="dlg-close" handler; this must stay wired. ---------- */
+  console.log('== U6: Cloud-connection dialog Close button ==');
+  A.w.location.hash = '#/manage';
+  await sleep(400);
+  const tBtn = A.d.querySelector('[data-action="ds-test"]');
+  ok(!!tBtn, 'Test cloud connection button present on Manage');
+  if (tBtn) {
+    click(A, tBtn);
+    const dlgShown = await waitFor(() => !!(A.d.getElementById('dlg') && A.d.getElementById('dlg').open && /Cloud connection/.test(dlgText(A))), 10000);
+    ok(dlgShown, 'cloud-connection dialog opens');
+    const closeBtn = A.d.querySelector('#dlg [data-action="dlg-close"]');
+    ok(!!closeBtn, 'dialog Close button is wired (data-action="dlg-close")');
+    ok(!A.d.querySelector('#dlg [data-x="close"]'), 'no dead data-x="close" button in the dialog');
+    if (dlgShown && closeBtn) {
+      click(A, closeBtn);
+      await sleep(300);
+      ok(!(A.d.getElementById('dlg') || {}).open, 'Close actually closes the dialog (no reload needed)');
+    }
+  }
+
   console.log(fails ? ('\n' + fails + ' FAILURES') : '\nALL SYNC-UX CHECKS PASSED');
   process.exit(fails ? 1 : 0);
 })().catch((e) => { console.error('SUITE ERROR', e); process.exit(1); });
