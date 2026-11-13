@@ -5299,7 +5299,7 @@
       '<button class="btn" data-action="hub-copy">Copy link</button></div>' +
       (shareKeySecret() ? '<div class="flex" style="gap:8px;align-items:center;margin-top:6px"><input class="inp" id="hubKey" readonly style="flex:1;min-width:220px;font-size:12px" value="' + U.esc(shareKeySecret()) + '">' +
       '<button class="btn" data-action="hub-copy-key">Copy class key</button></div>' +
-      '<p class="small muted" style="margin:6px 0 0">Send the <b>link</b> and the <b>class key</b> by different messages (for example: link in chat, key read aloud on the phone). The key is the lock on these students&rsquo; data and it is no longer inside the link.</p>' : '') +
+      '<p class="small muted" style="margin:6px 0 0">Anyone with this link and the class key can edit this class, so send them to this class&rsquo;s own teachers only, and by different messages (for example: link in chat, key read aloud on the phone). The key is the lock on these students&rsquo; data and it is no longer inside the link.</p>' : '') +
       '<h4 style="margin:12px 0 4px">3. Test cloud connection</h4>' +
       '<div class="flex" style="gap:8px;align-items:center"><button class="btn" data-action="hub-test">Test cloud connection</button>' +
       '<span class="small muted" id="hubTestStatus"></span></div>' +

@@ -191,7 +191,7 @@ async function waitShell(B, ms) {
       check(/Save a copy to the cloud/i.test(txt), 'section 1: Save a copy to the cloud');
       check(/last saved|never/i.test(txt), 'section 1 shows last-saved time');
       check(/Share this class with a colleague/i.test(txt) && /Copy/i.test(txt), 'section 2: share link + Copy');
-      check(/Anyone with this link can edit this class/i.test(txt), 'section 2 carries the one-sentence warning');
+      check(/Anyone with this link and the class key can edit this class/i.test(txt), 'section 2 carries the one-sentence warning (link AND key since C3)');
       check(/Test cloud connection/i.test(txt), 'section 3: Test cloud connection in the hub');
       check(/never replaces what is on this device without asking/i.test(txt), 'state rule: cloud never replaces this device silently');
       const low = txt.toLowerCase();
