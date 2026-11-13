@@ -1,0 +1,14 @@
+{
+  "kit": 1,
+  "v": 1,
+  "school": "Demo School",
+  "username": "modemo",
+  "pub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElBQ4rM3gHTQRB9sHS8Ab9XXUMasy85ZdrQapvgWnHnEt3KWfQl51zOEOQ0x7W0p_NjfT28Yx7tcyjP0L7kRmiA",
+  "seal": {
+    "v": 2,
+    "it": 600000,
+    "salt": "FsfdqdymZutJjoczZMLtAQ",
+    "iv": "P1h4cBV6XODe1bsL",
+    "ct": "mmsbe8dLidsG5KOd2UgjDpG0ykqEdoNLB3w8qlRaSRVXdpadeyER7kZwdbysKWDlzYS8GmgZAawc3mgiOwCtnOk9AKPoQnq09qrsQMQbSIrH8YUDLBSVSzepK8UasyzpVT98FCArlki1gd36DW34jowsHgszQIHmkDC2dKc11srtlEEuahmJlvy2IVF8JBBbCHwtFKFOUo56jXHeN3PxSpIfexX5YZof5uEOv_9qlfdJUDwQ0wIpV1_mw8JiG3UeGZxVgTFIE_RJ_TGHVq00DZGJCeaddk3QXbJZuQSCWk2F5xdwEyYc6YRbPH83-3tmvXn9clCwMS8BFlLTgPBRpiBq7Q9U"
+  }
+}

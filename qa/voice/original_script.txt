@@ -1,0 +1,51 @@
+SPR with Mo - Video Voice-over Script
+English narration for the 4 min 26 s video guide
+How to record
+Record each take as a SEPARATE file, named 01, 02, 03 ... (phone voice memo, mp3/m4a/wav - anything works).
+Quiet room, phone about 20 cm away, natural friendly pace - like showing a colleague.
+Leave about 1 second of silence at the start and end of each file. Don't chase the exact timing - every take will be placed at the right moment and gently adjusted.
+The script already matches the on-screen subtitles.
+A single long recording is also fine - it will be cut to fit.
+TAKE 01  -  Intro card
+On screen: 0:00 - 0:06     -     Target: ~11 words
+"Welcome to SPR with Mo - your students' performance report."
+Note: Warm and welcoming; the card fades in while you speak.
+TAKE 02  -  The website
+On screen: 0:06 - 0:43     -     Target: ~62 words
+"This is the SPR with Mo website. Just type the address - my-spr-with-mo duckdns org - and press Enter. To begin, click the white button, Open the App. The very first time, you'll see a short privacy notice. It explains that your data stays inside your own browser. Have a quick read, then click, I understand."
+Note: Say the address slowly, with small pauses between the parts.
+TAKE 03  -  Signing in with your shared account
+On screen: 0:43 - 1:27     -     Target: ~66 words
+"Signing in is simple. Two accounts are ready on this computer - ZFYBLS, and XFLS. Type your username - I'll use ZFYBLS - and the password shared with you. Click, Sign In. Now choose how to start: create a new class, import an Excel file, or load the sample class to explore. Let's load the sample."
+Note: The password shows as dots on screen - no need to hide anything.
+TAKE 04  -  Signing in
+On screen: 1:27 - 1:45     -     Target: ~24 words
+"Every time you come back, just sign in with your username and password, and click, Sign In. And there's your class - welcome back!"
+TAKE 05  -  The Dashboard
+On screen: 1:45 - 2:08     -     Target: ~48 words
+"This is the Dashboard - your whole class at a glance. The skill bars show class averages, and four tabs give you more detail. Assessment Evidence shows how complete each student's data is. Teaching Priorities tells you which skills need attention. And Advanced Analysis compares scores with progress."
+TAKE 06  -  Students
+On screen: 2:08 - 2:26     -     Target: ~35 words
+"On the Students page you'll find your whole class. Each card shows the name, the student ID, the current grade, and a mini trend line. Use the search box to find anyone instantly."
+TAKE 07  -  Enter Scores
+On screen: 2:26 - 2:56     -     Target: ~56 words
+"Enter Scores is where you'll spend most of your time. First pick the month, then the tab - Observations, for listening, speaking, writing and reading; Spelling, for weekly tests; Daily Assignment; and Tests, for mid-term, oral and written exams. Just type the number. There's no save button - everything saves automatically as you type."
+Note: The video types a score live - keep this take relaxed.
+TAKE 08  -  Grading
+On screen: 2:56 - 3:11     -     Target: ~35 words
+"Grading is all automatic. Every component, the final percentage, and the letter grade - A-star, down to U. Written counts twenty percent; everything else counts ten. And the formula is printed at the bottom of the page."
+TAKE 09  -  Analysis
+On screen: 3:11 - 3:31     -     Target: ~36 words
+"Analysis compares this semester with the last one, so you can see who's improving. Click, Student Deep-Dive, pick a name, and SPR gives you charts, colour-coded progress, and an automatic SWOT - strengths, and next steps."
+TAKE 10  -  Report Cards
+On screen: 3:31 - 3:52     -     Target: ~37 words
+"Report Cards - choose a student and click, View Report Card. Everything is laid out for parents, and SPR even suggests the comments for you. You can edit them, then print, or save as a PDF."
+TAKE 11  -  Manage, backup &amp; sharing
+On screen: 3:52 - 4:12     -     Target: ~38 words
+"Manage and Setup is home for everything else - new classes, adding students, Excel import and export. Please download a full backup every month. And with Share and Sync, two teachers can work on the same class."
+TAKE 12  -  Sign out &amp; closing
+On screen: 4:12 - 4:23     -     Target: ~26 words
+"And when you finish, click Sign Out - your data stays safely locked. That's SPR with Mo. I hope it makes your term a little easier!"
+Note: Smile - it's the last line.
+Total narration: about 4 min 05 s - comfortably inside the 4 min 26 s video.
+Send the files back in any order - they will be synced, normalised and mixed into the video.

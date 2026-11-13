@@ -253,15 +253,34 @@
      storage quota refuses, fall back to the old file download so a copy is
      never silently missing. */
   const SAFETY_KEY = 'spr-safety-backups-v1';
+  /* 2026-11-13 (C5): safety copies are SEALED with the signed-in user's data
+     key — same protection as the primary store. Plaintext copies are never
+     written. If no data key is available (pre-login edge), the caller's
+     replace-flow falls back to the file download instead. */
   function stashSafetyBackup(label) {
     try {
-      const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
-      list.unshift({ t: Date.now(), label: label || 'before replace', db: DB });
-      while (list.length > 3) list.pop();
-      localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
-      toast('Safety copy kept: Manage → Backups can bring it back');
+      if (!SESSION || !SESSION.dk) throw new Error('no data key');
+      (async () => {
+        try {
+          const enc = await sealDB(DB, SESSION.dk);
+          const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
+          list.unshift({ t: Date.now(), label: label || 'before replace', enc: enc });
+          while (list.length > 3) list.pop();
+          localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
+          toast('Safety copy kept: Manage → Backups can bring it back');
+        } catch (e) { downloadBackup(); }
+      })();
       return true;
     } catch (e) { downloadBackup(); return false; }
+  }
+  async function safetyBackupDb(b) {
+    if (!b) return null;
+    if (b.enc) {
+      if (!SESSION || !SESSION.dk) { toast('Sign in with the account that kept this safety copy to open it', true); return null; }
+      try { return await unsealDB(b.enc, SESSION.dk); }
+      catch (e) { toast('That safety copy cannot be opened on this device (different account key)', true); return null; }
+    }
+    return b.db || null;   /* legacy plaintext entry, read-only compatibility */
   }
   function safetyBackups() {
     try { const l = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]'); return Array.isArray(l) ? l : []; }
@@ -1171,15 +1190,18 @@
     const key = (SESSION.keys || {})[id];
     if (!c || !key) { toast('No key for this class on this device', true); return; }
     const link = CS.classLink(location.origin, location.pathname, id, b64uFromBytes(key));
+    const keyB64u = b64uFromBytes(key);
     openDlg(
-      '<h3>Class key &amp; link: ' + U.esc(c.name) + '</h3>' +
-      '<p class="small">Send this to the class&rsquo;s own teachers only. <b>Anyone holding it can open and change this class</b>: that is the agreed rule, not a technical lock. The data itself travels via Device sync or a class file; this link delivers the key.</p>' +
+      '<h3>Class link &amp; key: ' + U.esc(c.name) + '</h3>' +
+      '<p class="small">Two parts, sent by <b>different messages</b>: the link (or its code) identifies the class; the <b>class key</b> unlocks it. Anyone holding the key can open and change this class, so give it only to this class&rsquo;s own teachers. The data itself travels via Device sync or a class file.</p>' +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
       '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
       '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+      '<input class="inp" id="shareKeyInp" readonly style="font-size:12px;margin-top:6px" title="Class key: send separately, never inside the link" value="' + U.esc(keyB64u) + '">' +
       '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-      '<button class="btn primary" data-action="share-chatmsg">Copy for DingTalk / WeChat</button>' +
-      (navigator.share ? '<button class="btn" data-action="share-native">Share…</button>' : '') +
+      '<button class="btn primary" data-action="share-copy-key">Copy class key</button>' +
+      '<button class="btn" data-action="share-chatmsg">Copy link for DingTalk / WeChat</button>' +
+      (navigator.share ? '<button class="btn" data-action="share-native">Share link…</button>' : '') +
       '<button class="btn" data-action="share-copy">Copy link</button>' +
       '<button class="btn" data-action="class-export-file" data-id="' + U.esc(id) + '">Download class file</button>' +
       '<button class="btn" data-x="close">Close</button></div></div></div>',
@@ -1214,7 +1236,7 @@
       openDlg(
         '<h3>Import class: ' + U.esc(f.name) + '</h3>' +
         '<p class="small">' + (existing ? 'A class with this id already exists here; importing replaces its data (a safety copy is kept first).' : 'New class on this device.') + ' The file is encrypted: paste the class share link (or its key) to open it.</p>' +
-        '<input class="inp" id="cf-link" style="width:100%" placeholder="https://…#class=…&k=… or just the key">' +
+        '<input class="inp" id="cf-link" style="width:100%" placeholder="Class key (the long code the sharing teacher sent separately)">' +
         '<div class="login-err" id="cf-err"></div>' +
         '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Import</button></div>',
         (d) => {
@@ -1225,7 +1247,7 @@
             const v = ($('#cf-link').value || '').trim();
             const lp = CS.parseClassHash(v) || {};
             const keyB64 = lp.k || (/^[A-Za-z0-9\-_]{40,}$/.test(v) ? v : null);
-            if (!keyB64) { $('#cf-err').textContent = 'Paste the share link (or the key part after &k=).'; return; }
+            if (!keyB64) { $('#cf-err').textContent = 'Paste the class key (the long code the sharing teacher sent separately).'; return; }
             let wb = null;
             try { wb = await CS.openClass(f.blob, bytesFromB64u(keyB64)); }
             catch (e2) { $('#cf-err').textContent = 'That key does not open this class file.'; return; }
@@ -2962,7 +2984,8 @@
       '<button class="btn" data-action="ios-warn-again">Show the iPhone/iPad warning again</button>') +
       '<div class="flex mb">' +
         '<button class="btn primary" data-action="wiz-open">New class / semester</button>' +
-        '<button class="btn" data-action="import-xlsx">Import SPR Excel</button>' +
+        '<button class="btn primary" data-action="import-xlsx">Import existing SPR</button> ' +
+        '<span class="small muted">Excel workbook: checked first, imported after your OK</span>' +
         '<button class="btn" data-action="export-xlsx">Export current semester to Excel</button>' +
         '<button class="btn" data-action="backup">Download full backup (all semesters)</button>' +
         '<span class="small muted" style="align-self:center">' + (function () {
@@ -2977,7 +3000,7 @@
       (safetyBackups().length ? '<div class="p" style="margin:-6px 0 18px;border:1px solid #d8e2d8;border-radius:8px;padding:10px 14px;background:#f6faf6">' +
         '<b>Safety copies</b> <span class="small muted">Kept automatically in this browser before data gets replaced (join links, cloud copies, restores). The newest three stay listed here.</span>' +
         safetyBackups().map((b, i) => '<div class="flex" style="margin-top:6px;gap:8px;align-items:center;flex-wrap:wrap">' +
-          '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + ((b.db || {}).semesters || []).length + ' class(es)</span>' +
+          '<span class="small">' + new Date(b.t).toLocaleString() + ' · ' + U.esc(b.label || '') + ' · ' + (b.enc ? 'sealed copy' : (((b.db || {}).semesters || []).length + ' class(es)')) + '</span>' +
           '<button class="btn sm" data-action="sb-restore" data-i="' + i + '">Restore</button>' +
           '<button class="btn sm danger" data-action="sb-del" data-i="' + i + '">Delete</button></div>').join('') +
         '</div>' : '') +
@@ -3104,7 +3127,7 @@
             '<button class="btn" data-action="share-pull"' + (canCrypto ? '' : ' disabled title="Needs the online (https) version"') + '>Pull from cloud</button>' +
           '</div>' +
           (link ? '<div class="flex mt" style="align-items:center"><input class="inp" id="shareLink" readonly style="flex:1;min-width:260px;font-size:12px" value="' + U.esc(link) + '"><button class="btn" data-action="share-copy">Copy share link</button></div>' +
-            '<p class="small" style="margin-top:6px">Anyone with this link can read and edit the class data: send it only to your co-teacher.</p>' : '') +
+            '<p class="small" style="margin-top:6px">The link alone is not enough: the class key opens the data. Send link and key by different messages, only to your co-teacher (the key is in the Share dialog).</p>' : '') +
           (status.length ? '<p class="small" style="margin-top:8px">' + status.join(' · ') + '</p>' : '') +
           (!canCrypto ? '<p class="small" style="margin-top:8px;color:#b45309">Share &amp; sync needs the online version (https). Open the website in a browser to use it.</p>' : '') +
           '</div>';
@@ -3779,13 +3802,84 @@
     });
   }
   /* import one or many SPR workbooks — one shared confirmation for the whole batch */
+  function readWorkbookRaw(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => { try { resolve(XLSX.read(new Uint8Array(reader.result), { type: 'array' })); } catch (e) { reject(e); } };
+      reader.onerror = () => reject(new Error('could not read the file'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  /* 2026-11-13 Priority-3: the import wizard's audit step. Runs entirely in
+     the browser (the workbook is never uploaded); findings gate the import. */
+  function dlText(name, text, mime) {
+    const blob = new Blob([text], { type: mime || 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  function dlWorkbook(name, wb) {
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([out], { type: 'application/octet-stream' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  const SEV_CHIP = { critical: '<span style="display:inline-block;padding:1px 8px;border-radius:10px;background:#fde8e8;color:#8a1f1f;font-weight:600">Critical</span>', warning: '<span style="display:inline-block;padding:1px 8px;border-radius:10px;background:#fff3d6;color:#8a5a00;font-weight:600">Warning</span>', info: '<span style="display:inline-block;padding:1px 8px;border-radius:10px;background:#e8f0fd;color:#1f3f8a">Info</span>' };
+  async function sprAuditGate(files, wbs, go) {
+    let all = null;
+    try { all = (window.SPRAudit ? wbs.map((wb, i) => ({ name: files[i].name, r: window.SPRAudit.audit(wb) })) : null); }
+    catch (e) { all = null; }
+    if (!all) { go(); return; }
+    const agg = { critical: 0, warning: 0, info: 0 };
+    all.forEach((x) => { agg.critical += x.r.stats.bySeverity.critical; agg.warning += x.r.stats.bySeverity.warning; agg.info += x.r.stats.bySeverity.info; });
+    const flat = [];
+    all.forEach((x) => x.r.findings.forEach((f) => flat.push(Object.assign({ file: x.name }, f))));
+    const rowHtml = (f) => '<tr><td>' + SEV_CHIP[f.severity] + '</td><td class="small">' + U.esc(f.message) + '</td><td class="small">' + U.esc(f.student || '') + (f.sheet ? ' · ' + U.esc(f.sheet) : '') + (f.cell ? ' · ' + U.esc(f.cell) : '') + '</td>' +
+      '<td class="small muted">' + U.esc(f.suggestion || f.expected || '') + '</td></tr>';
+    const body =
+      '<h3>Check this workbook first</h3>' +
+      '<p class="small" style="margin-top:-4px">The file stays on this computer: the check runs in the browser, nothing is uploaded.</p>' +
+      '<p class="small">' + all.map((x) => '<b>' + U.esc(x.name) + '</b>: ' + U.esc(x.r.profile.school || 'School') + ' · ' + U.esc(x.r.profile.className || 'class') + ' · ' + x.r.stats.students + ' students').join('<br>') + '</p>' +
+      '<p style="margin:8px 0">' + SEV_CHIP.critical + ' ' + agg.critical + ' &nbsp; ' + SEV_CHIP.warning + ' ' + agg.warning + ' &nbsp; ' + SEV_CHIP.info + ' ' + agg.info + '</p>' +
+      (flat.length ? '<div style="max-height:260px;overflow:auto;border:1px solid var(--rule);border-radius:8px"><table class="tbl"><thead><tr><th></th><th>Finding</th><th>Where</th><th>What to do</th></tr></thead><tbody>' +
+        flat.slice(0, 120).map(rowHtml).join('') + (flat.length > 120 ? '<tr><td colspan="4" class="small muted">…and ' + (flat.length - 120) + ' more in the downloaded report</td></tr>' : '') + '</tbody></table></div>' : '<p class="small muted">No issues found.</p>') +
+      '<p class="small muted" style="margin-top:8px">Critical findings mean scores or IDs that cannot be right (a score above the maximum, a broken average, a duplicated ID). Fix them in Excel and re-check, or continue knowing those cells are ignored on import.</p>';
+    openDlg(body +
+      '<div class="dlg-actions" style="flex-wrap:wrap">' +
+      '<button class="btn" data-action="spr-audit-xlsx">Excel report</button>' +
+      '<button class="btn" data-action="spr-audit-csv">Issues (CSV)</button>' +
+      '<button class="btn" data-action="dlg-close">Cancel</button>' +
+      '<button class="btn primary" data-action="spr-audit-continue">Continue to import</button></div>');
+    const dlg = $('#dlg');
+    if (dlg) dlg.onclick = (e) => {
+      const b = e.target.closest('[data-action]');
+      if (!b) return;
+      if (b.dataset.action === 'spr-audit-xlsx') {
+        const wbOut = window.SPRAudit.toWorkbook(flat, all[0].r.profile);
+        dlWorkbook('SPR-audit-' + new Date().toISOString().slice(0, 10) + '.xlsx', wbOut);
+        toast('Excel audit report downloaded');
+      } else if (b.dataset.action === 'spr-audit-csv') {
+        dlText('SPR-audit-' + new Date().toISOString().slice(0, 10) + '.csv', window.SPRAudit.toCsv(flat), 'text/csv');
+        toast('CSV issue list downloaded');
+      } else if (b.dataset.action === 'spr-audit-continue') { closeDlg(); go(); }
+    };
+  }
   async function importXlsxFiles(files) {
-    const sems = [], failed = [];
+    const sems = [], failed = [], rawWbs = [], okFiles = [];
     for (const file of files) {
-      try { sems.push(await parseWorkbookFile(file)); }
+      try {
+        const wb = await readWorkbookRaw(file);
+        sems.push(await parseWorkbookFile(file));
+        rawWbs.push(wb); okFiles.push(file);
+      }
       catch (err) { failed.push(file.name + ': ' + err.message); }
     }
     if (!sems.length) { toast('Import failed: ' + (failed[0] || 'no file readable'), true); return; }
+    await sprAuditGate(okFiles, rawWbs, () => sprImportApply(sems, failed));
+    sprImportApply(sems, failed);
+  }
+  async function sprImportApply(sems, failed) {
     const MAX_LIST = 15;
     const listed = sems.slice(0, MAX_LIST).map((s) => '<b>' + U.esc(s.name) + '</b>: ' + s.students.length + ' students · ' + U.esc(s.months.join(', '))).join('<br>') +
       (sems.length > MAX_LIST ? '<br>…and ' + (sems.length - MAX_LIST) + ' more' : '');
@@ -3797,6 +3891,7 @@
       '<br><br>Nothing is overwritten: your existing classes stay exactly as they are.',
       'Add');
     if (!okGo) { toast('Import cancelled: nothing was changed'); return; }
+    stashSafetyBackup('before importing ' + (sems.length === 1 ? 'a workbook' : sems.length + ' workbooks'));
     for (const s of sems) DB.semesters.push(s);
     DB.currentSemesterId = sems[sems.length - 1].id;
     saveDB(); buildShell();
@@ -4010,12 +4105,14 @@
       (async () => {
         const list = safetyBackups();
         const b = list[Number(el.dataset.i)];
-        if (!b || !b.db) { toast('That safety copy is gone', true); return; }
+        if (!b || (!b.db && !b.enc)) { toast('That safety copy is gone', true); return; }
+        const db = await safetyBackupDb(b);
+        if (!db) return;
         const okGo = await confirmDlg('Restore this safety copy?',
-          'Your data from <b>' + new Date(b.t).toLocaleString() + '</b> (' + ((b.db || {}).semesters || []).length + ' classes) will replace what is here now. Today&rsquo;s data is kept as a new safety copy.', 'Restore');
+          'Your data from <b>' + new Date(b.t).toLocaleString() + '</b> (' + ((db || {}).semesters || []).length + ' classes) will replace what is here now. Today&rsquo;s data is kept as a new safety copy.', 'Restore');
         if (!okGo) return;
         stashSafetyBackup('before restoring a safety copy');
-        persistReplaced(JSON.parse(JSON.stringify(b.db)));
+        persistReplaced(JSON.parse(JSON.stringify(db)));
       })();
       return;
     }
@@ -4473,6 +4570,15 @@
       } else { inp.select(); document.execCommand('copy'); toast('Share link copied'); }
       return;
     }
+    if (a === 'share-copy-key' || a === 'hub-copy-key') {
+      const inp = $('#shareKeyInp') || $('#hubKey');
+      if (!inp) return;
+      const done = () => toast('Class key copied: send it by a DIFFERENT message than the link');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inp.value).then(done, () => { inp.select(); document.execCommand('copy'); done(); });
+      } else { inp.select(); document.execCommand('copy'); done(); }
+      return;
+    }
     if (a === 'recovery-file-now') {
       downloadBackup();
       try { delete DB.settings.recoveryFilePending; saveDB(true); } catch (eR2) {}
@@ -4496,7 +4602,7 @@
               : 'Unexpected answer from the server: ' + r;
         } catch (e) {
           if (e && e.rpcMissing) {
-            msg = 'Connected, but the server-side protection is NOT installed yet (the write-token SQL has not been run). Pushes fall back to the old unprotected write, so the cloud copy can still be overwritten by anyone until the owner runs docs/supabase-write-token.sql.';
+            msg = 'Connected, but the server-side protection is NOT installed yet. Cloud saving stays PAUSED (this app refuses unprotected writes): no cloud copy can be updated by anyone until the owner runs docs/supabase-write-token.sql (three copy-paste steps). Everything on this device keeps working offline.';
           } else {
             msg = 'Cloud connection FAILED: ' + String((e && e.message) || e) + '. Your data on this device is safe.';
           }
@@ -4954,10 +5060,20 @@
     return Promise.resolve(obj);
   }
   function shareLink() {
+    /* 2026-11-13 (C3): generated links NEVER contain the key or the write
+       token any more — they landed in chat logs, browser history and QR
+       photos. The link carries only the channel id; shareKeySecret() hands
+       the teacher the key as a separate secret. Old key-bearing links still
+       PARSE (maybeJoin keeps the k=/t= groups) so nothing already sent
+       breaks. */
     const c = getShare();
     const id = c.channel || c.bin;
     if (!id || !c.key) return null;
-    return location.origin + location.pathname + '#join=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(c.key) + (c.writeToken ? '&t=' + encodeURIComponent(c.writeToken) : '');
+    return location.origin + location.pathname + '#join=' + encodeURIComponent(id);
+  }
+  function shareKeySecret() {
+    const c = getShare();
+    return (c && c.key) ? c.key : null;
   }
   /* ---------- Supabase channel (Save & Share, per-class) ---------- */
   function sbHeaders(extra) {
@@ -5006,6 +5122,17 @@
     const rows = await res.json();
     return rows.length ? rows[0] : null;
   }
+  /* 2026-11-13 security fix (SECURITY-BASELINE C1): the app REFUSES every
+     cloud write the server cannot authenticate. Before this change, a missing
+     write-token RPC (docs/supabase-write-token.sql never run — live-verified
+     on the production project) made every push "fall back" to an anonymous
+     direct PATCH, i.e. anyone could overwrite the school's cloud row. Now:
+     no token / no RPC / no hash column => typed error, nothing written. */
+  function sprProtectionErr(why) {
+    const e = new Error('cloud protection not installed (' + why + '): the owner must run docs/supabase-write-token.sql (3 steps in its header)');
+    e.protectionMissing = true;
+    return e;
+  }
   async function sbSave(channel, env, shareName, who, at, insert, opts) {
     const sb = SB();
     /* round6: the token+key travel with the CALLER (device sync passes its
@@ -5013,54 +5140,37 @@
        share push can never fall back to a different channel's token */
     const token = opts && opts.token;
     const keyProof = opts && opts.keyProof;
-    if (token) {
-      /* write-token world. Fresh channel: the very first INSERT arms the row
-         (write_token_hash in the insert body). Existing row: the RPC is the
-         only write path; if the row predates the SQL (hash NULL) this client
-         enrols once with the key proof and retries. If the server does not
-         have the RPC yet (SQL not run), fall back to the legacy direct write
-         so nothing breaks before the owner upgrades. */
-      if (insert) {
-        let armed = null;
+    if (!token) throw sprProtectionErr('this channel has no write token');
+    if (insert) {
+      /* fresh channel: the very first INSERT arms the row (write_token_hash
+         in the body). A server without that column is a pre-SQL server:
+         refuse rather than create an unarmed row anyone could overwrite. */
+      let armed = null;
+      try {
+        armed = JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env, write_token_hash: await sha256Hex(token) });
+      } catch (eHash) { armed = null; }
+      if (armed) {
+        const r1 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: armed });
+        if (r1.ok) return 'ok';
+        if (r1.status === 409) return 'conflict';
+        throw sprProtectionErr('armed insert refused (HTTP ' + r1.status + ', column or policy missing)');
+      }
+    }
+    try {
+      return await sbWrite(channel, token, env, who, at, shareName);
+    } catch (e) {
+      if (e && e.rpcMissing) throw sprProtectionErr('write RPC absent');
+      if (e && e.notEnrolled && keyProof) {
         try {
-          armed = JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env, write_token_hash: await sha256Hex(token) });
-        } catch (eHash) { armed = null; }
-        if (armed) {
-          const r1 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: armed });
-          if (r1.ok) return 'ok';
-          if (r1.status === 409) return 'conflict';
-          /* pre-SQL server: the hash column does not exist (PGRST204) */
-          const r2 = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
-          if (r2.status === 409) return 'conflict';
-          if (!r2.ok) throw new Error('HTTP ' + r2.status);
-          return 'ok';
+          await sbEnrol(channel, token, keyProof);
+          return await sbWrite(channel, token, env, who, at, shareName);
+        } catch (e2) {
+          if (e2 && e2.rpcMissing) throw sprProtectionErr('enrol RPC absent');
+          throw e2;
         }
       }
-      try {
-        return await sbWrite(channel, token, env, who, at, shareName);
-      } catch (e) {
-        if (e && e.rpcMissing) {   /* SQL not run yet: legacy direct write */
-          /* fall through to the direct path below */
-        } else if (e && e.notEnrolled && keyProof) {
-          try {
-            await sbEnrol(channel, token, keyProof);
-            return await sbWrite(channel, token, env, who, at, shareName);
-          } catch (e2) {
-            if (e2 && e2.rpcMissing) { /* fall through */ }
-            else throw e2;
-          }
-        } else throw e;
-      }
+      throw e;
     }
-    if (insert) {
-      const res = await fetch(sb.url + '/rest/v1/spr_channels', { method: 'POST', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ id: channel, share_name: shareName, pushed_by: who, pushed_at: at, payload: env }) });
-      if (res.status === 409) return 'conflict';
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return 'ok';
-    }
-    const res = await fetch(sb.url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(channel), { method: 'PATCH', headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ payload: env, pushed_by: who, pushed_at: at, share_name: shareName }) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return 'ok';
   }
   async function sealSem(sem, keyB64, who, pushedAt, shareName) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -5125,7 +5235,9 @@
       '<h4 style="margin:12px 0 4px">2. Share this class with a colleague</h4>' +
       '<div class="flex" style="gap:8px;align-items:center"><input class="inp" id="hubLink" readonly style="flex:1;min-width:220px;font-size:12px" value="' + U.esc(link || '') + '">' +
       '<button class="btn" data-action="hub-copy">Copy link</button></div>' +
-      '<p class="small muted" style="margin:6px 0 0">Anyone with this link can edit this class. Send it only to a teacher who should see these students.</p>' +
+      (shareKeySecret() ? '<div class="flex" style="gap:8px;align-items:center;margin-top:6px"><input class="inp" id="hubKey" readonly style="flex:1;min-width:220px;font-size:12px" value="' + U.esc(shareKeySecret()) + '">' +
+      '<button class="btn" data-action="hub-copy-key">Copy class key</button></div>' +
+      '<p class="small muted" style="margin:6px 0 0">Send the <b>link</b> and the <b>class key</b> by different messages (for example: link in chat, key read aloud on the phone). The key is the lock on these students&rsquo; data and it is no longer inside the link.</p>' : '') +
       '<h4 style="margin:12px 0 4px">3. Test cloud connection</h4>' +
       '<div class="flex" style="gap:8px;align-items:center"><button class="btn" data-action="hub-test">Test cloud connection</button>' +
       '<span class="small muted" id="hubTestStatus"></span></div>' +
@@ -5146,15 +5258,18 @@
   function shareQrModal() {
     const link = shareLink();
     if (!link) { toast('Create the share first', true); return; }
+    const keySec = shareKeySecret();
     openDlg(
       '<h3>Share this class</h3>' +
-      '<p class="small">Send the link to your co-teacher, or let them scan the code with a phone camera. Anyone who has it can open this class: share it only with them.</p>' +
+      '<p class="small">Two parts, sent by different messages: the <b>link</b> (or its code) identifies the class; the <b>class key</b> unlocks it. The key is deliberately NOT inside the link or the code.</p>' +
       (shareAppHint() ? '<p class="small" style="margin-top:-6px">' + shareAppHint() + '</p>' : '') +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="qrbox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="shareLink" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+        (keySec ? '<input class="inp" id="shareKeyInp" readonly style="font-size:12px;margin-top:6px" value="' + U.esc(keySec) + '" title="Class key: send separately, never inside the link">' : '') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="btn primary" data-action="share-chatmsg">Copy for DingTalk / WeChat</button>' +
+        '<button class="btn primary" data-action="share-copy-key">Copy class key</button>' +
+        '<button class="btn" data-action="share-chatmsg">Copy link for DingTalk / WeChat</button>' +
         (navigator.share ? '<button class="btn" data-action="share-native">Share…</button>' : '') +
         '<button class="btn" data-action="share-copy">Copy link</button>' +
         '<button class="btn" data-action="share-ding">Open in DingTalk</button>' +
@@ -5297,10 +5412,32 @@
     toast('The classic npoint channel was retired - ask your co-teacher for a current Save & Share link.', true);
   }
   async function shareJoin(id, keyB64, writeToken) {
-    if (looksUuid(id)) return joinSb(id, keyB64, writeToken);
+    if (looksUuid(id)) {
+      /* 2026-11-13 (C3): links no longer carry the key. A key-less link opens
+         a paste prompt instead of failing with a confusing decrypt error. */
+      if (!keyB64) return askJoinKey(id, writeToken);
+      return joinSb(id, keyB64, writeToken);
+    }
     /* pre-2026 npoint links are retired: nothing is fetched from npoint */
     toast('This share link uses the retired classic channel. Ask the sender to Push again with current SPR (Save & Share), or open a backup file.', true);
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  }
+  function askJoinKey(channel, writeToken) {
+    openDlg('<h3>Shared class: enter its key</h3>' +
+      '<p class="small">This share link identifies the class, but the class key travels separately (the teacher who shared it can read it to you or send it by a different message). Paste it below.</p>' +
+      '<input class="inp" id="joinKeyInp" style="width:100%" placeholder="Class key (a long code of letters and numbers)" autocomplete="off">' +
+      '<div class="login-err" id="joinKeyErr" aria-live="assertive"></div>' +
+      '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+      '<button class="btn primary" data-action="join-key-go">Open the class</button></div>');
+    const go = $('#join-key-go');
+    if (go) go.onclick = async () => {
+      const k = ($('#joinKeyInp') ? $('#joinKeyInp').value : '').trim();
+      const err = $('#joinKeyErr');
+      if (!k) { if (err) err.textContent = 'Paste the class key first.'; return; }
+      if (err) err.textContent = '';
+      closeDlg();
+      await joinSb(channel, k, writeToken || null);
+    };
   }
   async function joinSb(channel, keyB64, writeToken) {
     const sb = SB();
@@ -5342,10 +5479,30 @@
       if (!readNoticeAck()) { PENDING_JOIN = function () { shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); }; return; }
       shareJoin(decodeURIComponent(m[1]), m[2] ? decodeURIComponent(m[2]) : null, m[3] ? decodeURIComponent(m[3]) : null); return;
     }
-    const p = h.match(/^#pair=([^&]+)&k=([^&]+)/);
+    const p = h.match(/^#pair=([^&]+)(?:&k=([^&]+))?/);
     if (p) {
-      if (!readNoticeAck()) { PENDING_JOIN = function () { dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2])); }; return; }
-      dsPair(decodeURIComponent(p[1]), decodeURIComponent(p[2]));
+      const pairGo = (k) => {
+        if (!readNoticeAck()) { PENDING_JOIN = function () { dsPair(decodeURIComponent(p[1]), k); }; return; }
+        dsPair(decodeURIComponent(p[1]), k);
+      };
+      if (p[2]) pairGo(decodeURIComponent(p[2]));
+      else {
+        /* 2026-11-13 (C3): pairing links no longer embed the sync key */
+        openDlg('<h3>Pair this system: enter the sync key</h3>' +
+          '<p class="small">This pairing link identifies your school cloud copy, but its sync key travels separately. The administrator can read it to you or send it by a different message. Paste it below.</p>' +
+          '<input class="inp" id="pairKeyInp" style="width:100%" placeholder="Sync key (a long code of letters and numbers)" autocomplete="off">' +
+          '<div class="login-err" id="pairKeyErr" aria-live="assertive"></div>' +
+          '<div class="dlg-actions"><button class="btn" data-action="dlg-close">Cancel</button>' +
+          '<button class="btn primary" data-action="pair-key-go">Pair this system</button></div>');
+        const go = $('#pair-key-go');
+        if (go) go.onclick = () => {
+          const k = ($('#pairKeyInp') ? $('#pairKeyInp').value : '').trim();
+          const err = $('#pairKeyErr');
+          if (!k) { if (err) err.textContent = 'Paste the sync key first.'; return; }
+          closeDlg(); pairGo(k);
+        };
+      }
+      return;
     }
   }
 
@@ -5516,7 +5673,8 @@
     const os = /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : 'device';
     return b + ' · ' + os;
   }
-  function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) + '&k=' + encodeURIComponent(c.key) : null; }
+  function dsLink() { const c = dsCfg(); return (c && c.channel && c.key) ? location.origin + location.pathname + '#pair=' + encodeURIComponent(c.channel) : null; }
+  function dsKeySecret() { const c = dsCfg(); return (c && c.key) ? c.key : null; }
   /* ---- China-app aware sharing (DingTalk / WeChat) ----
      No third-party JS-SDK: WeChat requires a verified公众号 + ICP domain and
      DingTalk an enterprise app registration. What works everywhere without
@@ -5791,7 +5949,12 @@
   async function dsKillRow(id) {
     if (!id) return false;
     try {
-      const r = await sbSave(id, { sprDS: 0, dead: 1 }, 'devicesync', 'turned off', new Date().toISOString(), false);
+      /* 2026-11-13: the tombstone is a WRITE, so it must carry the device's
+         write token like every other write (unprotected writes are refused
+         now). A pre-SQL server keeps the row untouched: local-only deletion
+         still succeeded, the copy just stays until the owner arms it. */
+      const c = dsCfg() || {};
+      const r = await sbSave(id, { sprDS: 0, dead: 1 }, 'devicesync', 'turned off', new Date().toISOString(), false, { token: c.writeToken, keyProof: c.key });
       if (r !== 'ok') return false;
       try { await fetch(SB().url + '/rest/v1/spr_channels?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: sbHeaders() }); } catch (e) {}
       return true;
@@ -5803,6 +5966,8 @@
        failure: back off 30 s. */
     if (ctrlReadonly()) { dsLog('skip: control mode ' + ctrlMode() + ' - pushes paused'); return 'held'; }   /* round10: readonly/locked stop pushing */
     if (!dsCanPush()) { dsLog('skip: cannot push (signed out / sync off) | why=' + dsWhy); return 'held'; }
+    const pc = dsCfg();
+    if (pc && pc.protectionRetryAt && Date.now() < pc.protectionRetryAt) { dsLog('skip: cloud protection missing, paused until ' + new Date(pc.protectionRetryAt).toISOString()); return false; }   /* C1: long backoff, no retry storm */
     if (dsHoldPush) { dsLog('skip: a pull-check is deciding local-vs-cloud (dialog open) | why=' + dsWhy); return 'held'; }   /* never overwrite mid-decision */
     if (dsPushBusy) { dsRerunAfterFlight = true; dsLog('skip: a push is already in flight - coalesced, re-runs after it finishes | why=' + dsWhy); return 'held'; }
     dsPushBusy = true;
@@ -5883,7 +6048,7 @@
       dsLog('sent ok: row accepted the new copy | sum=' + env.sum + ' asum=' + env.asum + ' | why=' + dsWhy);
       await dsAdoptChan(cfg, chan);
       cfg = dsCfg() || cfg;
-      cfg.lastPush = at; cfg.lastResult = 'ok'; cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; dsSaveCfg(cfg);
+      cfg.lastPush = at; cfg.lastResult = 'ok'; cfg.failCount = 0; delete cfg.failSince; delete cfg.cloudAhead; delete cfg.protectionRetryAt; dsSaveCfg(cfg);
       if (interactive) toast('Cloud copy updated');
       if (location.hash === '#/manage') renderManage();
       return true;
@@ -5893,6 +6058,18 @@
       dsLog('fail: ' + reason + ' | why=' + dsWhy);
       const c2 = dsCfg();
       if (c2) {
+        if (e && e.protectionMissing) {
+          /* C1 refusal: cloud saving stays PAUSED until the owner runs the
+             protection SQL. Calm message, 10-minute backoff, no retry storm. */
+          c2.lastResult = 'fail';
+          c2.lastError = 'Cloud saving is paused: the school cloud copy is not protected yet. Nothing is lost: this device keeps every change. Ask the owner to run docs/supabase-write-token.sql (3 copy-paste steps), then saving resumes automatically.';
+          c2.protectionRetryAt = Date.now() + 10 * 60 * 1000;
+          c2.failCount = (c2.failCount || 0) + 1;
+          if (!c2.failSince) c2.failSince = new Date().toISOString();
+          dsSaveCfg(c2);
+          if (interactive) toast('Cloud saving paused: the school cloud is not protected yet (owner action needed). All changes are safe on this device.', true);
+          return false;
+        }
         c2.lastResult = 'fail'; c2.lastError = 'Cloud copy not updated: ' + reason + '. Your data on this device is safe.';
         c2.failCount = (c2.failCount || 0) + 1;
         if (!c2.failSince) c2.failSince = new Date().toISOString();   /* R4: the 2-minute quiet clock starts here */
@@ -6200,12 +6377,14 @@
     if (!link) { toast('Turn on device sync first', true); return; }
     openDlg(
       '<h3>Pair another system</h3>' +
-      '<p class="small">Easiest way: on the other system <b>just sign in with your SPR admin account</b>: everything arrives from the cloud automatically.<br><br>This link is the <b>backup way</b>: open it once on a system (or scan the code with a phone) to pair it without typing the admin account. The link contains the decryption key: share it with <b>nobody</b>. The pairing also travels inside your JSON backups.</p>' +
+      '<p class="small">Easiest way: on the other system <b>just sign in with your SPR admin account</b>: everything arrives from the cloud automatically.<br><br>This link is the <b>backup way</b>. The sync key that unlocks the cloud copy is shown separately below. <b>Never send link and key in the same message</b>. The pairing also travels inside your JSON backups.</p>' +
       '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
         '<div id="dsQrBox" style="background:#fff;padding:10px;border-radius:8px;border:1px solid #d8e2d8"></div>' +
         '<div style="flex:1;min-width:220px"><input class="inp" id="dsLinkInp" readonly style="font-size:12px" value="' + U.esc(link) + '">' +
+        (dsKeySecret() ? '<input class="inp" id="shareKeyInp" readonly style="font-size:12px;margin-top:6px" title="Sync key: send separately, never inside the link" value="' + U.esc(dsKeySecret()) + '">' : '') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        (navigator.share ? '<button class="btn primary" data-action="ds-share">Share…</button>' : '') +
+        '<button class="btn primary" data-action="share-copy-key">Copy sync key</button>' +
+        (navigator.share ? '<button class="btn" data-action="ds-share">Share link…</button>' : '') +
         '<button class="btn" data-action="ds-copy">Copy link</button>' +
         '<button class="btn" data-action="ds-ding">Open in DingTalk</button>' +
         '<button class="btn" data-x="ds-close">Close</button></div>' +

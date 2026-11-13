@@ -26,39 +26,7 @@ if (!appHtmlPath) { console.log('FAIL: no app build found (run: python source/bu
 const html0 = fs.readFileSync(appHtmlPath, 'utf8');
 
 /* fake Supabase REST — same table semantics as test-device-sync.js */
-const SB_FETCH_SRC =
-  'function (url, opts) {' +
-  ' url = String(url); opts = opts || {};' +
-  ' var SB = window.__SB;' +
-  ' function chanIdFrom(u) {' +
-  '   var i = u.indexOf("/rest/v1/spr_channels");' +
-  '   if (i === -1) return undefined;' +
-  '   var q = u.indexOf("id=eq.", i);' +
-  '   if (q === -1) return null;' +
-  '   var e = u.indexOf("&", q); return u.slice(q + 6, e === -1 ? u.length : e);' +
-  ' }' +
-  ' function H(st, body) { return { ok: st < 400, status: st, json: function () { return Promise.resolve(body === undefined ? [] : body); } }; }' +
-  ' var chan = chanIdFrom(url);' +
-  ' if (chan === undefined) return Promise.resolve({ ok: false, status: 404, json: function () { return Promise.resolve({}); } });' +
-  ' if (opts.method === "POST") {' +
-  '  return Promise.resolve(function () {' +
-  '   var b = JSON.parse(opts.body);' +
-  '   if (SB[b.id]) return H(409);' +
-  '   SB[b.id] = { id: b.id, share_name: b.share_name || null, pushed_by: b.pushed_by || null, pushed_at: b.pushed_at, payload: b.payload };' +
-  '   return H(201);' +
-  '  }());' +
-  ' }' +
-  ' if (opts.method === "PATCH") {' +
-  '  return Promise.resolve(function () {' +
-  '   if (!SB[chan]) return H(404);' +
-  '   var p = JSON.parse(opts.body); Object.keys(p).forEach(function (k) { SB[chan][k] = p[k]; });' +
-  '   return H(204);' +
-  '  }());' +
-  ' }' +
-  ' if (opts.method === "DELETE") { delete SB[chan]; return Promise.resolve(H(204)); }' +
-  ' if (!opts.method || opts.method === "GET") return Promise.resolve(H(200, chan && SB[chan] ? [SB[chan]] : []));' +
-  ' return Promise.resolve(H(200, chan && SB[chan] ? [SB[chan]] : []));' +
-  '}';
+const SB_FETCH_SRC = require('./helpers/sb-protected-mock.js').mockSrc;
 let SB = {};
 function syncSB(B) { SB = JSON.parse(JSON.stringify(B.w.__SB || {})); }
 

@@ -516,12 +516,17 @@
     return { id: String(json.id), name: String(json.name || ''), school: String(json.school || ''), eal: String(json.eal || ''), support: String(json.support || ''), blob: json.blob };
   }
   function classLink(origin, pathname, classId, keyB64) {
-    return origin + pathname + '#class=' + encodeURIComponent(classId) + '&k=' + encodeURIComponent(keyB64);
+    /* 2026-11-13 (C3): links never embed the class key any more. The key is
+       shown to the teacher as a separate secret (classShareDialog); old
+       key-bearing links still PARSE via parseClassHash below. keyB64 is
+       accepted for call compatibility and deliberately unused. */
+    void keyB64;
+    return origin + pathname + '#class=' + encodeURIComponent(classId);
   }
   function parseClassHash(hash) {
-    const m = String(hash || '').match(/#class=([^&]+)&k=([^&]+)/);
+    const m = String(hash || '').match(/#class=([^&]+)(?:&k=([^&]+))?/);
     if (!m) return null;
-    try { return { id: decodeURIComponent(m[1]), k: decodeURIComponent(m[2]) }; } catch (e) { return null; }
+    try { return { id: decodeURIComponent(m[1]), k: m[2] ? decodeURIComponent(m[2]) : null }; } catch (e) { return null; }
   }
 
   return {

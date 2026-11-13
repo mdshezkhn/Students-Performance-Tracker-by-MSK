@@ -213,7 +213,13 @@ eq(CS.normalizeRole('principal'), null, 'unknown role rejected');
   const link = CS.classLink('https://spr.example', '/app/index.html', 'c-a', CS.b64uFromBytes(key));
   const lp = CS.parseClassHash(link.substring(link.indexOf('#')));
   eq(lp.id, 'c-a', 'share link round-trip: id');
-  eq(lp.k, CS.b64uFromBytes(key), 'share link round-trip: key');
+  /* 2026-11-13 (C3): generated links NEVER embed the key; the key travels as
+     a separate secret. Old key-bearing links must still PARSE. */
+  eq(lp.k, null, 'generated share link carries NO key (key is a separate secret)');
+  ok(!/[?&]k=/.test(link), 'no key parameter anywhere in the generated link');
+  const legacyLp = CS.parseClassHash('#class=c-a&k=' + CS.b64uFromBytes(key));
+  eq(legacyLp.id, 'c-a', 'legacy key-bearing link still parses: id');
+  eq(legacyLp.k, CS.b64uFromBytes(key), 'legacy key-bearing link still parses: key');
   const opened2 = await CS.openClass(parsed.blob, key);
   eq(opened2.semesters[0].students[0].id, 'P01', 'blob from class file still opens with the shared key');
   eq(CS.parseClassHash('#/dashboard'), null, 'normal routes are not class links');

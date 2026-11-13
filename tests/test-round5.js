@@ -178,16 +178,22 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     check(await waitShell(A), 'before-SQL: admin signed in');
     await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000 && A.w.SPR_SYNC_TEST && A.w.SPR_SYNC_TEST.hold()) await sleep(250); })();   /* condition: boot pull-check released its push hold */
     calls.length = 0;
-    const pushed = A.w.SPR_SYNC_TEST ? await pushRetry(A) : null;
-    if (pushed !== true) console.log('    [dbg] A:', JSON.stringify({ logs: A.w.__logs, canPush: A.w.SPR_SYNC_TEST.canPush(), hold: A.w.SPR_SYNC_TEST.hold(), cfg: A.w.SPR_SYNC_TEST.cfg() }));
-    check(pushed === true, 'before-SQL: push succeeds (direct PATCH, header ignored)');
-    check(row.exists && row.payload && row.payload.sprDS === 1, 'before-SQL: cloud row holds the sealed copy');
-    check(row.write_token_hash === null, 'before-SQL: row is NOT armed (owner has not run the SQL)');
+    const pushed = A.w.SPR_SYNC_TEST ? await pushRetry(A, 3) : null;
+    /* 2026-11-13 (C1 remediation): before the protection SQL the app REFUSES
+       to write. Old behaviour (silent fallback to the anonymous direct write)
+       is gone by design: an unprotected server means NO cloud writes. */
+    const cfgA = A.w.SPR_SYNC_TEST ? A.w.SPR_SYNC_TEST.cfg() : {};
+    check(pushed === false, 'before-SQL: push REFUSED (no unprotected fallback)');
+    check(!row.exists, 'before-SQL: nothing reached the cloud row');
+    check(/paused/i.test(String(cfgA.lastError || '')), 'before-SQL: stored error says cloud saving is paused, data is safe');
+    check(!!cfgA.protectionRetryAt, 'before-SQL: long backoff set (no retry storm)');
     A.w.close();
 
-    /* AFTER the SQL: same client, same token; row left UNenrolled (existing row) */
+    /* AFTER the SQL: fresh row -> the very first INSERT arms it; the next
+       change goes through the RPC (token in the body); a legacy UNenrolled
+       row still self-enrols with the key proof. */
     MOCK_MODE = 'after';
-    row.write_token_hash = null;
+    row.write_token_hash = null; row.exists = false; row.payload = null; row.previous = null;
     calls.length = 0;
     const B = boot(await preSeed({ dsCfg: JSON.parse(JSON.stringify(cfg0)), sb: { url: 'http://127.0.0.1:' + MOCK_PORT, key: 'mock-anon' } }));
     await sleep(300);
@@ -197,11 +203,26 @@ const SYNC_KEY = b64u(webcrypto.getRandomValues(new Uint8Array(32)));
     dbB.semesters[dbB.semesters.length - 1].students[0].nameEn = 'Mutated-After-SQL';
     B.w.SPR_DEBUG_SET_DB(dbB); await sleep(400);
     const pushed2 = B.w.SPR_SYNC_TEST ? await pushRetry(B) : null;
-    check(pushed2 === true, 'after-SQL: push succeeds via the RPC (auto-enrol on first refusal)');
-    check(calls.some((c) => c.path === '/rest/v1/rpc/spr_channel_enrol'), 'after-SQL: client enrolled with the key proof (no manual SQL)');
+    check(pushed2 === true, 'after-SQL: push succeeds (armed INSERT on a fresh row)');
+    check(row.write_token_hash === (await sha256hex(TOKEN)), 'after-SQL: row armed with sha256(token) from the very first insert');
+    /* second change: must travel through the RPC, token in the body */
+    calls.length = 0;
+    const dbB2 = B.w.SPR_DEBUG_GET_DB();
+    dbB2.semesters[dbB2.semesters.length - 1].students[0].nameEn = 'Mutated-Again';
+    B.w.SPR_DEBUG_SET_DB(dbB2); await sleep(400);
+    const pushedRpc = B.w.SPR_SYNC_TEST ? await pushRetry(B) : null;
+    check(pushedRpc === true, 'after-SQL: second push succeeds via the RPC');
     check(calls.some((c) => c.path === '/rest/v1/rpc/spr_channel_write' && c.body && typeof c.body.p_token === 'string'), 'after-SQL: token travels in the RPC body, not a header');
-    check(row.write_token_hash === (await sha256hex(TOKEN)), 'after-SQL: row armed with sha256(token)');
-    check(row.previous && row.payload.sprDS === 1, 'after-SQL: previous payload kept for rollback');
+    check(row.previous && row.previous.sprDS === 1 && row.payload.sprDS === 1, 'after-SQL: previous payload kept for rollback');
+    /* third: legacy UNenrolled row -> auto-enrol with the key proof */
+    row.write_token_hash = null; calls.length = 0;
+    const dbB3 = B.w.SPR_DEBUG_GET_DB();
+    dbB3.semesters[dbB3.semesters.length - 1].students[0].nameEn = 'Mutated-Enrol';
+    B.w.SPR_DEBUG_SET_DB(dbB3); await sleep(400);
+    const pushedEnrol = B.w.SPR_SYNC_TEST ? await pushRetry(B) : null;
+    check(pushedEnrol === true, 'after-SQL: push succeeds on a legacy unarmed row (auto-enrol)');
+    check(calls.some((c) => c.path === '/rest/v1/rpc/spr_channel_enrol'), 'after-SQL: client enrolled with the key proof (no manual SQL)');
+    check(row.write_token_hash === (await sha256hex(TOKEN)), 'after-SQL: row re-armed after enrol');
     B.w.close();
 
     /* AFTER + WRONG token: refused, plain message, cloud never marked saved */

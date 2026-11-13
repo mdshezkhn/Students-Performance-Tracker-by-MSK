@@ -67,6 +67,7 @@ for marker, path in [
     ('/*__UTIL__*/', SRC / 'util.js'),
     ('/*__CALC__*/', SRC / 'calc.js'),
     ('/*__EXCEL__*/', SRC / 'excel.js'),
+    ('/*__SPRAUDIT__*/', SRC / 'spraudit.js'),
     ('/*__ANALYSIS__*/', SRC / 'analysis.js'),
     ('/*__CLASSSTORE__*/', SRC / 'classstore.js'),
     ('/*__APP__*/', SRC / 'app.js'),
