@@ -57,3 +57,26 @@ migration per DATA-FLOW-INVENTORY.md §2. **Partially awaiting migration.**
 - The 88 legacy channel rows still sit in prod Supabase until the owner acts.
 - ICP filing, provider contract (DPA checklist), PIPIA legal review: school
   obligations, prepared but not performed.
+
+---
+
+# Round 11 (2026-11-14) — end-to-end integration & security acceptance
+
+Full evidence: **docs/ROUND11-ACCEPTANCE-TESTS.md**. Summary of what changed:
+
+| Area | Change | Evidence |
+|---|---|---|
+| SPR adapter | NEW `source/spradapter.js` — deterministic cell↔record bridge, calc-engine-certified round trip | 38/0 |
+| Browser integration | NEW `tests/round11_browser_fet_cet.py` — real backend + real bundle, two contexts | 18/0 |
+| Adversarial suite | NEW `tests/test-server-adversarial.mjs` + DB-immutable audit trigger | 36/0 |
+| Backend fixes found BY testing | `/activate` endpoint added (was missing); SESSION_HOURS env-gated; schema loader dollar-quote-aware | RBAC 40/0, SYNC 26/0, SCHOOLSYNC 22/0 |
+| Import acceptance | NEW `tests/test-import-acceptance.js` (network disabled); engine gains `error-cell` + `max-inconsistent` checks | 18/0 |
+| Offline/recovery | client durability by default (localStorage); restart/device-replacement/restore proven | browser 18/0 |
+| Device-sync token fix | channel token rides inside the sealed envelope; enrol re-arms on key proof (SQL updated) | device-sync 114/0 |
+| Same-origin hosting | `server/` can serve the static app (`SPR_STATIC_DIR`); bundle CSP gained `connect-src 'self'` | browser suite |
+| Docs | PIPIA round-11 legal appendix; LEGACY-SUPABASE-DECOMMISSION.md; this round's acceptance doc | — |
+
+Status after round 11: **Implemented + unit/integration/security tested and
+staged. NOT deployed.** Release gates still open: school hosting/ICP decision,
+school approval of processing arrangements, owner action on the legacy
+Supabase project (run protection SQL or delete rows).

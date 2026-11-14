@@ -69,3 +69,44 @@ Current interim path (Seoul, encrypted) has **no assessed lawful mechanism** →
 To be completed with the school: (1) lawful-basis decision for minors' data; (2) guardian notice text; (3) retention period confirmation; (4) provider selection + DPA execution; (5) ICP filing. Until then the deployment remains **staging-only with synthetic data**.
 
 _Sign-off (school): ____________ date ______ · (legal review): ____________ date _______
+
+---
+
+## Round 11 review (2026-11-14) — engineering vs legal, kept strictly apart
+
+This section was added by the round-11 security acceptance pass. It does NOT
+change the draft's status: **nothing here is a legal opinion.**
+
+### What is ENGINEERING (implemented and tested in this repo)
+- Data minimisation enforced in the schema and import validation (no national
+  IDs, addresses, phones, photos, biometrics, medical data).
+- `under14` capability flag with no birthdate stored; guardian
+  notice/consent RECORD support is a school process, not a technical claim.
+- TLS-everywhere design; scrypt password hashing; HttpOnly+SameSite cookies;
+  CSRF; login rate limiting; per-request session expiry checks; server-side
+  school/class/role isolation on every query (adversarially tested).
+- DB-enforced audit immutability (trigger) — UPDATE/DELETE of audit rows
+  physically fails for any writer.
+- No student data to overseas services by default: the import/audit engine
+  runs entirely in the browser (acceptance matrix runs with fetch disabled);
+  the school backend is designed for Mainland-China hosting; the legacy
+  Supabase (Seoul) path is refused by the client until the owner runs the
+  protection SQL, and is scheduled for decommissioning
+  (docs/LEGACY-SUPABASE-DECOMMISSION.md).
+
+### What is LEGAL (school + qualified Mainland China counsel must decide)
+- The applicable lawful basis for processing minors' performance data and the
+  guardian notice/consent mechanism (PIPL Arts. 31/55/56 handling).
+- Whether the school or a contracted operator qualifies as the personal
+  information handler (个人信息处理者) vs an entrusted processor (受托人), and the
+  resulting contract structure (see DATA-PROCESSING-AGREEMENT-CHECKLIST.md).
+- Effects of the amended Cybersecurity Law (effective 2026-01-01) on the
+  school's operator obligations — the amendment's practical scope for a small
+  school deployment is a counsel question; this repo makes no claim about it.
+- ICP备案 and 公安联网备案 applicability and timing for the chosen host/domain
+  (the "typically 30 days" note in DEPLOYMENT-GUIDE is common practice, not a
+  cited legal deadline — counsel to confirm).
+- Cross-border reach of any residual overseas dependency (GitHub source
+  hosting is code-only; counsel to confirm the school's posture on that).
+- Data-retention periods in DATA-RETENTION-POLICY-DRAFT.md remain school
+  policy decisions, not statutory citations.
