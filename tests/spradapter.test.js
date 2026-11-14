@@ -34,7 +34,7 @@ console.log('1. forward mapping');
 {
   const out = A.toBackend(synthSem(), ctx);
   ok(out.students.length === 3, '3 students mapped, SPR register ids preserved: ' + out.students.map((s) => s.student_no).join(','));
-  ok(out.students.every((s) => /^stu-[0-9a-f]{32}$/.test(s.id)), 'student ids deterministic (re-import safe)');
+  ok(out.students.every((s) => /^[0-9a-f]{32}$/.test(s.id)), 'student ids deterministic hex (re-import safe, passes the backend id guard)');
   const obs = out.records.filter((r) => r.category === 'observation');
   ok(obs.length === 6, '6 observation cells mapped');
   ok(obs.every((r) => r.max_value === 10 && r.value >= 0 && r.value <= 10), 'observations carry max 10 and 0-10 values');
@@ -47,7 +47,7 @@ console.log('1. forward mapping');
   ok(t.length === 4, '4 formal test scores mapped');
   const mid = t.find((r) => r.period === 'midterm' && r.value === 88);
   ok(!!mid && mid.max_value === 100, 'midterm 88/100 mapped with max preserved');
-  ok(out.records.every((r) => /^rec-[0-9a-f]{32}$/.test(r.id)), 'record ids deterministic');
+  ok(out.records.every((r) => /^[0-9a-f]{32}$/.test(r.id)), 'record ids deterministic hex');
   ok(out.months.length === 3, 'month labels travel with the payload');
 }
 

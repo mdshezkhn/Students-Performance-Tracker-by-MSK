@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'self' https://*.supabase.co; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1e3b32">
@@ -708,7 +708,7 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="2300934ee9";window.SPR_OWNER_PUB=null;</script>
+<script>window.SPR_BUILD="a1ad4824a5";window.SPR_OWNER_PUB=null;</script>
 <script>window.SPR_NOTICE={"version": "2", "date": "06 Nov 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data.</p>\n<p><b>The owner account</b> (one protected account) <b>can open every class</b> in this markbook and <b>can switch the app to read-only or locked</b> for everyone. It does not delete anyone's data and does not send data anywhere. Nobody else — not even the maker — has this access. In this install the owner is the teacher who set SPR up; if the school prefers a school-designated holder, the handover is a password change plus passing on the recovery kit, and the school can ask for it at any time.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据。</p>\n<p><b>负责人账户</b>(一个受保护的账户)<b>可以打开本成绩册的每一个班级</b>,也可以为所有人<b>把应用切换为只读或锁定模式</b>。它不会删除任何人的数据,也不会把数据发送到任何地方。除负责人外——包括开发者——没有人拥有此项权限。在本安装中,负责人账户由搭建 SPR 的教师持有;如学校希望改由学校指定人员持有,可通过修改密码并移交恢复工具包完成交接,学校可随时提出此要求。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
@@ -2336,9 +2336,10 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       return results;
     }
 
-    /* ---------- pull: incremental by sync serial ---------- */
-    async function pull(since) {
-      return call('GET', '/api/sync/pull' + (since !== undefined && since !== null ? '?since=' + encodeURIComponent(since) : ''));
+    /* ---------- pull: incremental records for one class (server contract:
+       GET /api/classes/<id>/records?since=<iso>) ---------- */
+    async function pull(classId, since) {
+      return call('GET', '/api/classes/' + encodeURIComponent(classId) + '/records' + (since ? '?since=' + encodeURIComponent(since) : ''));
     }
 
     return { login: login, logout: logout, whoami: whoami, call: call,
@@ -2346,6 +2347,210 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   return { create: create };
+});
+
+</script>
+<script>
+/* =========================================================================
+   SPR Adapter — deterministic bridge between the SPR cell model (semester
+   object used by calc.js / excel.js / the PWA store) and the school backend
+   record model (server/schema.sql: students + records rows).
+
+   Node-safe: no DOM. In browser: window.SPRAdapter; in node: module.exports.
+
+   Guarantees (round11):
+   - DETERMINISTIC ids: the same local cell always maps to the same backend
+     record id (hash of class/student/category/period/ordinal/semester), so a
+     repeated import or sync can never create duplicates; the server's unique
+     constraint is the second line of defence.
+   - LOSSLESS for everything the calculation engine consumes: observations
+     (skill-LO cells), spelling and daily month pairs, formal tests, student
+     roster. Round-trip equality is asserted by tests against calc.gradeAll
+     output (the engine stays authoritative; this adapter never re-derives
+     grades).
+   - NO grading logic lives here. Mapping only.
+   ========================================================================= */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.SPRAdapter = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  const SKILLS = ['Listening', 'Speaking', 'Writing', 'Reading'];
+  const LOS = [1, 2];
+  const TESTS = ['midterm', 'oral', 'written'];
+
+  function fnv1a32(str) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  }
+  /* deterministic, collision-safe enough for one school's class roster:
+     4 x fnv1a32 over disambiguated segments */
+  function stableId(prefix, parts) {
+    /* hex-only output: the backend's id guard accepts [0-9a-f-] uuid-shaped
+       ids, so the semantic prefix goes into the HASH INPUT, not the output */
+    var s = prefix + ' ' + parts.join(' ');
+    return fnv1a32(s + ' 1') + fnv1a32(s + ' 2') + fnv1a32(s + ' 3') + fnv1a32(s + ' 4');
+  }
+  function num(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var n = typeof v === 'number' ? v : Number(String(v).trim());
+    return isFinite(n) ? n : null;
+  }
+  function isEmptyPair(p) { return !p || (num(p.s) === null && num(p.t) === null); }
+  function weekSort(a, b) { var x = num(a), y = num(b); if (x === null) return 1; if (y === null) return -1; return x - y; }
+
+  /* ---- forward: SPR semester -> backend rows -------------------------------- */
+  function toBackend(sem, ctx) {
+    if (!sem || typeof sem !== 'object') throw new Error('toBackend: semester object required');
+    if (!ctx || !ctx.classId) throw new Error('toBackend: ctx.classId required');
+    var schoolId = ctx.schoolId || '';
+    var semesterId = ctx.semesterId || sem.id || '';
+    var students = [], records = [];
+
+    (sem.students || []).forEach(function (st) {
+      var sid = String(st.id || '');
+      if (!sid) return;
+      var g = String(st.gender || '').toUpperCase();
+      students.push({
+        id: stableId('stu', [ctx.classId, sid]),
+        school_id: schoolId,
+        class_id: ctx.classId,
+        student_no: sid,                       /* the SPR register id is preserved verbatim */
+        name_cn: String(st.nameCn || ''),
+        name_en: String(st.nameEn || ''),
+        gender: (g === 'M' || g === 'F') ? g : null,
+        active: true
+      });
+    });
+    var bySid = {};
+    students.forEach(function (s) { bySid[s.student_no] = s.id; });
+
+    function rec(sid, category, period, ordinal, value, maxValue, note) {
+      records.push({
+        id: stableId('rec', [ctx.classId, sid, category, period, String(ordinal), semesterId]),
+        school_id: schoolId,
+        class_id: ctx.classId,
+        student_id: bySid[sid],
+        semester_id: semesterId,
+        category: category,
+        period: String(period || ''),
+        ordinal: ordinal || 1,
+        value: value,
+        max_value: maxValue === undefined ? null : maxValue,
+        note: note || ''
+      });
+    }
+
+    var months = (sem.months && sem.months.length) ? sem.months.slice() : [];
+    function monthOf(m) { return (months.indexOf(m) !== -1) ? m : m; } /* keep label verbatim either way */
+
+    /* observations: key = '<Skill>-LO<n>' inside sem.observations[sid][month] */
+    Object.keys(sem.observations || {}).forEach(function (sid) {
+      var bySidObs = sem.observations[sid] || {};
+      Object.keys(bySidObs).forEach(function (m) {
+        var cell = bySidObs[m] || {};
+        Object.keys(cell).forEach(function (k) {
+          var v = num(cell[k]);
+          if (v === null) return;
+          var match = /^(Listening|Speaking|Writing|Reading)-LO([12])$/.exec(k);
+          if (!match) return;
+          var ordinal = SKILLS.indexOf(match[1]) * LOS.length + LOS.indexOf(Number(match[2])) + 1; /* 1..8, stable */
+          rec(sid, 'observation', monthOf(m), ordinal, v, 10, k);
+        });
+      });
+    });
+    /* spelling + daily: {s,t} pairs keyed by month THEN WEEK (the calc
+       engine's model: sem[metric][sid][month][week] = {s,t}); week -> ordinal */
+    ['spelling', 'daily'].forEach(function (metric) {
+      var bySidMetric = sem[metric] || {};
+      Object.keys(bySidMetric).forEach(function (sid) {
+        var byMonth = bySidMetric[sid] || {};
+        Object.keys(byMonth).forEach(function (m) {
+          var byWeek = byMonth[m] || {};
+          Object.keys(byWeek).sort(weekSort).forEach(function (w) {
+            var p = byWeek[w];
+            if (isEmptyPair(p)) return;
+            var wn = num(w);
+            rec(sid, metric, monthOf(m), (wn === null || wn < 1) ? String(w) : wn, num(p.s), num(p.t), String(w));
+          });
+        });
+      });
+    });
+    /* formal tests: {midterm:{s,t}, oral:{s,t}, written:{s,t}} per student */
+    Object.keys(sem.tests || {}).forEach(function (sid) {
+      var t = sem.tests[sid] || {};
+      TESTS.forEach(function (tn) {
+        var p = t[tn];
+        if (!isEmptyPair(p)) rec(sid, 'test', tn, 1, num(p.s), num(p.t), '');
+      });
+    });
+
+    return { students: students, records: records, months: months, semester_id: semesterId };
+  }
+
+  /* ---- reverse: backend rows -> SPR semester -------------------------------- */
+  function fromBackend(rows, opts) {
+    if (!rows || typeof rows !== 'object') throw new Error('fromBackend: rows object required');
+    var students = rows.students || [], records = rows.records || [];
+    var sem = {
+      id: (rows.semester_id || (opts && opts.semesterId) || ''),
+      name: (opts && opts.name) || '',
+      months: (rows.months && rows.months.length ? rows.months.slice() : derivedMonths(records)),
+      students: students.map(function (s) {
+        return { id: s.student_no || '', nameCn: s.name_cn || '', nameEn: s.name_en || '', gender: s.gender || '' };
+      }),
+      observations: {}, spelling: {}, daily: {}, tests: {}
+    };
+    var known = {};
+    sem.students.forEach(function (s) { known[s.id] = true; });
+
+    records.forEach(function (r) {
+      var sid = studentNoOf(students, r.student_id);
+      if (!sid || !known[sid]) return;                       /* unknown student: never fabricate */
+      if (r.deleted_at) return;
+      if (r.category === 'observation') {
+        var dec = decodeObsOrdinal(r.ordinal);
+        if (!dec) return;
+        sem.observations[sid] = sem.observations[sid] || {};
+        sem.observations[sid][r.period] = sem.observations[sid][r.period] || {};
+        sem.observations[sid][r.period][dec.key] = r.value;
+      } else if (r.category === 'spelling' || r.category === 'daily') {
+        sem[r.category][sid] = sem[r.category][sid] || {};
+        sem[r.category][sid][r.period] = sem[r.category][sid][r.period] || {};
+        var wk = String(r.ordinal || 1);
+        sem[r.category][sid][r.period][wk] = { s: r.value, t: r.max_value };
+      } else if (r.category === 'test') {
+        sem.tests[sid] = sem.tests[sid] || {};
+        sem.tests[sid][String(r.period)] = { s: r.value, t: r.max_value };
+      }
+    });
+    return sem;
+  }
+  function studentNoOf(students, id) {
+    for (var i = 0; i < students.length; i++) if (students[i].id === id) return students[i].student_no;
+    return null;
+  }
+  function decodeObsOrdinal(ordinal) {
+    var n = Number(ordinal);
+    if (!(n >= 1 && n <= SKILLS.length * LOS.length)) return null;
+    var skill = SKILLS[Math.floor((n - 1) / LOS.length)];
+    var lo = LOS[(n - 1) % LOS.length];
+    return { key: skill + '-LO' + lo, skill: skill, lo: lo };
+  }
+  function derivedMonths(records) {
+    var seen = {}, out = [];
+    (records || []).forEach(function (r) {
+      if (r.category === 'observation' || r.category === 'spelling' || r.category === 'daily') {
+        if (r.period && !seen[r.period]) { seen[r.period] = true; out.push(r.period); }
+      }
+    });
+    return out;
+  }
+
+  return { toBackend: toBackend, fromBackend: fromBackend, stableId: stableId, _internals: { SKILLS: SKILLS, LOS: LOS, TESTS: TESTS, decodeObsOrdinal: decodeObsOrdinal } };
 });
 
 </script>

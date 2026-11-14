@@ -18,6 +18,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import fsPromises from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
 
@@ -270,6 +271,7 @@ export async function createApp(opts = {}) {
     await audit(store, { school_id: schoolId, action: 'bootstrap.admin', target: adminUser, detail: { note: 'first-run admin created with must_change_pw' } });
   }
 
+  const staticDir = opts.staticDir ? path.resolve(opts.staticDir) : null;
   const server = http.createServer(async (req, res) => {
     const reqId = rid();
     const u = new URL(req.url, 'http://localhost');
@@ -280,6 +282,26 @@ export async function createApp(opts = {}) {
         return ok(res, { ok: true, store: store.kind, time: nowIso() });
       }
 
+      /* ---- optional same-origin static hosting (single-box deployments and
+         the browser integration test). Enabled by opts.staticDir; path
+         traversal is blocked; only whitelisted types are served. ---- */
+      if (staticDir && !p.startsWith('/api/')) {
+        const rel = p.replace(/^\/+/, '');
+        const segs = rel.split('/').filter((seg) => seg && seg !== '.' && seg !== '..');
+        const safe = segs.join('/');
+          let fp = path.join(staticDir, safe);
+          if (safe === '' || safe.endsWith('/')) fp = path.join(fp, 'index.html');
+          try {
+            const data = await fsPromises.readFile(fp);
+            const ext = path.extname(fp).toLowerCase();
+            const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
+            res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+            return res.end(data);
+          } catch (eStatic) { /* fall through to 404 */ }
+        return bad(res, 404, 'not found');
+      }
+
+      
       /* ---- auth ---- */
       if (p === '/api/auth/login' && req.method === 'POST') {
         const ip = req.socket.remoteAddress || 'unknown';
@@ -572,7 +594,7 @@ export async function createApp(opts = {}) {
         return ok(res, { students: students, records: records.map(pubRec), exported_at: nowIso() });
       }
 
-      return bad(res, 404, 'no such API endpoint');
+return bad(res, 404, 'no such API endpoint');
     } catch (e) {
       if (e && e.code === 413) return bad(res, 413, 'request body too large');
       if (e && e.code === 400) return bad(res, 400, e.message);
@@ -587,7 +609,7 @@ export async function createApp(opts = {}) {
 /* CLI entry: node server/spr-server.mjs (env: SPR_DB_URL, SPR_PORT, ...) */
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.SPR_PORT || 8787);
-  createApp().then((srv) => {
+  createApp({ staticDir: process.env.SPR_STATIC_DIR || null }).then((srv) => {
     srv.listen(port, () => console.log('SPR school backend listening on :' + port + ' (store: ' + srv.sprStore.kind + ')'));
   }).catch((e) => { console.error('startup failed:', e.message); process.exit(1); });
 }

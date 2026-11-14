@@ -123,9 +123,10 @@
       return results;
     }
 
-    /* ---------- pull: incremental by sync serial ---------- */
-    async function pull(since) {
-      return call('GET', '/api/sync/pull' + (since !== undefined && since !== null ? '?since=' + encodeURIComponent(since) : ''));
+    /* ---------- pull: incremental records for one class (server contract:
+       GET /api/classes/<id>/records?since=<iso>) ---------- */
+    async function pull(classId, since) {
+      return call('GET', '/api/classes/' + encodeURIComponent(classId) + '/records' + (since ? '?since=' + encodeURIComponent(since) : ''));
     }
 
     return { login: login, logout: logout, whoami: whoami, call: call,
