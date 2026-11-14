@@ -3640,7 +3640,7 @@
     return '<div style="display:none">' +
       '<h4>Where the data lives</h4><ul>' +
       '<li>Data lives in this browser: online, stored <b>encrypted</b> (your password opens it); the offline file version stores it unencrypted.</li>' +
-      '<li><b>Nothing leaves this device unless you use Save &amp; Share</b>, which uploads an <b>encrypted</b> copy of one class to a private cloud channel (Supabase, a hosted database service). The key stays inside your share link: the cloud stores only encrypted bytes. Anyone with that full link can open the class: send it only to your co-teacher.</li>' +
+      '<li><b>Nothing leaves this device unless you use Save &amp; Share</b>, which uploads an <b>encrypted</b> copy of one class to a private cloud channel (Supabase, a hosted database service). The cloud stores only encrypted bytes. The link alone is not enough: it opens the class only together with the <b>class key</b>, which is shown separately when you share. Send the link and the key to your co-teacher through different messages, and only to people who should see the class.</li>' +
       '<li>Exported files (Excel / JSON backups) are <b>not encrypted</b>. Store them only on school-approved storage, and delete them when no longer needed.</li>' +
       '<li>This website is a static page: no server of its own, no tracking. Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Your student data remains stored in this browser unless you export a backup or use Share &amp; Sync / Device sync: both encrypt everything (AES-GCM) before anything leaves this browser, so the cloud only ever stores unreadable bytes.</li></ul>' +
       '<h4>Your responsibilities</h4><ul>' +

@@ -675,6 +675,29 @@ export async function createApp(opts = {}) {
         return ok(res, { events: rows });
       }
 
+      /* ---- round24: full-school backup (admin only, audited).
+             Contains password hashes -> the response is sensitive; treat the
+             saved file like a key store. Restore: scripts/restore-from-backup.mjs */ 
+      if (p === '/api/admin/backup' && req.method === 'GET') {
+        if (ctx.user.role !== 'admin') return bad(res, 403, 'admin only');
+        const tables = ['schools', 'users', 'classes', 'class_memberships', 'students', 'semesters', 'records', 'audit_events'];
+        const out = { kind: 'spr-backup', version: 1, taken_at: nowIso(), school_id: ctx.user.school_id, tables: {} };
+        const scrub = (rows) => rows.map((r) => JSON.parse(JSON.stringify(r, (k, v) => typeof v === 'bigint' ? Number(v) : v)));
+        for (const t of tables) {
+          if (t === 'schools') {
+            out.tables[t] = scrub(await store.query('select * from schools order by 1'));
+          } else if (t === 'class_memberships') {
+            out.tables[t] = scrub(await store.query('select cm.* from class_memberships cm join classes c on c.id = cm.class_id where c.school_id = $1 order by 1', [ctx.user.school_id]));
+          } else {
+            out.tables[t] = scrub(await store.query('select * from ' + t + " where school_id = $1 or school_id = '' order by 1", [ctx.user.school_id]));
+          }
+        }
+        out.tables.schema_migrations = scrub(await store.query('select * from schema_migrations order by version'));
+        /* sessions/idempotency are intentionally EXCLUDED: they are runtime state, not school data */
+        await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'backup.create', req_id: reqId });
+        return ok(res, out);
+      }
+
       /* ---- class export (migration / reports) ---- */
       if ((m = p.match(/^\/api\/export\/class\/([0-9a-f-]+)$/)) && req.method === 'GET') {
         const duty = (await membershipsFor(store, ctx.user.id))[m[1]];
