@@ -703,12 +703,18 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
   .page .sheet table.tbl td .btn { min-height: 40px; }
 }
 
+
+/* demo classes banner (2026-11-15): always clear this is dummy data */
+#demo-banner{position:fixed;left:12px;bottom:12px;z-index:60;background:#1e293b;color:#e2e8f0;padding:8px 12px;border-radius:10px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;max-width:92vw}
+#demo-banner button{background:#ef4444;color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+@media print{#demo-banner{display:none}}
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <input type="file" id="file-restore-all" accept=".json,application/json" hidden>
-<script>window.SPR_BUILD="0f33db4300";window.SPR_OWNER_PUB=null;</script>
+<script>window.SPR_BUILD="71074c2e16";window.SPR_OWNER_PUB=null;</script>
 <script>window.SPR_NOTICE={"version": "2", "date": "06 Nov 2026", "en": "<h4>About SPR and your student data</h4>\n<p>SPR (Student's Performance Report) is a free markbook made by Mohammed Shehzad Khan (Teacher Mo), an ESL teacher, to help teachers at his school record scores and print report cards. It is a teacher's tool. It is not a commercial product and it is not a school information system.</p>\n<h4>Whose data this is</h4>\n<p>The student records you enter belong to your school. The school decides who may use them and how long they are kept. The maker of SPR does not collect, hold, read or sell your data.</p>\n<p><b>The owner account</b> (one protected account) <b>can open every class</b> in this markbook and <b>can switch the app to read-only or locked</b> for everyone. It does not delete anyone's data and does not send data anywhere. Nobody else — not even the maker — has this access. In this install the owner is the teacher who set SPR up; if the school prefers a school-designated holder, the handover is a password change plus passing on the recovery kit, and the school can ask for it at any time.</p>\n<h4>Where data is kept</h4>\n<p>Data is stored inside the browser on the device you use. It is encrypted with your password. If you forget the password and no master password or backup exists, the data cannot be recovered by anyone. Exported Excel and backup files are not encrypted; keep them only on school-approved storage and delete them when no longer needed.</p>\n<h4>When data leaves the device</h4>\n<p>Nothing is sent anywhere unless an admin turns on Device sync or someone uses Save &amp; Share. In that case an encrypted copy is stored on Supabase, a third-party hosting service. SPR does not use analytics or advertising trackers.</p>\n<h4>Your part</h4>\n<p>Use a screen lock. Do not use shared or public computers. Download a backup after each working session. Follow your school's rules and the law that applies to you (for example PIPL in China) when you handle or share student information.</p>\n<h4>No warranty</h4>\n<p>SPR is provided as is, without warranty of any kind. It may contain errors. Grades and comments it produces must be checked by a teacher before they are used. To the extent the law allows, the maker is not responsible for lost or corrupted data, wrong grades, or any use of the tool. Browsers can delete site data; backups are the only protection.</p>\n<h4>Questions or problems</h4>\n<p>Use Help &amp; training &gt; Raise a request, or contact the school administrator.</p>", "zh": "<h4>关于 SPR 和学生数据</h4>\n<p>SPR(学生成绩报告)是由英语教师 Mohammed Shehzad Khan(Teacher Mo)自行开发的免费成绩记录工具,用于帮助本校教师录入成绩和打印报告单。它是教师使用的辅助工具,不是商业产品,也不是学校的正式信息系统。</p>\n<h4>数据归属</h4>\n<p>您录入的学生资料属于学校。学校决定谁可以使用这些数据以及保存多久。SPR 的开发者不收集、不保存、不查看、不出售任何数据。</p>\n<p><b>负责人账户</b>(一个受保护的账户)<b>可以打开本成绩册的每一个班级</b>,也可以为所有人<b>把应用切换为只读或锁定模式</b>。它不会删除任何人的数据,也不会把数据发送到任何地方。除负责人外——包括开发者——没有人拥有此项权限。在本安装中,负责人账户由搭建 SPR 的教师持有;如学校希望改由学校指定人员持有,可通过修改密码并移交恢复工具包完成交接,学校可随时提出此要求。</p>\n<h4>数据存放位置</h4>\n<p>数据保存在您所用设备的浏览器中,并用您的密码加密。如果忘记密码,又没有主密码或备份,任何人都无法恢复数据。导出的 Excel 和备份文件没有加密,请只保存在学校认可的存储位置,不需要时请删除。</p>\n<h4>数据何时离开设备</h4>\n<p>除非管理员开启“设备同步”或有人使用“保存并分享”,否则不会向任何地方发送数据。开启后,加密副本会存放在第三方托管服务 Supabase 上。SPR 不使用统计分析或广告追踪。</p>\n<h4>您的责任</h4>\n<p>请设置屏幕锁定;不要在共用或公共电脑上使用;每次使用后下载一份备份;处理或分享学生信息时,请遵守学校规定和适用法律(例如中国的《个人信息保护法》)。</p>\n<h4>免责声明</h4>\n<p>SPR 按“现状”提供,不附带任何形式的保证,可能存在错误。由它生成的成绩和评语须经教师核对后方可使用。在法律允许的范围内,开发者不对数据丢失或损坏、成绩错误或任何使用后果承担责任。浏览器可能清除网站数据,备份是唯一的保障。</p>\n<h4>问题反馈</h4>\n<p>请使用“帮助与培训 &gt; 提交请求”,或联系学校管理员。</p>"};</script>
 <div id="toast-root" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
@@ -2610,6 +2616,170 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
   return { toBackend: toBackend, fromBackend: fromBackend, stableId: stableId, _internals: { SKILLS: SKILLS, LOS: LOS, TESTS: TESTS, decodeObsOrdinal: decodeObsOrdinal } };
+});
+
+</script>
+<script>
+/* SPRDemo — deterministic synthetic demo dataset (class mode).
+   Generates TWO demo classes ("P4-A Demo", "P4-B Demo") with dummy students,
+   FET observations, CET spelling/daily/test scores, one pending observation
+   request and audit history. 100% synthetic: no real student names or marks,
+   fixed PRNG seed, so every install produces byte-identical data and node
+   tests can verify it against the real calculation engine.
+   Node-safe: no DOM. In browser: window.SPRDemo; in node: module.exports. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.SPRDemo = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const SKILLS = ['Listening', 'Speaking', 'Writing', 'Reading'];
+  const MONTHS_FULL = ['September', 'October'];
+  const FET = 'fet-demo';
+  const CET = 'cet-demo';
+
+  /* mulberry32 — tiny deterministic PRNG (same sequence everywhere) */
+  function prng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rint = (r, lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+
+  /* score in a 0..max window around a student's band, clamped to valid */
+  function around(r, band, max) {
+    const v = Math.round(band * max + (r() - 0.5) * max * 0.18);
+    return Math.max(0, Math.min(max, v));
+  }
+
+  function makeStudents(r, prefix, count) {
+    const out = [];
+    for (let i = 1; i <= count; i++) {
+      out.push({
+        id: prefix + '-' + String(i).padStart(2, '0'),
+        nameCn: '',
+        nameEn: 'Demo Student ' + String(i).padStart(2, '0'),
+        gender: i % 2 === 0 ? 'F' : 'M',
+      });
+    }
+    return out;
+  }
+
+  /* Build one class workbook semester. fill pattern:
+     full    — everything assessed (final grades)
+     partial — October still in progress (provisional grades)
+     sparse  — a student whose written + oral tests are still missing   */
+  function buildSemester(r, cls, students, pattern, opts) {
+    const sem = {
+      id: 'sem-' + cls.id + '-2026f',
+      name: '2026 Fall',
+      school: 'SPR Demo School',
+      className: cls.name,
+      teachers: ['Demo FET', 'Demo CET'],
+      months: MONTHS_FULL.slice(),
+      students: students,
+      observations: {}, spelling: {}, daily: {}, tests: {},
+      reportNotes: {},
+    };
+    students.forEach((s, i) => {
+      /* deterministic bands: 4 strong, broad middle, a few developing
+         learners — a realistic class spread, plus one high performer and
+         one student whose written/oral exams are not entered yet */
+      const bandPool = [0.92, 0.86, 0.80, 0.77, 0.74, 0.70, 0.70, 0.66, 0.62, 0.58, 0.54, 0.47];
+      const band = bandPool[i % bandPool.length];
+      const isSparse = pattern === 'sparse' && i === students.length - 2;
+
+      /* FET observations: two lesson observations (LO1/LO2) per skill per
+         month on the 0-10 scale */
+      sem.observations[s.id] = {};
+      for (const m of MONTHS_FULL) {
+        if (pattern === 'partial' && m === 'October' && i % 7 === 3) continue;   /* not observed yet this month */
+        sem.observations[s.id][m] = {};
+        for (const sk of SKILLS) {
+          const base = around(r, band, 10);
+          sem.observations[s.id][m][sk + '-LO1'] = Math.max(0, Math.min(10, base));
+          sem.observations[s.id][m][sk + '-LO2'] = Math.max(0, Math.min(10, base + rint(r, -1, 1)));
+        }
+      }
+
+      /* CET spelling (out of 20) and daily assignments (out of 10): weekly */
+      for (const metric of ['spelling', 'daily']) {
+        sem[metric][s.id] = {};
+        const max = metric === 'spelling' ? 20 : 10;
+        const weeks = { September: 4, October: pattern === 'partial' ? 2 : 4 };
+        for (const m of MONTHS_FULL) {
+          sem[metric][s.id][m] = {};
+          for (let w = 1; w <= weeks[m]; w++) {
+            /* a few blank weeks (absent) so missing ≠ zero is visible */
+            if (r() < 0.04) continue;
+            sem[metric][s.id][m][String(w)] = { s: around(r, band, max), t: max };
+          }
+        }
+      }
+
+      /* CET formal tests: midterm (all), oral (most), written (most) */
+      sem.tests[s.id] = { midterm: { s: around(r, band, 50), t: 50 } };
+      if (!(isSparse)) {
+        if (r() > 0.08) sem.tests[s.id].oral = { s: around(r, band, 20), t: 20 };
+        if (r() > 0.08) sem.tests[s.id].written = { s: around(r, band, 40), t: 40 };
+      }
+    });
+    return sem;
+  }
+
+  /* the full demo environment */
+  function build() {
+    const r = prng(20261115);
+    const studentsA = makeStudents(r, 'da', 22);
+    const studentsB = makeStudents(r, 'db', 24);
+
+    const classA = {
+      id: 'demo-p4a-2026', name: 'P4-A Demo', school: 'SPR Demo School',
+      eal: FET, support: CET,
+    };
+    const classB = {
+      id: 'demo-p4b-2026', name: 'P4-B Demo', school: 'SPR Demo School',
+      eal: FET, support: CET,
+    };
+
+    const semA = buildSemester(r, classA, studentsA, 'full', {});
+    const semB = buildSemester(r, classB, studentsB, 'partial', {});
+
+    /* one pending observation request from the CET, so the FET approval
+       workflow has something real to show (P4-A, Demo Student 08, October) */
+    const pending = {
+      id: 'pc-demo-1', kind: 'obs', semId: semA.id,
+      sid: studentsA[7].id, month: 'October', key: 'Speaking-LO2',
+      oldValue: semA.observations[studentsA[7].id].October['Speaking-LO2'],
+      newValue: 8,
+      requestedBy: CET, time: 1762900000000,
+      note: 'He led his group confidently in the weather game today.',
+    };
+
+    const audit = [
+      { t: 1762800000000, by: 'owner-demo', action: 'class.create', note: 'P4-A Demo created (demo data)' },
+      { t: 1762800100000, by: 'owner-demo', action: 'class.create', note: 'P4-B Demo created (demo data)' },
+      { t: 1762810000000, by: FET, action: 'obs.request', cell: semA.id + '/' + studentsA[7].id + '/October/Speaking-LO2', old: pending.oldValue, new: 8, note: 'requested by ' + CET },
+    ];
+
+    return {
+      meta: { demo: 1, version: 1, generatedBy: 'sprdemo.js', note: 'SYNTHETIC demo data - no real students' },
+      users: [
+        { username: FET, name: 'Demo FET (foreign teacher)', role: 'teacher' },
+        { username: CET, name: 'Demo CET (assistant teacher)', role: 'teacher' },
+      ],
+      classes: [
+        { id: classA.id, name: classA.name, school: classA.school, eal: FET, support: CET, semester: semA, pending: [pending], audit: audit },
+        { id: classB.id, name: classB.name, school: classB.school, eal: FET, support: CET, semester: semB, pending: [], audit: [] },
+      ],
+    };
+  }
+
+  return { build: build, FET: FET, CET: CET };
 });
 
 </script>
@@ -5379,6 +5549,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
             '<button class="btn primary" data-action="wiz-open">New class (guided setup)</button>' +
             '<button class="btn" data-action="import-xlsx">Import SPR Excel file</button>' +
             '<button class="btn" data-action="load-sample">Load sample data</button>' +
+            (cryptoOK() && !demoInstalled() ? '<button class="btn" data-action="demo-open" style="margin-left:8px">Try the demo classes (dummy students)</button>' : '') +
           '</div>' +
           '<p class="small muted" style="margin-top:22px">Everything stays in this browser: nothing is sent to any server unless you use Share &amp; Sync or turn on Device sync (both encrypt before upload). Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Move data between computers with “Download backup”, or: as admin: let Device sync keep every system current automatically.</p>' +
           '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
@@ -8173,6 +8344,9 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
       else location.hash = '#/dashboard';
       return;
     }
+    if (a === 'demo-open') { demoOpenDialog(); return; }
+    if (a === 'demo-install') { demoInstall(); return; }
+    if (a === 'demo-remove') { demoRemove(); return; }
     if (a === 'do-login') {
       const u = $('#loginUser') ? $('#loginUser').value.trim() : '';
       const p = $('#loginPass') ? $('#loginPass').value : '';
@@ -10850,6 +11024,7 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
           (cryptoOK() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="login-other-device">I use SPR on another device &rarr;</button></div>' : '') +
           (ctrlMode() === 'locked' ? '<div id="lockMsg" style="margin-top:12px;padding:10px 12px;background:#7c2d12;color:#fed7aa;border-radius:8px;font-size:14px"><b>SPR is locked by the owner.</b> ' + U.esc((((ctrlCache() || {}).rec) || {}).message || '') + ' Only the owner account can sign in.</div>' : '') +
       (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
+      (cryptoOK() && !demoInstalled() ? '<div style="margin-top:6px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="demo-open">Just looking? Try the demo classes (dummy students) &rarr;</button></div>' : '') +
       (cryptoOK() ? '<div style="margin-top:6px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="owner-restore-open">Restore the owner recovery kit &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
@@ -10881,10 +11056,148 @@ window.SEED = {"semesters": [{"id": "demo-sample-2025-fall", "name": "Sample 202
   }
 
 
+  /* ================= demo classes (2026-11-15): synthetic, local-only =================
+     Two demo classes with dummy students so anyone can try the FET/CET
+     workflow without touching real data. Seeded through the app's real
+     machinery (classstore sealing, per-teacher keyrings, role matrix), so
+     permissions, approvals and reports behave exactly like production.
+     Data is 100% synthetic (source/sprdemo.js, fixed seed). Demo classes are
+     never pushed to the cloud automatically. */
+  const DEMO_KEY = 'spr-demo-v1';
+  function demoInstalled() { try { return !!localStorage.getItem(DEMO_KEY); } catch (e) { return false; } }
+  function demoRec() { try { return JSON.parse(localStorage.getItem(DEMO_KEY) || 'null'); } catch (e) { return null; } }
+  function demoBanner() {
+    if (!demoInstalled()) return;
+    try {
+      if (document.getElementById('demo-banner')) return;
+      const b = document.createElement('div');
+      b.id = 'demo-banner';
+      b.innerHTML = '<span>Demo classes: dummy students only</span>' +
+        '<button type="button" data-action="demo-remove">Remove demo data</button>';
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  function demoOpenDialog() {
+    if (demoInstalled()) { toast('Demo data is already on this device. Remove it first if you want a fresh copy.'); return; }
+    if (typeof SPRDemo === 'undefined') { toast('The demo module did not load. Reload the page and try again.', true); return; }
+    openDlg(
+      '<h3>Try the demo classes</h3>' +
+      '<p class="small">This adds two classes (P4-A Demo and P4-B Demo) with <b>dummy students</b>, sample scores and classroom observations to this device, plus two demo sign-in accounts: <b>fet-demo</b> (foreign teacher, observations) and <b>cet-demo</b> (assistant teacher, scores). Nothing real is touched, nothing is sent anywhere, and you can remove it all with one click.</p>' +
+      '<p class="small">Choose a password for the demo accounts (you will use it to sign in as either demo teacher):</p>' +
+      '<input class="inp" id="demoPw1" type="password" autocomplete="new-password" placeholder="demo password (at least 8 characters)">' +
+      '<input class="inp" id="demoPw2" type="password" autocomplete="new-password" placeholder="repeat the password" style="margin-top:8px">' +
+      '<p class="small" id="demoErr" style="color:#c0392b;margin:8px 0 0"></p>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' +
+      '<button class="btn primary" data-action="demo-install">Add demo classes</button></div>');
+  }
+  async function demoInstall() {
+    if (demoInstalled()) return;
+    const p1 = (document.getElementById('demoPw1') || {}).value || '';
+    const p2 = (document.getElementById('demoPw2') || {}).value || '';
+    const err = document.getElementById('demoErr');
+    if (p1.length < 8) { if (err) err.textContent = 'Use at least 8 characters.'; return; }
+    if (p1 !== p2) { if (err) err.textContent = 'The two passwords do not match.'; return; }
+    const btn = document.querySelector('[data-action="demo-install"]'); if (btn) btn.disabled = true;
+    try {
+      const data = SPRDemo.build();
+      const prevMode = sprMode();
+      const hadUsers = getAuth().users.length > 0;
+      const auth = getAuth();
+      const createdUsers = [];
+      if (!hadUsers) {
+        /* fresh browser: give the demo its own owner account so
+           administration works, without inventing a second owner on
+           devices that already have one */
+        auth.users.push({ username: 'owner-demo', name: 'Demo Owner', role: 'owner', keyring: {}, login: await CS.loginWrap(p1) });
+        createdUsers.push('owner-demo');
+      }
+      for (const u of data.users) {
+        if (auth.users.some((x) => String(x.username).toLowerCase() === u.username.toLowerCase())) continue;
+        auth.users.push({ username: u.username, name: u.name, role: u.role, keyring: {}, login: await CS.loginWrap(p1) });
+        createdUsers.push(u.username);
+      }
+      const base = emptyDB();
+      const created = [];
+      for (const c of data.classes) {
+        const key = await CS.genKey();
+        const wb = { v: 1, currentSemesterId: c.semester.id, semesters: [c.semester],
+          pending: c.pending || [], audit: c.audit || [], reportNotes: {},
+          credit: base.credit, author: base.author, settings: { autoTotal: true, spTotal: 20, daTotal: 10 } };
+        const blob = await CS.sealClass(wb, key);
+        localStorage.setItem(classBlobKey(c.id), JSON.stringify(blob));
+        for (const un of [c.eal, c.support]) {
+          const usr = auth.users.find((x) => x.username === un);
+          if (usr) usr.keyring[c.id] = await CS.wrapKey(key, p1);
+        }
+        const ix = classIndex();
+        ix.push({ id: c.id, name: c.name, school: c.school, eal: c.eal, support: c.support });
+        setClassIndex(ix);
+        created.push(c.id);
+      }
+      saveAuth(auth);
+      localStorage.setItem(DEMO_KEY, JSON.stringify({ v: 1, users: createdUsers, classes: created, prevMode: prevMode, madeOwner: !hadUsers }));
+      try { localStorage.setItem(MODE_KEY, 'class'); } catch (eM) {}
+      const res = await doLoginFull(SPRDemo.FET, p1);
+      if (res && res.error) { if (err) err.textContent = 'Sign-in after setup failed: ' + res.error; return; }
+      /* the first sign-in created this device's data-key store with a wrap for
+         fet-demo ONLY (fresh-browser path). Wrap the same data key for every
+         other demo account so cet-demo / owner-demo can sign in too. */
+      if (SESSION && SESSION.dk) {
+        try {
+          const v2 = readV2() || { fmt: 2, wraps: {} };
+          v2.wraps = v2.wraps || {};
+          for (const un of createdUsers) {
+            if (un === SPRDemo.FET || v2.wraps[un]) continue;
+            v2.wraps[un] = await makeWrap(SESSION.dk, p1);
+          }
+          writeV2(v2);
+        } catch (eW) {}
+      }
+      closeDlg();
+      document.body.classList.remove('auth-gate');
+      buildShell();
+      location.hash = '#/classes'; route();
+      setTimeout(demoBanner, 150); setTimeout(demoBanner, 600);
+      toast('Demo ready. You are signed in as fet-demo. Sign out and back in as cet-demo to see the assistant teacher side.');
+    } catch (eD) {
+      if (err) err.textContent = 'Setup failed: ' + (eD && eD.message ? eD.message : eD);
+    } finally {
+      const b2 = document.querySelector('[data-action="demo-install"]'); if (b2) b2.disabled = false;
+    }
+  }
+  async function demoRemove() {
+    const rec = demoRec();
+    if (!rec) { toast('No demo data on this device.'); return; }
+    const okC = await confirmDlg('Remove the demo data?',
+      'This removes the demo classes and the demo sign-in accounts (fet-demo, cet-demo' + (rec.madeOwner ? ', owner-demo' : '') + ') from this device. Real classes and accounts are not touched.',
+      'Remove demo');
+    if (!okC) return;
+    try {
+      for (const cid of (rec.classes || [])) {
+        try { localStorage.removeItem(classBlobKey(cid)); } catch (eR) {}
+        setClassIndex(classIndex().filter((c) => c.id !== cid));
+      }
+      const auth = getAuth();
+      const names = (rec.users || []);
+      auth.users = auth.users.filter((u) => names.indexOf(u.username) === -1);
+      const wasDemoSession = !!(auth.session && names.indexOf(auth.session.username) !== -1);
+      if (wasDemoSession) auth.session = null;
+      saveAuth(auth);
+      try { localStorage.setItem(MODE_KEY, rec.prevMode === 'class' ? 'class' : 'legacy'); } catch (eM2) {}
+      localStorage.removeItem(DEMO_KEY);
+      try { localStorage.removeItem('spr-last-class'); } catch (eL) {}
+      const b = document.getElementById('demo-banner'); if (b) b.remove();
+      if (wasDemoSession) { doLogout(); return; }   /* reloads to the sign-in card */
+      CLS = null; CLS_KEY = null; ui.classOpen = false;
+      buildShell(); route();
+      toast('Demo data removed.');
+    } catch (eX) { toast('Could not remove all demo data: ' + (eX && eX.message ? eX.message : eX), true); }
+  }
 
   async function init() {
     chartTheme();
-    ensureOwner();                 /* round10: exactly one protected owner */
+    ensureOwner();
+    demoBanner();                 /* round10: exactly one protected owner */
     ctrlApply();                   /* round10: apply the last accepted control mode */
     ctrlPoll();                    /* ...and check for a newer record now */
     setInterval(ctrlPoll, 10 * 60 * 1000);   /* every 10 minutes while open */

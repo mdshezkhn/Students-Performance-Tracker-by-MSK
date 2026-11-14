@@ -1672,6 +1672,7 @@
             '<button class="btn primary" data-action="wiz-open">New class (guided setup)</button>' +
             '<button class="btn" data-action="import-xlsx">Import SPR Excel file</button>' +
             '<button class="btn" data-action="load-sample">Load sample data</button>' +
+            (cryptoOK() && !demoInstalled() ? '<button class="btn" data-action="demo-open" style="margin-left:8px">Try the demo classes (dummy students)</button>' : '') +
           '</div>' +
           '<p class="small muted" style="margin-top:22px">Everything stays in this browser: nothing is sent to any server unless you use Share &amp; Sync or turn on Device sync (both encrypt before upload). Offline-ready: after your first successful visit, SPR can reopen without an internet connection. Move data between computers with “Download backup”, or: as admin: let Device sync keep every system current automatically.</p>' +
           '<div class="quote-inline">Designed for teachers, by a teacher — Mohammed Shehzad Khan (Teacher Mo)</div>' +
@@ -4466,6 +4467,9 @@
       else location.hash = '#/dashboard';
       return;
     }
+    if (a === 'demo-open') { demoOpenDialog(); return; }
+    if (a === 'demo-install') { demoInstall(); return; }
+    if (a === 'demo-remove') { demoRemove(); return; }
     if (a === 'do-login') {
       const u = $('#loginUser') ? $('#loginUser').value.trim() : '';
       const p = $('#loginPass') ? $('#loginPass').value : '';
@@ -7143,6 +7147,7 @@
           (cryptoOK() ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="login-other-device">I use SPR on another device &rarr;</button></div>' : '') +
           (ctrlMode() === 'locked' ? '<div id="lockMsg" style="margin-top:12px;padding:10px 12px;background:#7c2d12;color:#fed7aa;border-radius:8px;font-size:14px"><b>SPR is locked by the owner.</b> ' + U.esc((((ctrlCache() || {}).rec) || {}).message || '') + ' Only the owner account can sign in.</div>' : '') +
       (cryptoOK() && freshBrowser ? '<div style="margin-top:10px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="show-setup">First time using SPR? Set up this browser &rarr;</button></div>' : '') +
+      (cryptoOK() && !demoInstalled() ? '<div style="margin-top:6px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="demo-open">Just looking? Try the demo classes (dummy students) &rarr;</button></div>' : '') +
       (cryptoOK() ? '<div style="margin-top:6px"><button type="button" style="background:none;border:0;padding:0;color:inherit;opacity:.75;cursor:pointer;font-size:13px;text-decoration:underline" data-action="owner-restore-open">Restore the owner recovery kit &rarr;</button></div>' : '') +
           '<div class="login-foot">Designed for teachers, by a teacher<br>\u2014 Mohammed Shehzad Khan (Teacher Mo)</div>' +
         '</div>';
@@ -7174,10 +7179,148 @@
   }
 
 
+  /* ================= demo classes (2026-11-15): synthetic, local-only =================
+     Two demo classes with dummy students so anyone can try the FET/CET
+     workflow without touching real data. Seeded through the app's real
+     machinery (classstore sealing, per-teacher keyrings, role matrix), so
+     permissions, approvals and reports behave exactly like production.
+     Data is 100% synthetic (source/sprdemo.js, fixed seed). Demo classes are
+     never pushed to the cloud automatically. */
+  const DEMO_KEY = 'spr-demo-v1';
+  function demoInstalled() { try { return !!localStorage.getItem(DEMO_KEY); } catch (e) { return false; } }
+  function demoRec() { try { return JSON.parse(localStorage.getItem(DEMO_KEY) || 'null'); } catch (e) { return null; } }
+  function demoBanner() {
+    if (!demoInstalled()) return;
+    try {
+      if (document.getElementById('demo-banner')) return;
+      const b = document.createElement('div');
+      b.id = 'demo-banner';
+      b.innerHTML = '<span>Demo classes: dummy students only</span>' +
+        '<button type="button" data-action="demo-remove">Remove demo data</button>';
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  function demoOpenDialog() {
+    if (demoInstalled()) { toast('Demo data is already on this device. Remove it first if you want a fresh copy.'); return; }
+    if (typeof SPRDemo === 'undefined') { toast('The demo module did not load. Reload the page and try again.', true); return; }
+    openDlg(
+      '<h3>Try the demo classes</h3>' +
+      '<p class="small">This adds two classes (P4-A Demo and P4-B Demo) with <b>dummy students</b>, sample scores and classroom observations to this device, plus two demo sign-in accounts: <b>fet-demo</b> (foreign teacher, observations) and <b>cet-demo</b> (assistant teacher, scores). Nothing real is touched, nothing is sent anywhere, and you can remove it all with one click.</p>' +
+      '<p class="small">Choose a password for the demo accounts (you will use it to sign in as either demo teacher):</p>' +
+      '<input class="inp" id="demoPw1" type="password" autocomplete="new-password" placeholder="demo password (at least 8 characters)">' +
+      '<input class="inp" id="demoPw2" type="password" autocomplete="new-password" placeholder="repeat the password" style="margin-top:8px">' +
+      '<p class="small" id="demoErr" style="color:#c0392b;margin:8px 0 0"></p>' +
+      '<div class="dlg-actions"><button class="btn" data-x="0">Cancel</button>' +
+      '<button class="btn primary" data-action="demo-install">Add demo classes</button></div>');
+  }
+  async function demoInstall() {
+    if (demoInstalled()) return;
+    const p1 = (document.getElementById('demoPw1') || {}).value || '';
+    const p2 = (document.getElementById('demoPw2') || {}).value || '';
+    const err = document.getElementById('demoErr');
+    if (p1.length < 8) { if (err) err.textContent = 'Use at least 8 characters.'; return; }
+    if (p1 !== p2) { if (err) err.textContent = 'The two passwords do not match.'; return; }
+    const btn = document.querySelector('[data-action="demo-install"]'); if (btn) btn.disabled = true;
+    try {
+      const data = SPRDemo.build();
+      const prevMode = sprMode();
+      const hadUsers = getAuth().users.length > 0;
+      const auth = getAuth();
+      const createdUsers = [];
+      if (!hadUsers) {
+        /* fresh browser: give the demo its own owner account so
+           administration works, without inventing a second owner on
+           devices that already have one */
+        auth.users.push({ username: 'owner-demo', name: 'Demo Owner', role: 'owner', keyring: {}, login: await CS.loginWrap(p1) });
+        createdUsers.push('owner-demo');
+      }
+      for (const u of data.users) {
+        if (auth.users.some((x) => String(x.username).toLowerCase() === u.username.toLowerCase())) continue;
+        auth.users.push({ username: u.username, name: u.name, role: u.role, keyring: {}, login: await CS.loginWrap(p1) });
+        createdUsers.push(u.username);
+      }
+      const base = emptyDB();
+      const created = [];
+      for (const c of data.classes) {
+        const key = await CS.genKey();
+        const wb = { v: 1, currentSemesterId: c.semester.id, semesters: [c.semester],
+          pending: c.pending || [], audit: c.audit || [], reportNotes: {},
+          credit: base.credit, author: base.author, settings: { autoTotal: true, spTotal: 20, daTotal: 10 } };
+        const blob = await CS.sealClass(wb, key);
+        localStorage.setItem(classBlobKey(c.id), JSON.stringify(blob));
+        for (const un of [c.eal, c.support]) {
+          const usr = auth.users.find((x) => x.username === un);
+          if (usr) usr.keyring[c.id] = await CS.wrapKey(key, p1);
+        }
+        const ix = classIndex();
+        ix.push({ id: c.id, name: c.name, school: c.school, eal: c.eal, support: c.support });
+        setClassIndex(ix);
+        created.push(c.id);
+      }
+      saveAuth(auth);
+      localStorage.setItem(DEMO_KEY, JSON.stringify({ v: 1, users: createdUsers, classes: created, prevMode: prevMode, madeOwner: !hadUsers }));
+      try { localStorage.setItem(MODE_KEY, 'class'); } catch (eM) {}
+      const res = await doLoginFull(SPRDemo.FET, p1);
+      if (res && res.error) { if (err) err.textContent = 'Sign-in after setup failed: ' + res.error; return; }
+      /* the first sign-in created this device's data-key store with a wrap for
+         fet-demo ONLY (fresh-browser path). Wrap the same data key for every
+         other demo account so cet-demo / owner-demo can sign in too. */
+      if (SESSION && SESSION.dk) {
+        try {
+          const v2 = readV2() || { fmt: 2, wraps: {} };
+          v2.wraps = v2.wraps || {};
+          for (const un of createdUsers) {
+            if (un === SPRDemo.FET || v2.wraps[un]) continue;
+            v2.wraps[un] = await makeWrap(SESSION.dk, p1);
+          }
+          writeV2(v2);
+        } catch (eW) {}
+      }
+      closeDlg();
+      document.body.classList.remove('auth-gate');
+      buildShell();
+      location.hash = '#/classes'; route();
+      setTimeout(demoBanner, 150); setTimeout(demoBanner, 600);
+      toast('Demo ready. You are signed in as fet-demo. Sign out and back in as cet-demo to see the assistant teacher side.');
+    } catch (eD) {
+      if (err) err.textContent = 'Setup failed: ' + (eD && eD.message ? eD.message : eD);
+    } finally {
+      const b2 = document.querySelector('[data-action="demo-install"]'); if (b2) b2.disabled = false;
+    }
+  }
+  async function demoRemove() {
+    const rec = demoRec();
+    if (!rec) { toast('No demo data on this device.'); return; }
+    const okC = await confirmDlg('Remove the demo data?',
+      'This removes the demo classes and the demo sign-in accounts (fet-demo, cet-demo' + (rec.madeOwner ? ', owner-demo' : '') + ') from this device. Real classes and accounts are not touched.',
+      'Remove demo');
+    if (!okC) return;
+    try {
+      for (const cid of (rec.classes || [])) {
+        try { localStorage.removeItem(classBlobKey(cid)); } catch (eR) {}
+        setClassIndex(classIndex().filter((c) => c.id !== cid));
+      }
+      const auth = getAuth();
+      const names = (rec.users || []);
+      auth.users = auth.users.filter((u) => names.indexOf(u.username) === -1);
+      const wasDemoSession = !!(auth.session && names.indexOf(auth.session.username) !== -1);
+      if (wasDemoSession) auth.session = null;
+      saveAuth(auth);
+      try { localStorage.setItem(MODE_KEY, rec.prevMode === 'class' ? 'class' : 'legacy'); } catch (eM2) {}
+      localStorage.removeItem(DEMO_KEY);
+      try { localStorage.removeItem('spr-last-class'); } catch (eL) {}
+      const b = document.getElementById('demo-banner'); if (b) b.remove();
+      if (wasDemoSession) { doLogout(); return; }   /* reloads to the sign-in card */
+      CLS = null; CLS_KEY = null; ui.classOpen = false;
+      buildShell(); route();
+      toast('Demo data removed.');
+    } catch (eX) { toast('Could not remove all demo data: ' + (eX && eX.message ? eX.message : eX), true); }
+  }
 
   async function init() {
     chartTheme();
-    ensureOwner();                 /* round10: exactly one protected owner */
+    ensureOwner();
+    demoBanner();                 /* round10: exactly one protected owner */
     ctrlApply();                   /* round10: apply the last accepted control mode */
     ctrlPoll();                    /* ...and check for a newer record now */
     setInterval(ctrlPoll, 10 * 60 * 1000);   /* every 10 minutes while open */

@@ -689,3 +689,9 @@ select.inp:focus, input.inp:focus, textarea.inp:focus {
   .page .sheet table.tbl td:not([data-l])::before { content: ""; }
   .page .sheet table.tbl td .btn { min-height: 40px; }
 }
+
+
+/* demo classes banner (2026-11-15): always clear this is dummy data */
+#demo-banner{position:fixed;left:12px;bottom:12px;z-index:60;background:#1e293b;color:#e2e8f0;padding:8px 12px;border-radius:10px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;max-width:92vw}
+#demo-banner button{background:#ef4444;color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+@media print{#demo-banner{display:none}}
