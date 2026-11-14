@@ -3,6 +3,8 @@
    Each assertion documents the exact HTTP status the server must return.
    Run: node tests/test-server-adversarial.mjs */
 import { createApp } from '../server/spr-server.mjs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import rot from './helpers/rotate.js';
 
 let pass = 0, fail = 0;
@@ -29,7 +31,7 @@ function client(base) {
 let ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
 if (!process.env.SPR_SESSION_HOURS) { console.error('run with SPR_SESSION_HOURS=0.0042 (section 5 proves session-expiry enforcement; without it the test lies)'); process.exit(2); }
 /* NOTE: short sessions for section 5 come from the CLI env (SPR_SESSION_HOURS=0.0042) — ES imports are hoisted, an in-file assignment runs too late */
-const srv = await createApp({ cookieSecure: false });
+const srv = await createApp({ cookieSecure: false, staticDir: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'app') });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + srv.address().port;
 const admin = client(base), fet = client(base), cet = client(base), stranger = client(base), raw = client(base);
@@ -190,6 +192,41 @@ console.log('11. audit-log immutability at the API layer');
   ok(trySql.status === 200 || trySql.status === 400, 'SQL-injection-shaped query param does not break the API (got ' + trySql.status + ')');
   const stillThere = await srv.sprStore.query('select count(*)::int as n from audit_events');
   ok(stillThere[0].n > 0, 'audit_events still populated after injection attempt');
+
+console.log('13b. security headers on every response (API and static)');
+{
+  const api = await fetch(base + '/api/health');
+  const h1 = api.headers;
+  ok(h1.get('x-content-type-options') === 'nosniff' && h1.get('referrer-policy') === 'no-referrer' && h1.get('x-frame-options') === 'DENY', 'API responses carry nosniff + no-referrer + DENY');
+  ok((h1.get('cache-control') || '').includes('no-store'), 'API responses are no-store');
+  const stat = await fetch(base + '/index.html');
+  const h2 = stat.headers;
+  ok(stat.status === 200 && h2.get('x-content-type-options') === 'nosniff' && h2.get('x-frame-options') === 'DENY', 'static responses carry the same hardening');
+  ok((stat.headers.get('access-control-allow-origin') || 'none') === 'none', 'no CORS header is ever emitted (same-origin only)');
+}
+
+console.log('13. record-id manipulation (BOLA) + standalone session revocation');
+{
+  /* BOLA: duty-holder supplies their OWN new class in the body but the RECORD
+     ID of another record. Expected: the identity guard refuses (400) — the
+     write can never land on the foreign row. Cross-school id -> 404 earlier. */
+  const clsB = (await admin.req('POST', '/api/admin/classes', { name: 'P4B-adv' })).data.class;
+  await admin.req('POST', '/api/admin/memberships', { class_id: clsB.id, user_id: cetU.id, duty: 'cet' });
+  const stuB = (await admin.req('POST', '/api/students', { class_id: clsB.id, student_no: '01', name_en: 'Synthetic B1' })).data.student;
+  const rGuard = await cet.req('POST', '/api/records', { ...obsRec, id: obsRec.id, class_id: clsB.id, student_id: stuB.id, category: 'spelling', period: 'September', ordinal: 9, expected_version: 0 });
+  ok(rGuard.status === 400, 'record id of another class behind an assigned class id -> identity guard 400 (got ' + rGuard.status + ')');
+
+  /* standalone revocation: teacher keeps the account, loses every session NOW */
+  const t = client(base);
+  await rot.login(t, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
+  ok((await t.req('GET', '/api/me')).status === 200, 'teacher session alive before revocation');
+  const cetId = (await srv.sprStore.query("select id from users where username='cet1'"))[0].id;
+  const rv = await admin.req('POST', '/api/admin/users/' + cetId + '/revoke-sessions');
+  ok(rv.status === 200, 'admin revokes the teacher sessions (200)');
+  ok((await t.req('GET', '/api/me')).status === 401, 'revoked session is dead immediately (401)');
+  const relog = await t.req('POST', '/api/auth/login', { username: 'cet1', password: rot.effective('cet1', 'Cet1-Pass-9x') });
+  ok(relog.status === 200, 'the ACCOUNT still works — only sessions were revoked');
+}
 
 console.log('12. audit-log immutability at the DATABASE layer');
 {

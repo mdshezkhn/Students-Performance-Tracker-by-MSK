@@ -343,7 +343,7 @@ export async function createApp(opts = {}) {
             const data = await fsPromises.readFile(fp);
             const ext = path.extname(fp).toLowerCase();
             const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
-            res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+            res.writeHead(200, Object.assign({ 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' }, HEADERS));
             return res.end(data);
           } catch (eStatic) { /* fall through to 404 */ }
         return bad(res, 404, 'not found');
@@ -566,6 +566,15 @@ export async function createApp(opts = {}) {
           ))[0];
           await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'account.create', target: username, req_id: reqId, detail: { role } });
           return ok(res, { status: 'created', user: row }, 201);
+        }
+        /* round14: standalone session revocation — suspected session theft or
+           teacher departure WITHOUT deactivating the account itself. */
+        if ((m = p.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/revoke-sessions$/)) && req.method === 'POST') {
+          const row = (await store.query('select * from users where id=$1 and school_id=$2', [m[1], ctx.user.school_id]))[0];
+          if (!row) return bad(res, 404, 'no such user');
+          await store.query('update sessions set revoked_at=now() where user_id=$1 and revoked_at is null', [m[1]]);
+          await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'account.revoke-sessions', target: row.username, req_id: reqId });
+          return ok(res, { ok: true });
         }
         if ((m = p.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/deactivate$/)) && req.method === 'POST') {
           const row = (await store.query('select * from users where id=$1 and school_id=$2', [m[1], ctx.user.school_id]))[0];
