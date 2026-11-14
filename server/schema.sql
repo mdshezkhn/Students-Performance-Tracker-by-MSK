@@ -149,3 +149,19 @@ create table if not exists audit_events (
   at          timestamptz not null default now()
 );
 create index if not exists audit_school_time_idx on audit_events(school_id, id desc);
+
+-- round11 (§7): DB-level audit immutability. The API never UPDATEs or DELETEs
+-- audit_events, but "the app promises" is not immutability — this trigger makes
+-- mutation physically fail for ANY writer, including the app role itself and a
+-- rogue superuser query that forgets itself. Immutability is enforced by the
+-- database engine, not by application discipline.
+create or replace function spr_audit_immutable() returns trigger as $$
+begin
+  raise exception 'audit_events is append-only (attempted %)', TG_OP;
+end;
+$$ language plpgsql;
+
+drop trigger if exists audit_events_no_update on audit_events;
+create trigger audit_events_no_update
+  before update or delete on audit_events
+  for each row execute function spr_audit_immutable();

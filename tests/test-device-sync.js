@@ -756,8 +756,12 @@ async function loginCloudAs(B, user, pass) {
   ok(h2In, 'adoption over existing data signed in via the explicit lookup');
   await waitDrained(H2, 60000, 'adoption sign-in tail before the downloads check');
   ok(H2.w.__downloads.length === 0, 'adoption over existing data: no .json downloaded');
-  const stashH = JSON.parse(H2.w.localStorage.getItem('spr-safety-backups-v1') || '[]');
-  ok(stashH.length === 1 && stashH[0].db && Array.isArray(stashH[0].db.semesters), 'safety copy stashed in-app instead');
+  const stashRawH = H2.w.localStorage.getItem('spr-safety-backups-v1') || '[]';
+  const stashH = JSON.parse(stashRawH);
+  /* C5 (2026-11-13): the stash is SEALED under the session data key now.
+     Assert the copy exists AND that no plaintext semester data sits in storage. */
+  ok(stashH.length === 1 && !!stashH[0].enc && !stashH[0].db, 'safety copy stashed in-app, sealed (enc present, no plaintext db)');
+  ok(stashRawH.indexOf('semesters') === -1, 'safety stash holds NO plaintext student data');
   ok(H2.w.localStorage.getItem('spr-auth-v1').indexOf(ADMIN) !== -1, 'cloud accounts installed over the old ones');
 
   /* ---------- S10 (2026-10-24): accounts survive sync — no vanishing colleagues ---------- */

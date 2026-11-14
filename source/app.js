@@ -278,19 +278,50 @@
      key — same protection as the primary store. Plaintext copies are never
      written. If no data key is available (pre-login edge), the caller's
      replace-flow falls back to the file download instead. */
+  /* round11: during cloud adoption the stash fires before the session's data
+     key is restored. Holding the copy IN MEMORY (never plaintext localStorage)
+     and sealing as soon as the key appears keeps the no-surprise-download
+     promise without ever writing plaintext student data. */
+  let SAFETY_PENDING = null, SAFETY_TRIES = 0;
   function stashSafetyBackup(label) {
+    if ((!SESSION || !SESSION.dk) && DB && DB.semesters) {
+      try { SAFETY_PENDING = { label: label || 'before replace', db: JSON.parse(JSON.stringify(DB)) }; } catch (e) {}
+      SAFETY_TRIES = 0;
+      safetyPendingTick();
+      return true;
+    }
+    return stashSafetyNow(label);
+  }
+  function safetyPendingTick() {
+    if (!SAFETY_PENDING) return;
+    if (SESSION && SESSION.dk) {
+      const pend = SAFETY_PENDING; SAFETY_PENDING = null;
+      const keep = DB;                       /* seal the PENDING copy, not whatever is live now */
+      try { stashSealInto(pend.db, pend.label); } catch (e) { try { downloadBackup(); } catch (e2) {} }
+      void keep;
+      return;
+    }
+    if (++SAFETY_TRIES > 120) {              /* ~60 s: give up, download instead of losing it */
+      const pend = SAFETY_PENDING; SAFETY_PENDING = null;
+      try { downloadBackup(); } catch (e) {}
+      return;
+    }
+    setTimeout(safetyPendingTick, 500);
+  }
+  function stashSealInto(db, label) {
+    return (async () => {
+      const enc = await sealDB(db, SESSION.dk);
+      const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
+      list.unshift({ t: Date.now(), label: label || 'before replace', enc: enc });
+      while (list.length > 3) list.pop();
+      localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
+      toast('Safety copy kept: Manage → Backups can bring it back');
+    })();
+  }
+  function stashSafetyNow(label) {
     try {
       if (!SESSION || !SESSION.dk) throw new Error('no data key');
-      (async () => {
-        try {
-          const enc = await sealDB(DB, SESSION.dk);
-          const list = JSON.parse(localStorage.getItem(SAFETY_KEY) || '[]');
-          list.unshift({ t: Date.now(), label: label || 'before replace', enc: enc });
-          while (list.length > 3) list.pop();
-          localStorage.setItem(SAFETY_KEY, JSON.stringify(list));
-          toast('Safety copy kept: Manage → Backups can bring it back');
-        } catch (e) { downloadBackup(); }
-      })();
+      stashSealInto(DB, label || 'before replace').catch(function () { downloadBackup(); });
       return true;
     } catch (e) { downloadBackup(); return false; }
   }

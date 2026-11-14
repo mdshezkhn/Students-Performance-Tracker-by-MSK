@@ -6,7 +6,18 @@
 // it with 'window.fetch=' + mockSrc — no string-escaping layer at all.
 function sbProtectedMock(url, opts) {
   url = String(url); opts = opts || {};
+  var isWrite = !!opts.method && opts.method !== 'GET';
+  /* harness hooks carried over from the pre-protection mock so the retry /
+     slowness sections of the suites keep working (R4, S12, slow-network UX) */
+  if (isWrite && window.__SB_FAIL_SAVE) return Promise.resolve(H(500, { message: 'mock induced save failure' }));
+  var slow = (isWrite && window.__SB_SLOW_SAVE) || (!isWrite && window.__SB_SLOW_GET);
+  var go = handleRequest;
+  if (slow) { var ms = Number(slow) || 400; go = function (u2, o2) { return new Promise(function (rj) { setTimeout(function () { rj(handleRequest(u2, o2)); }, ms); }); }; }
   try { window.__fetchLog = window.__fetchLog || []; window.__fetchLog.push((opts.method || 'GET') + ' ' + url.slice(-46)); } catch (e) {}
+  return go(url, opts);
+}
+function handleRequest(url, opts) {
+  url = String(url); opts = opts || {};
   var SB = window.__SB;
   function b64uToBytes(x) {
     x = String(x || '').replace(/-/g, '+').replace(/_/g, '/');

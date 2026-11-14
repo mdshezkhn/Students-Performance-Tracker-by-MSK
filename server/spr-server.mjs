@@ -51,7 +51,8 @@ const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const nowIso = () => new Date().toISOString();
 const CATEGORIES = ['observation', 'spelling', 'test', 'daily'];
 const DUTY_CATEGORIES = { fet: ['observation'], cet: ['spelling', 'test', 'daily'] };
-const SESSION_HOURS = 12;
+/* round11: overridable for the expiry test only; clamped 1 min..30 days, default 12 h */
+const SESSION_HOURS = (() => { const h = Number(process.env.SPR_SESSION_HOURS); return Number.isFinite(h) && h >= 0.001 && h <= 720 ? h : 12; })();
 
 function bad(res, status, error, extra) {
   const body = Object.assign({ error }, extra || {});
@@ -253,7 +254,18 @@ export async function createApp(opts = {}) {
      before stripping would produce junk statements */
   const NL = String.fromCharCode(10);
   const sqlNoComments = SCHEMA_SQL.split(NL).map((l) => l.replace(/--.*/, '')).join(NL);
-  for (const stmt of sqlNoComments.split(';')) {
+  /* round11: dollar-quote-aware split — plpgsql function bodies contain ';'
+     inside $$ ... $$ and must never be cut in half */
+  const stmts = [];
+  let cur = '', inDollar = false;
+  for (let i = 0; i < sqlNoComments.length; i++) {
+    const two = sqlNoComments.slice(i, i + 2);
+    if (two === '$$') { inDollar = !inDollar; cur += two; i++; continue; }
+    if (sqlNoComments[i] === ';' && !inDollar) { stmts.push(cur); cur = ''; continue; }
+    cur += sqlNoComments[i];
+  }
+  if (cur.trim()) stmts.push(cur);
+  for (const stmt of stmts) {
     const clean = stmt.trim();
     if (clean) await store.query(clean);
   }
@@ -518,6 +530,15 @@ export async function createApp(opts = {}) {
           await store.query('update users set active=false, updated_at=now() where id=$1', [m[1]]);
           await store.query('update sessions set revoked_at=now() where user_id=$1', [m[1]]);
           await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'account.deactivate', target: row.username, req_id: reqId });
+          return ok(res, { ok: true });
+        }
+        /* round11 gap found by the adversarial suite: deactivate existed, activate did not —
+           a deactivated account could never be re-enabled through the API. */
+        if ((m = p.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/activate$/)) && req.method === 'POST') {
+          const row = (await store.query('select * from users where id=$1 and school_id=$2', [m[1], ctx.user.school_id]))[0];
+          if (!row) return bad(res, 404, 'no such user');
+          await store.query('update users set active=true, updated_at=now() where id=$1', [m[1]]);
+          await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'account.activate', target: row.username, req_id: reqId });
           return ok(res, { ok: true });
         }
         if ((m = p.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/reset-password$/)) && req.method === 'POST') {
