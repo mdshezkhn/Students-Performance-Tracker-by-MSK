@@ -73,3 +73,52 @@ suites on every push and pull request. The calc regression fixture
 (`tests/fixtures/`) is synthetic; its expected values come from an
 independent Python implementation of the workbook rules
 (`tests/fixtures/generate_expected.py`).
+
+---
+
+# School Edition (secure FET/CET collaboration) — status 2026-11-14
+
+This repository now contains TWO sync worlds, cleanly separated:
+
+## 1. Personal/offline markbook (production demo)
+The original app at the link above: browser-local, encrypted, Excel
+import/export, offline PWA. Cloud sync via the legacy personal channels is
+**read-contained** (the app refuses unauthenticated cloud writes; keys are
+never in URLs; local copies sealed).
+
+## 2. School server (staging, ready for deployment) — `server/`
+A zero-dependency Node backend + PostgreSQL for real school use:
+
+- **Individual teacher accounts** (scrypt, HttpOnly sessions, CSRF, login
+  rate limiting, enforced first-login password rotation).
+- **Server-enforced roles**: FET writes observations, CET writes
+  spelling/tests/daily, admin manages, manager reads. School + class
+  isolation on every query (45 adversarial HTTP tests).
+- **Record-level sync** with versions, idempotency keys, conflicts that keep
+  BOTH versions for deliberate resolution, durable offline outbox that
+  survives browser restart.
+- **Audit trail** immutable at the DATABASE layer (trigger), minimal fields.
+- **Versioned migrations** (checksummed ledger), archive-not-delete student
+  lifecycle, admin backup endpoint with a TESTED restore-into-isolation
+  procedure, production boot guardrails (refuses default password /
+  in-memory store / insecure cookies).
+- **Local-only SPR Excel import & audit** — workbook parsing never leaves
+  the browser (proven by running the whole matrix with the network
+  disabled), calculation checks against the REAL grading engine.
+
+### Verify it yourself (synthetic data only)
+```
+npm test                      # app suites incl. calc regression + boundaries
+npm run test:server           # rbac/sync/migrations/backup/schoolsync/adversarial
+npm run test:e2e              # 25-check two-browser FET/CET workflow (Edge)
+npm run bench                 # scale: 20 classes x 25 students, zero failures
+python source/build2.py       # rebuild the app bundle
+```
+
+### Deploy (when the school approves hosting)
+See `docs/DEPLOYMENT-AND-OPERATIONS-GUIDE.md` (guardrails, TLS, rollback) and
+`docs/EXTERNAL-APPROVALS-AND-DEPENDENCIES.md` for the outstanding school,
+legal and owner actions. **No student data exists on any server today.**
+
+Full evidence: `docs/ROUND29-FULL-ACCEPTANCE-REPORT.md` and
+`docs/FINAL-RELEASE-READINESS-REPORT.md`.

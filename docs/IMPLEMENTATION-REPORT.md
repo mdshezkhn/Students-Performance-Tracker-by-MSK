@@ -80,3 +80,34 @@ Status after round 11: **Implemented + unit/integration/security tested and
 staged. NOT deployed.** Release gates still open: school hosting/ICP decision,
 school approval of processing arrangements, owner action on the legacy
 Supabase project (run protection SQL or delete rows).
+
+---
+
+# Rounds 12–30 (2026-11-14) — consolidation programme complete
+
+Starting commit `1217fca` → final commit (this batch). Full details in
+FINAL-RELEASE-READINESS-REPORT.md; acceptance evidence in
+docs/qa/round29/final-sweep.log (closing sweep, all suites RC=0).
+
+| Round | Delivered | Evidence |
+|---|---|---|
+| 11 verify | Opening audit: every round-11 claim re-reproduced; 2 weaker-than-reported controls strengthened | ROUND11-VERIFICATION.md |
+| 12 | Versioned migrations + archive semantics | MIGRATIONS 21/0 |
+| 13 | must_change_pw ENFORCED + bootstrap rotation rule + rotation-aware test helpers | RBAC 43/0 |
+| 14 | revoke-sessions endpoint + BOLA record-id tests | ADVERSARIAL 45/0 |
+| 15–17 | Sync / offline / Excel acceptance docs (evidence-backed) | suites cited within |
+| 18 | calc-boundaries suite; engine untouched | 13/0 + 329/0 |
+| 19 | Static-response hardening + findings register (0 CRITICAL open) | SECURITY-REVIEW doc |
+| 20 | Live legacy re-verification (88 rows readable; writes now 401) + readiness | LEGACY-SUPABASE-RETIREMENT-READINESS |
+| 21 | Stale privacy-notice text corrected; jargon audit clean | TEACHER-UX doc, notices 28/0 |
+| 22 | Reporting traceability doc | REPORTING doc |
+| 23 | Scale bench 1/5/20 classes — zero failures | bench + PERFORMANCE doc |
+| 24 | Admin backup endpoint + restore PROVEN into isolation | BACKUP-RESTORE 10/0 |
+| 25 | China privacy/hosting readiness (engineering vs legal kept apart) | CHINA-PRIVACY doc |
+| 26 | Administrator guide extended (new endpoints, rules) | ADMINISTRATOR-GUIDE |
+| 27 | Edge full-suite + mobile emulation; physical devices = manual checklist | DEVICE doc, browser 25/0 |
+| 28 | Production boot guardrails (tested; SPR_ENV explicit) | MIGRATIONS §5 |
+| 29 | 23-step E2E completed + full closing sweep | ROUND29 report |
+| 30 | Final readiness + manual checklist + README + external approvals register | this section |
+
+**Classification: B — technically release-ready, external approvals pending.**
