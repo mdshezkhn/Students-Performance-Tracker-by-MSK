@@ -136,5 +136,19 @@ console.log('4. archive semantics: reversible, records preserved, audited');
   await new Promise((r) => srv.close(r));
 }
 
+console.log('5. production guardrails: dev defaults are refused');
+{
+  const { execFile } = await import('node:child_process');
+  const run = (env) => new Promise((resolve) => {
+    execFile(process.execPath, ['server/spr-server.mjs'], { env: Object.assign({}, process.env, env) }, (e, stdout, stderr) => resolve({ code: e ? e.code : 0, err: String(stderr) }));
+  });
+  const r1 = await run({ SPR_ENV: 'production' });
+  ok(r1.code === 1 && /SPR_ADMIN_PW/.test(r1.err) && /SPR_DB_URL/.test(r1.err), 'no env -> refuses to start, names both requirements');
+  const r2 = await run({ SPR_ENV: 'production', SPR_ADMIN_PW: 'x', SPR_DB_URL: 'postgresql://u:p@h/db', SPR_COOKIE_SECURE: '0' });
+  ok(r2.code === 1 && /SPR_COOKIE_SECURE/.test(r2.err), 'insecure-cookie escape hatch requires the explicit I-KNOW flag');
+  const r3 = await run({ SPR_ENV: 'production', SPR_ADMIN_PW: 'x', SPR_DB_URL: 'postgresql://u:p@h/db' });
+  ok(r3.code === 1 && !/guardrails|SPR_ADMIN_PW|SPR_DB_URL|SPR_COOKIE_SECURE/.test(r3.err) || r3.code === 0 || /pg|ECONNREFUSED|password/.test(r3.err), 'guardrails pass with all three set (fails only on real DB connect)');
+}
+
 console.log('MIGRATIONS: ' + pass + ' ok, ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);

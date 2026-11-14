@@ -724,7 +724,29 @@ return bad(res, 404, 'no such API endpoint');
 /* CLI entry: node server/spr-server.mjs (env: SPR_DB_URL, SPR_PORT, ...) */
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.SPR_PORT || 8787);
+  /* round28: PRODUCTION GUARDRAILS. Production must never start with dev
+     defaults. Fail loudly and refuse to serve. */
+  /* SPR_ENV=production is the EXPLICIT opt-in for the hard gates. NODE_ENV
+     alone only warns: many CI/dev shells (and this repo's own test rig)
+     export NODE_ENV=production for unrelated reasons — a hard refusal there
+     would block legitimate dev/test runs without adding security. */
+  const prod = process.env.SPR_ENV === 'production';
+  if (!prod && process.env.NODE_ENV === 'production') {
+    console.log('note: NODE_ENV=production without SPR_ENV=production - guardrails advisory only (dev/test run)');
+  }
+  if (prod) {
+    const fatal = [];
+    if (!process.env.SPR_ADMIN_PW) fatal.push('SPR_ADMIN_PW is not set (the default bootstrap password is refused in production)');
+    if (!process.env.SPR_DB_URL) fatal.push('SPR_DB_URL is not set (in-memory dev storage is refused in production)');
+    if (process.env.SPR_COOKIE_SECURE === '0' && process.env.SPR_ALLOW_INSECURE_COOKIE !== 'I-KNOW') fatal.push('SPR_COOKIE_SECURE=0 without SPR_ALLOW_INSECURE_COOKIE=I-KNOW (refused: session cookies must be Secure behind TLS)');
+    if (fatal.length) {
+      console.error('REFUSING TO START IN PRODUCTION MODE:');
+      for (const f of fatal) console.error('  - ' + f);
+      process.exit(1);
+    }
+    console.log('production guardrails passed (secure cookie default, owner-set admin password, PostgreSQL store)');
+  }
   createApp({ staticDir: process.env.SPR_STATIC_DIR || null }).then((srv) => {
-    srv.listen(port, () => console.log('SPR school backend listening on :' + port + ' (store: ' + srv.sprStore.kind + ')'));
+    srv.listen(port, () => console.log('SPR school backend listening on :' + port + ' (store: ' + srv.sprStore.kind + ')' + (prod ? ' [PRODUCTION]' : '')));
   }).catch((e) => { console.error('startup failed:', e.message); process.exit(1); });
 }

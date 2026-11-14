@@ -210,6 +210,43 @@ async (fx) => {
 }
 """
 
+
+JS_REPORTS = """
+async (fx) => {
+  /* steps 19-23: reports from the LIVE backend data, SPR Excel export,
+     reimport (fresh parse = isolated environment) and comparison */
+  const SS = window.SchoolSync, A = window.SPRAdapter, Calc = window.Calc;
+  const EB = window.ExcelBridge, XLSX = window.XLSX, SA = window.SPRAudit;
+  const c = SS.create({ baseUrl: '' });
+  await c.login('fet1', 'Fet1-School-Pass-9R');
+  const pulled = await c.call('GET', '/api/classes/' + fx.clsId + '/records');
+  const roster = await c.call('GET', '/api/classes/' + fx.clsId + '/students');
+  const semesters = await c.call('GET', '/api/semesters');
+  const semRow = (semesters.semesters || []).find((x) => true) || { id: fx.semId, name: 'S' };
+  const back = A.fromBackend({ students: roster.students || [], records: pulled.records || [], semester_id: semRow.id }, { name: semRow.name });
+  /* 19. student report (gradeAll = the report engine) */
+  const grades = Calc.gradeAll(back);
+  const student = grades[0];
+  /* 20. class report (aggregate over students) */
+  const classAvg = grades.length ? grades.reduce((t, g) => t + (g.final == null ? 0 : g.final), 0) / grades.length : null;
+  /* 21. SPR Excel export through the app's real exporter */
+  let wb = null, bytes = null, stepErr = null;
+  try { wb = EB.exportWorkbook(back, []); } catch (e1) { stepErr = 'exportWorkbook: ' + (e1 && e1.message); }
+  try { if (wb) bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }); } catch (e2) { stepErr = (stepErr ? stepErr + ' | ' : '') + 'XLSX.write: ' + (e2 && e2.message); }
+  /* 22. reimport into an isolated environment: fresh parse of the exported bytes */
+  const reparsed = XLSX.read(bytes, { type: 'array' });
+  /* 23. compare: audit the reimported workbook + regrade from it */
+  const audit = SA.audit(reparsed);
+  const profile = audit.profile || {};
+  const critical = (audit.findings || []).filter((f) => f.severity === 'critical');
+  return { stepErr, who: 'fet1', students: grades.length, letter: student && student.letter != null ? student.letter : null,
+           final: student && student.final != null ? student.final : null, classAvg,
+           bytes: bytes.byteLength, sheets: (reparsed.SheetNames || []).length,
+           rosterParsed: profile.rosterCount != null ? profile.rosterCount : -1,
+           criticalReimport: critical.length, findings: (audit.findings || []).length };
+}
+"""
+
 JS_AUDIT = """
 async () => {
   const SS = window.SchoolSync;
@@ -303,12 +340,30 @@ def main():
             ok(rr2["students"] == 1 and rr2["records"] >= 5 and rr2["observations"] >= 3, f"export carries the whole class ({rr2['records']} records, {rr2['observations']} observations)")
             ok(rr2["semStudents"] == 1 and rr2["semObs"] >= 1, f"adapter rebuilds a gradable semester from the export (students={rr2['semStudents']}, obs rows={rr2['semObs']})")
 
-            print("10. admin audit trail")
+            print("10. reports -> SPR export -> reimport -> compare (workflow steps 19-23)")
+            rp = pageA.evaluate(JS_REPORTS, fx)
+            ok(rp["who"] == "fet1" and rp["students"] >= 1 and rp["letter"] is not None, f"student report generated from live backend data (students={rp['students']}, letter={rp['letter']})")
+            ok(rp["classAvg"] is not None, f"class report aggregates ({round(rp['classAvg'], 2) if rp['classAvg'] is not None else None})")
+            ok(rp.get("bytes") is not None and rp["bytes"] > 5000 and rp["sheets"] >= 4, f"SPR Excel export produced a real workbook ({rp.get('bytes')} bytes, {rp.get('sheets')} sheets; err={rp.get('stepErr')}")
+            ok(rp.get("rosterParsed", -1) >= 1, f"reimported workbook re-parses with the roster intact ({rp['rosterParsed']} students)")
+            ok(rp.get("criticalReimport", -1) == 0, f"reimported workbook audits CLEAN (0 critical of {rp['findings']} findings)")
+
+            print("11. admin audit trail")
             au = pageA.evaluate(JS_AUDIT)
             acts = set(au["actions"])
             need = {"login.ok", "record.create", "record.conflict", "record.conflict.resolve"}
             ok(need.issubset(acts), f"audit shows the workflow: {sorted(need & acts)}")
             ok(au["total"] >= 10, f"audit event count reasonable ({au['total']})")
+
+            print("12. mobile viewport emulation (iPhone 13) — layout smoke")
+            mob = browser.new_context(**pw.devices["iPhone 13"])
+            mp = mob.new_page()
+            mp.goto(BASE + "/index.html")
+            mp.wait_for_timeout(2500)
+            mstats = mp.evaluate("() => ({ w: window.innerWidth, sw: document.documentElement.scrollWidth, inputs: document.querySelectorAll('input, button, select, a').length })")
+            ok(mstats["sw"] <= mstats["w"] + 1, f"no horizontal overflow at {mstats['w']}px (scrollWidth {mstats['sw']})")
+            ok(mstats["inputs"] >= 3, f"interactive controls present ({mstats['inputs']})")
+            mob.close()
 
             pageA.screenshot(path=os.path.join(ROOT, "docs", "qa", "round11", "browser-fet-contextA.png"))
             pageB.screenshot(path=os.path.join(ROOT, "docs", "qa", "round11", "browser-cet-contextB.png"))
