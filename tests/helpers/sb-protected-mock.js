@@ -2,8 +2,12 @@
 // 2026-11-13 (SECURITY-BASELINE C1): the app refuses unprotected cloud writes,
 // so the suites must model the server state AFTER the owner runs
 // docs/supabase-write-token.sql: the three RPCs exist and write_token_hash is
-// honoured. Exported as function source (toString) so test stubs can inject
-// it with 'window.fetch=' + mockSrc — no string-escaping layer at all.
+// honoured.
+// round11 NOTE (cost a full suite run): the export is ONE function's toString,
+// injected verbatim as `window.fetch = <src>` into jsdom. Everything — helpers,
+// hooks, table semantics — MUST live inside this single function body. A second
+// top-level function never reaches the page and the mock dies with
+// "handleRequest is not defined" at the first fetch.
 function sbProtectedMock(url, opts) {
   url = String(url); opts = opts || {};
   var isWrite = !!opts.method && opts.method !== 'GET';
@@ -11,14 +15,7 @@ function sbProtectedMock(url, opts) {
      slowness sections of the suites keep working (R4, S12, slow-network UX) */
   if (isWrite && window.__SB_FAIL_SAVE) return Promise.resolve(H(500, { message: 'mock induced save failure' }));
   var slow = (isWrite && window.__SB_SLOW_SAVE) || (!isWrite && window.__SB_SLOW_GET);
-  var go = handleRequest;
-  if (slow) { var ms = Number(slow) || 400; go = function (u2, o2) { return new Promise(function (rj) { setTimeout(function () { rj(handleRequest(u2, o2)); }, ms); }); }; }
   try { window.__fetchLog = window.__fetchLog || []; window.__fetchLog.push((opts.method || 'GET') + ' ' + url.slice(-46)); } catch (e) {}
-  return go(url, opts);
-}
-function handleRequest(url, opts) {
-  url = String(url); opts = opts || {};
-  var SB = window.__SB;
   function b64uToBytes(x) {
     x = String(x || '').replace(/-/g, '+').replace(/_/g, '/');
     while (x.length % 4) x += '=';
@@ -48,10 +45,11 @@ function handleRequest(url, opts) {
     var e = u.indexOf('&', q);
     return u.slice(q + 6, e === -1 ? u.length : e);
   }
-  /* --- the three protection RPCs --- */
-  if (url.indexOf('/rpc/spr_channel_write') !== -1) {
-    var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
-    return (async function () {
+  async function run() {
+    var SB = window.__SB;
+    /* --- the three protection RPCs --- */
+    if (url.indexOf('/rpc/spr_channel_write') !== -1) {
+      var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
       if (!row) {
         SB[b.p_id] = { id: b.p_id, share_name: b.p_share_name || null, pushed_by: b.p_pushed_by, pushed_at: b.p_pushed_at, payload: b.p_payload, write_token_hash: await sha256Hex(b.p_token) };
         return H(200, true);
@@ -60,47 +58,47 @@ function handleRequest(url, opts) {
       if (row.write_token_hash !== await sha256Hex(b.p_token)) return H(400, { message: 'write token rejected' });
       row.previous = row.payload; row.payload = b.p_payload; row.pushed_by = b.p_pushed_by; row.pushed_at = b.p_pushed_at;
       return H(200, true);
-    })();
-  }
-  if (url.indexOf('/rpc/spr_channel_enrol') !== -1) {
-    var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
-    return (async function () {
+    }
+    if (url.indexOf('/rpc/spr_channel_enrol') !== -1) {
+      var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
       if (!row) return H(400, { message: 'no such channel' });
       if (!row.payload || !row.payload.ct || !row.payload.mac) return H(400, { message: 'channel has no payload to prove against' });
       var proof = await hmacB64u(b.p_key, row.payload.ct);
       if (proof !== row.payload.mac) return H(400, { message: 'proof rejected' });
+      /* round11: enrol also RE-ARMS with the caller's token when the proof
+       holds (docs/supabase-write-token.sql now does the same), so a device
+       holding the sync key can always re-enrol its token after an adoption */
       row.write_token_hash = await sha256Hex(b.p_token);
       return H(200, true);
-    })();
-  }
-  if (url.indexOf('/rpc/spr_channel_ping') !== -1) {
-    var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
-    return (async function () {
+    }
+    if (url.indexOf('/rpc/spr_channel_ping') !== -1) {
+      var b = JSON.parse(opts.body || '{}'); var row = SB[b.p_id];
       if (!row) return H(200, 'no-row');
       if (!row.write_token_hash) return H(200, 'no-token');
       return H(200, row.write_token_hash === await sha256Hex(b.p_token || '') ? 'ok' : 'bad-token');
-    })();
-  }
-  /* --- table semantics (matching the real policies post-upgrade) --- */
-  var chan = chanIdFrom(url);
-  if (chan === undefined) return Promise.resolve({ ok: false, status: 404, json: function () { return Promise.resolve({}); } });
-  if (opts.method === 'POST') {
-    return Promise.resolve(function () {
+    }
+    /* --- table semantics (matching the real policies post-upgrade) --- */
+    var chan = chanIdFrom(url);
+    if (chan === undefined) return { ok: false, status: 404, json: function () { return Promise.resolve({}); } };
+    if (opts.method === 'POST') {
       var b = JSON.parse(opts.body);
       if (SB[b.id]) return H(409);
       SB[b.id] = { id: b.id, share_name: b.share_name || null, pushed_by: b.pushed_by || null, pushed_at: b.pushed_at, payload: b.payload, write_token_hash: b.write_token_hash || null };
       return H(201);
-    }());
-  }
-  if (opts.method === 'PATCH') {
-    return Promise.resolve(function () {
+    }
+    if (opts.method === 'PATCH') {
       if (!SB[chan]) return H(404);
       var p = JSON.parse(opts.body);
       Object.keys(p).forEach(function (k) { SB[chan][k] = p[k]; });
       return H(204);
-    }());
+    }
+    if (opts.method === 'DELETE') { delete SB[chan]; return H(204); }
+    return H(200, chan && SB[chan] ? [SB[chan]] : []);
   }
-  if (opts.method === 'DELETE') { delete SB[chan]; return Promise.resolve(H(204)); }
-  return Promise.resolve(H(200, chan && SB[chan] ? [SB[chan]] : []));
+  if (slow) {
+    var ms = Number(slow) || 400;
+    return new Promise(function (rj) { setTimeout(function () { rj(run()); }, ms); });
+  }
+  return run();
 }
 module.exports = { mockSrc: sbProtectedMock.toString() };

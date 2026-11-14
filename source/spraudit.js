@@ -154,6 +154,36 @@
     scanWeekly(sp, 'spelling');
     scanWeekly(da, 'daily assignment');
 
+    /* --- D3 (round11 §6): inconsistent assessment maxima. The class modal
+       maximum per (sheet, month, week) is the expected value; a row whose
+       total cell deviates is almost always a mistyped total. WARNING, not
+       critical: a teacher may legitimately run a one-off different total. --- */
+    function scanMaxConsistency(sh, label) {
+      if (!sh) return;
+      const rows_ = studentRows(sh.rows);
+      for (const mb of monthBlocks(sh.rows, 11)) {
+        for (let w = 1; w <= 5; w++) {
+          const tally = {};
+          for (const r of rows_) {
+            const t = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2 + 1));
+            if (t !== null && t > 0) tally[t] = (tally[t] || 0) + 1;
+          }
+          const keys = Object.keys(tally);
+          if (keys.length < 2) continue;   /* uniform (or empty): nothing to compare */
+          let modal = keys[0];
+          for (const k of keys) if (tally[k] > tally[modal]) modal = k;
+          if (tally[modal] < 2) continue;  /* no stable majority to trust */
+          for (const r of rows_) {
+            const t = numOrNull(cell(sh.rows, r.row, mb.col + (w - 1) * 2 + 1));
+            if (t !== null && t > 0 && String(t) !== modal) {
+              push('warning', 'max-inconsistent', (r.nameEn || r.nameCn || r.id) + ': the ' + label + ' total for ' + mb.name + ' week ' + w + ' is ' + t + ' but the class uses ' + modal + '.', { student: r.id, sheet: sh.name, cell: addr(r.row, mb.col + (w - 1) * 2 + 1), expected: modal, suggestion: 'Check this total cell; one of the two values is a typo.' });
+            }
+          }
+        }
+      }
+    }
+    if (sp) scanMaxConsistency(sp, 'Spelling');
+    if (da) scanMaxConsistency(da, 'Daily Assignment');
     if (obs) {
       for (const mb of monthBlocks(obs.rows, 8)) {
         for (const r of studentRows(obs.rows)) {
@@ -187,7 +217,23 @@
       }
       return fs.length;
     }
-    const formulaCount = scanFormulas(obs) + scanFormulas(sp) + scanFormulas(da) + scanFormulas(te);
+    /* --- B1b. error-typed cells (#REF!, #DIV/0!, #N/A ...) in the data
+       region: whatever produced them, the cell cannot be a valid score and
+       Excel shows it as a broken calculation. round11 §6. --- */
+    function scanErrorCells(sh) {
+      if (!sh || !sh.ws) return;
+      const range = XLSX.utils.decode_range(sh.ws['!ref'] || 'A1');
+      const r1 = Math.min(range.e.r, 4 + studentRows(sh.rows).length + 2);
+      for (let r = Math.max(range.s.r, 4); r <= r1; r++) {
+        for (let c = 5; c <= range.e.c; c++) {
+          const cel = sh.ws[XLSX.utils.encode_cell({ r: r, c: c })];
+          if (cel && cel.t === 'e') {
+            push('critical', 'error-cell', 'Cell ' + XLSX.utils.encode_cell({ r: r, c: c }) + ' on ' + sh.name + ' shows the error ' + (cel.w || cel.v) + '. It cannot be a valid score.', { sheet: sh.name, cell: XLSX.utils.encode_cell({ r: r, c: c }), expected: 'a number or an empty cell', suggestion: 'Fix or clear the cell in Excel, then import again.' });
+          }
+        }
+      }
+    }
+    const formulaCount = scanFormulas(obs); scanErrorCells(obs) + scanFormulas(sp); scanErrorCells(sp) + scanFormulas(da); scanErrorCells(da) + scanFormulas(te); scanErrorCells(te);
 
     /* --- B2. cached averages vs the real engine --- */
     if (sp || da) {
