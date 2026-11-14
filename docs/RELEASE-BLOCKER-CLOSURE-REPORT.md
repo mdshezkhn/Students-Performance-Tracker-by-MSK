@@ -132,8 +132,10 @@ blocking item for "BLOCKERS CLOSED" is the live containment, which requires
 the owner's Supabase dashboard authority. Real student data must NOT be
 introduced before containment + the external approvals in §8.2.
 
-Final commit: recorded at push time; local HEAD will equal
-`origin/feature/p2-secure-school` (verified below after push).
+Final closure-content commit: `95abe1f3fe59c13cb27bc65f043fc7d4c39844f5`
+(local HEAD = origin/feature/p2-secure-school verified at push; `site`
+unchanged at `0b5b5d19`). The only later commit, if any, records this very
+hash in this file.
 
 ## Post-scriptum (push-time verification)
 
