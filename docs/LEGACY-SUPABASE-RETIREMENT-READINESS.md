@@ -1,5 +1,13 @@
 # Legacy Supabase Retirement Readiness — Round 20
 
+> **2026-11-14 (safety-gate session): STEP 1 containment FOUND EXECUTED on the
+> live project** — all three RPCs installed (ghost-id probes: 400 P0001 /
+> 200 "no-row"), `write_token_hash` column present, anon UPDATE/DELETE still
+> grant-denied, SELECT/INSERT preserved by design, 88 rows intact. Write
+> vector CLOSED. Read exposure (88 rows) remains open pending the Option D
+> retirement decision. Full details + owner checklist:
+> `docs/SUPABASE-CONTAINMENT-OWNER-PACKAGE.md` (status banner at top).
+
 Live re-verification performed **2026-11-14** against the production Supabase
 project (`hvjswsedoapsskedrkoj.supabase.co`, publishable key — the key is
 public by design and is not a secret). **Corrected 2026-11-14 (blocker
