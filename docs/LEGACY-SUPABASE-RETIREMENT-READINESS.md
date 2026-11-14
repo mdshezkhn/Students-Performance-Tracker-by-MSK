@@ -1,5 +1,12 @@
 # Legacy Supabase Retirement Readiness — Round 20
 
+> **2026-11-15 final-drive census:** the 88 rows = 83 wiped tombstones + **5
+> active owner device-sync channels** (4 `ds-ptr` sign-in pointers + 1
+> `devicesync` data channel, all armed with `write_token_hash`). Decision-ready
+> per-procedure retirement plans (A: tombstones / B: active channels) live in
+> `LEGACY_DATA_RETIREMENT_FINAL_PLAN.md`; live verification evidence in
+> `SUPABASE_LIVE_VERIFICATION.md`.
+
 > **2026-11-14 (safety-gate session): STEP 1 containment FOUND EXECUTED on the
 > live project** — all three RPCs installed (ghost-id probes: 400 P0001 /
 > 200 "no-row"), `write_token_hash` column present, anon UPDATE/DELETE still

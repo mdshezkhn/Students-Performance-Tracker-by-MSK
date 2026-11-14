@@ -42,10 +42,10 @@ Your old Supabase project (`hvjswsedoapsskedrkoj.supabase.co`) still hosts the
 **personal scorebook's** cloud-copy table. Anyone on the internet who knows
 (or guesses) the project URL + public key can currently:
 
-- **Read all 88 rows** — each row is a sealed (AES-GCM encrypted) class
-  workbook or sync pointer. They cannot decrypt them (keys never leave
-  paired devices), but they CAN see row metadata: channel ids, timestamps,
-  who-pushed labels, share names.
+- **Read all 88 rows** — 83 are empty `{"wiped"}` tombstones; 5 are sealed
+  (AES-GCM encrypted) sync pointers/your active envelope. Nobody can decrypt
+  the 5 (keys never leave paired devices), but they CAN see row metadata:
+  channel ids, timestamps, who-pushed labels, share names.
 - **Insert new junk rows** (confirmed permitted — §3). Junk rows cannot read,
   change or delete your 88 rows; they are pollution, not leakage.
 - **NOT update** and **NOT delete** — both are denied at the database-grant
@@ -55,19 +55,25 @@ The **school SPR platform** (new backend, accounts, FET/CET roles) has ZERO
 connection to this project — verified across `server/`, `schoolsync`,
 `spradapter`, `spraudit` (0 references).
 
-## 2. The 88-row exposure and its implications
+## 2. The 88-row exposure — corrected by the 2026-11-15 census
 
-88 sealed envelopes + metadata, publicly fetchable, for as long as the table
-stays open. Implications: (a) metadata reveals that this cloud holds school
-class workbooks and when/who pushed them; (b) the ciphertext is permanent
-harvesting material — if a sync key ever leaked from a paired device, those
-rows become decryptable by the holder; (c) China data-residency rules treat
-this as an overseas store of student-related data (see
-`docs/CHINA-PRIVACY-AND-HOSTING-READINESS.md`). **Running STEP 1 below does
-NOT remove the read exposure** — it makes writes impossible-without-token and
-keeps the scorebook working. Full read closure = the separate retirement
-decision in §5 (Option D), which includes exporting anything you still want
-and deleting the rows.
+**Census correction (2026-11-15, read-only):** 83 of the 88 rows are 12-byte
+`{"wiped"}` **tombstones** — payloads already erased by the app's own
+"turn off device sync" flow. Only **5 rows contain any ciphertext** (4 tiny
+sealed pointers + 1 sealed device-sync envelope ≤31 KB), and those 5 are
+**your actively used device-sync channels** (all last pushed 2026-11-12).
+So the true exposure is: 5 small sealed rows + 88 rows of lightweight
+metadata (timestamps, share labels, browser strings, one class name).
+Implications: (a) metadata reveals cloud usage patterns and one class label;
+(b) the 5 ciphertext rows are permanent harvesting material — if a sync key
+ever leaked from a paired device, those rows become decryptable by the holder;
+(c) China data-residency rules treat this as an overseas store of
+student-related data (see `docs/CHINA-PRIVACY-AND-HOSTING-READINESS.md`).
+**Running STEP 1 does NOT remove the read exposure** — it made writes
+impossible-without-token while keeping the scorebook working (STEP 1 is now
+LIVE — see the banner above). Full read closure = the retirement decision in
+`docs/LEGACY_DATA_RETIREMENT_FINAL_PLAN.md` (D1 dead-rows-only, D2 full,
+D3 defer), which includes exact SQL, rollback and expected app behaviour.
 
 ## 3. Verified permission matrix (2026-11-14, read-only probes)
 
