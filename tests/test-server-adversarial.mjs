@@ -3,6 +3,7 @@
    Each assertion documents the exact HTTP status the server must return.
    Run: node tests/test-server-adversarial.mjs */
 import { createApp } from '../server/spr-server.mjs';
+import rot from './helpers/rotate.js';
 
 let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) { pass++; console.log('  ok: ' + label); } else { fail++; console.log('  FAIL: ' + label); } };
@@ -25,7 +26,8 @@ function client(base) {
   };
 }
 
-const ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
+let ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
+if (!process.env.SPR_SESSION_HOURS) { console.error('run with SPR_SESSION_HOURS=0.0042 (section 5 proves session-expiry enforcement; without it the test lies)'); process.exit(2); }
 /* NOTE: short sessions for section 5 come from the CLI env (SPR_SESSION_HOURS=0.0042) — ES imports are hoisted, an in-file assignment runs too late */
 const srv = await createApp({ cookieSecure: false });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -34,6 +36,14 @@ const admin = client(base), fet = client(base), cet = client(base), stranger = c
 
 console.log('fixture');
 await admin.req('POST', '/api/auth/login', { username: 'admin', password: ADMIN_PW });
+/* round13: forced rotation when the default password bootstrapped the admin */
+{
+  const me = await admin.req('GET', '/api/me');
+  if (me.data && me.data.user && me.data.user.must_change_pw) {
+    await admin.req('POST', '/api/auth/change-password', { current: ADMIN_PW, next: 'Spr-Admin-Rotated-9x7' });
+    ADMIN_PW = 'Spr-Admin-Rotated-9x7';
+  }
+}
 const fetU = (await admin.req('POST', '/api/admin/users', { username: 'fet1', display_name: 'FET', role: 'teacher', password: 'Fet1-Pass-9x' })).data.user;
 const cetU = (await admin.req('POST', '/api/admin/users', { username: 'cet1', display_name: 'CET', role: 'teacher', password: 'Cet1-Pass-9x' })).data.user;
 const cls = (await admin.req('POST', '/api/admin/classes', { name: 'Primary 4A' })).data.class;
@@ -43,8 +53,8 @@ await admin.req('POST', '/api/admin/memberships', { class_id: cls.id, user_id: c
 const stu = (await admin.req('POST', '/api/students', { class_id: cls.id, student_no: '08', name_en: 'Synthetic 08' })).data.student;
 const stuOther = (await admin.req('POST', '/api/students', { class_id: otherCls.id, student_no: '01', name_en: 'Synthetic Other' })).data.student;
 const sem = (await admin.req('POST', '/api/semesters', { name: 'S1' })).data.semester;
-await fet.req('POST', '/api/auth/login', { username: 'fet1', password: 'Fet1-Pass-9x' });
-await cet.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
+await rot.login(fet, '/api/auth/login', 'fet1', 'Fet1-Pass-9x');
+await rot.login(cet, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
 const obsRec = { id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', class_id: cls.id, student_id: stu.id, semester_id: sem.id, category: 'observation', period: 'September', ordinal: 1, value: 8, max_value: 10, note: 'Listening-LO1', expected_version: 0, idempotency_key: 'adv-obs-1' };
 const r0 = await fet.req('POST', '/api/records', obsRec);
 ok(r0.status === 201, 'baseline: FET writes the observation (201)');
@@ -92,7 +102,7 @@ console.log('4. forged identity in the body (user id / school id / role)');
 console.log('5. session expiry + reuse');
 {
   const temp = client(base);
-  await temp.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
+  await rot.login(temp, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
   const alive = await temp.req('GET', '/api/me');
   ok(alive.status === 200, 'fresh session works');
   await new Promise((r) => setTimeout(r, 16500));   /* sessionHours 0.0042 ~= 15 s */
@@ -103,8 +113,8 @@ console.log('5. session expiry + reuse');
 }
 
 /* with SPR_SESSION_HOURS=0.0042 every session is dead after section 5's sleep: re-login the clients used below */
-await cet.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
-await fet.req('POST', '/api/auth/login', { username: 'fet1', password: 'Fet1-Pass-9x' });
+await rot.login(cet, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
+await rot.login(fet, '/api/auth/login', 'fet1', 'Fet1-Pass-9x');
 await admin.req('POST', '/api/auth/login', { username: 'admin', password: ADMIN_PW });
 
 console.log('6. deactivated account');
@@ -112,7 +122,7 @@ console.log('6. deactivated account');
   await admin.req('POST', '/api/admin/users/' + fetU.id + '/deactivate');
   const w = await fet.req('GET', '/api/me');
   ok(w.status === 401, 'live session of a deactivated account -> 401 immediately (got ' + w.status + ')');
-  const l = await fet.req('POST', '/api/auth/login', { username: 'fet1', password: 'Fet1-Pass-9x' });
+  const l = await rot.login(fet, '/api/auth/login', 'fet1', 'Fet1-Pass-9x');
   ok(l.status === 401, 'deactivated account cannot log in -> 401 (got ' + l.status + ')');
   await admin.req('POST', '/api/admin/users/' + fetU.id + '/activate');
 }
@@ -138,8 +148,8 @@ console.log('8. conflict resolution across roles');
 
 console.log('9. unauthorised export');
 {
-  await cet.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
-  await fet.req('POST', '/api/auth/login', { username: 'fet1', password: 'Fet1-Pass-9x' });
+  await rot.login(cet, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
+  await rot.login(fet, '/api/auth/login', 'fet1', 'Fet1-Pass-9x');
   const e1 = await stranger.req('GET', '/api/export/class/' + cls.id);
   ok(e1.status === 401, 'anonymous export -> 401 (got ' + e1.status + ')');
   const e2 = await cet.req('GET', '/api/export/class/' + otherCls.id);
@@ -150,16 +160,16 @@ console.log('9. unauthorised export');
 
 console.log('10. CSRF + cookie flags + error disclosure');
 {
-  const noTok = await raw.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
+  const noTok = await rot.login(raw, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
   const bad = await raw.req('POST', '/api/records', { ...obsRec, id: 'ab1b2c3d4e5f60718293a4b5c6d7e8f90', category: 'spelling' }, { 'X-CSRF-Token': 'wrong' });
   ok(bad.status === 403, 'write without/with wrong CSRF token -> 403 (got ' + bad.status + ')');
   const probe = await fetch(base + '/api/classes/' + cls.id + '/records');
   const cookieHdr = (probe.headers.get('set-cookie') || '');
   void cookieHdr;
-  const loginProbe = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'cet1', password: 'Cet1-Pass-9x' }) });
+  const loginProbe = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'cet1', password: rot.effective('cet1', 'Cet1-Pass-9x') }) });
   const sc2 = (loginProbe.headers.getSetCookie ? loginProbe.headers.getSetCookie() : []).join(';');
   ok(/HttpOnly/i.test(sc2) && /SameSite=Lax/i.test(sc2), 'session cookie carries HttpOnly + SameSite=Lax (' + sc2.slice(0, 60) + '...)');
-  await cet.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
+  await rot.login(cet, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
   const err = await cet.req('GET', '/api/classes/' + cls.id + '/records?since=not-a-date');
   ok(err.status === 200 || err.status === 400, 'garbage query param does not 500 (got ' + err.status + ')');
   const nf = await cet.req('GET', '/api/nothing');
@@ -172,7 +182,7 @@ console.log('11. audit-log immutability at the API layer');
   ok(del.status === 404 || del.status === 405, 'no audit deletion endpoint (got ' + del.status + ')');
   const post = await admin.req('POST', '/api/audit', { id: 'fake' });
   ok(post.status === 404 || post.status === 405, 'no audit creation endpoint (got ' + post.status + ')');
-  await cet.req('POST', '/api/auth/login', { username: 'cet1', password: 'Cet1-Pass-9x' });
+  await rot.login(cet, '/api/auth/login', 'cet1', 'Cet1-Pass-9x');
   await admin.req('POST', '/api/auth/login', { username: 'admin', password: ADMIN_PW });
   const asTeacher = await cet.req('GET', '/api/audit?limit=5');
   ok(asTeacher.status === 403, 'teachers cannot read the audit trail (got ' + asTeacher.status + ')');

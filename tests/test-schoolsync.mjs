@@ -24,8 +24,26 @@ function jarFetch(jar) {
   };
 }
 
+
+/* round13: admin-created accounts force a password rotation on first login;
+   server-side enforcement blocks writes until it happens. */
+const SSPW = {};
+async function ssLogin(cli, u, pw) {
+  const e = SSPW[u];
+  const use = e && (e.orig === pw || e.now === pw) ? e.now : pw;
+  const me = await cli.login(u, use);
+  if (me && me.must_change_pw) {
+    const next = use + 'R';
+    await cli.call('POST', '/api/auth/change-password', { current: use, next });
+    SSPW[u] = { orig: pw, now: next };
+    return Object.assign({}, me, { must_change_pw: false });
+  }
+  SSPW[u] = { orig: pw, now: use };
+  return me;
+}
+
 const store = { mem: {}, get(k) { return this.mem[k] === undefined ? null : this.mem[k]; }, set(k, v) { this.mem[k] = v; } };
-const ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';   /* server/spr-server.mjs bootstrap */
+let ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';   /* server/spr-server.mjs bootstrap */
 
 const srv = await createApp({ cookieSecure: false });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -37,6 +55,10 @@ let cid = '', studentId = '', fetId = '', obsAId = '';
   const jar = { cookie: '' };
   const A = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
   const me = await A.login('admin', ADMIN_PW);
+  if (me && me.must_change_pw) {   /* round13: complete the forced rotation */
+    await A.call('POST', '/api/auth/change-password', { current: ADMIN_PW, next: 'Spr-Admin-Rotated-9x7' });
+    ADMIN_PW = 'Spr-Admin-Rotated-9x7';
+  }
   ok(me && me.username === 'admin', 'bootstrap admin signs in');
   const fet = (await A.call('POST', '/api/admin/users', { username: 'fet1', display_name: 'FET One', role: 'teacher', password: 'Fet1-School-Pass-9' })).user;
   const cet = (await A.call('POST', '/api/admin/users', { username: 'cet1', display_name: 'CET One', role: 'teacher', password: 'Cet1-School-Pass-9' })).user;
@@ -56,7 +78,7 @@ console.log('2. FET offline queue, duplicate guard, flush');
 {
   const jar = { cookie: '' };
   const f = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
-  const me = await f.login('fet1', 'Fet1-School-Pass-9');
+  const me = await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   ok(me.role === 'teacher', 'FET signs in as teacher');
   const obsA = OBS('September:0', 8, 0, 'ob-a');
   obsAId = obsA.id;
@@ -74,7 +96,7 @@ console.log('3. CET: independent records pass; role rules enforced');
 {
   const jar = { cookie: '' };
   const f = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
-  await f.login('cet1', 'Cet1-School-Pass-9');
+  await ssLogin(f, 'cet1', 'Cet1-School-Pass-9');
   f.queue({ kind: 'score', payload: SPELL('September:sp1', 9, 0, 'sp-a') });
   let r = await f.flush();
   ok(r.sent === 1, 'CET spelling accepted (independent record, FET observation untouched)');
@@ -88,7 +110,7 @@ console.log('4. stale version: conflict carries both sides; owner resolves');
 {
   const jar = { cookie: '' };
   const f = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
-  await f.login('fet1', 'Fet1-School-Pass-9');
+  await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   /* SAME record id as ob-a, but expected_version 0 (a second device that
      never saw the first write): the server must answer 409, both versions */
   const stale = OBS('September:0', 4, 0, 'ob-stale');
@@ -110,7 +132,7 @@ console.log('5. network failure mid-flush: queue intact, retry idempotent');
   const realFetch = jarFetch(jar);
   const flaky = (u, o) => dead ? Promise.reject(new TypeError('Failed to fetch')) : realFetch(u, o);
   const f = SS.create({ baseUrl: base, fetch: flaky, persist: store });
-  await f.login('fet1', 'Fet1-School-Pass-9');
+  await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   f.queue({ kind: 'score', payload: OBS('September:2', 6, 0, 'ob-net') });
   dead = true;
   let r = await f.flush();
@@ -127,13 +149,13 @@ console.log('6. session loss mid-flush: stops cleanly, re-login completes');
 {
   const jar = { cookie: '' };
   const f = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
-  await f.login('fet1', 'Fet1-School-Pass-9');
+  await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   f.queue({ kind: 'score', payload: OBS('September:3', 5, 0, 'ob-auth') });
   jar.cookie = '';
   let r = await f.flush();
   ok(r.sent === 0 && r.errors[0].reason === 'auth', 'auth loss surfaces as auth error');
   ok(f.pendingCount() === 1, 'pending change kept through auth loss');
-  await f.login('fet1', 'Fet1-School-Pass-9');
+  await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   r = await f.flush();
   ok(r.sent === 1, 'flush completes after re-login');
 }
@@ -142,7 +164,7 @@ console.log('7. membership revocation mid-queue');
 {
   const jar = { cookie: '' };
   const f = SS.create({ baseUrl: base, fetch: jarFetch(jar), persist: store });
-  await f.login('fet1', 'Fet1-School-Pass-9');
+  await ssLogin(f, 'fet1', 'Fet1-School-Pass-9');
   const aj = { cookie: '' };
   const A = SS.create({ baseUrl: base, fetch: jarFetch(aj), persist: store });
   await A.login('admin', ADMIN_PW);

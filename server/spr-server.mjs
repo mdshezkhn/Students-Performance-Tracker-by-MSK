@@ -25,6 +25,20 @@ import { openStore } from './store.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 
+/* round12: ordered, checksummed migrations. 001 is the baseline file itself;
+   add new files as 00N-name.sql and register them here. */
+export const MIGRATIONS = (() => {
+  const list = [{ version: '001', name: 'baseline', sql: SCHEMA_SQL, checksum: crypto.createHash('sha256').update(SCHEMA_SQL).digest('hex').slice(0, 16) }];
+  const dir = path.join(__dirname, 'migrations');
+  if (fs.existsSync(dir)) {
+    for (const f of fs.readdirSync(dir).filter((x) => /^\d{3}.*[.]sql$/.test(x)).sort()) {
+      const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+      list.push({ version: f.slice(0, 3), name: f.replace(/^[0-9]{3}-/, '').replace(/[.]sql$/, ''), sql, checksum: crypto.createHash('sha256').update(sql).digest('hex').slice(0, 16) });
+    }
+  }
+  return list;
+})();
+
 /* ---------------- password hashing: scrypt (node:crypto) ----------------
    OWASP-approved memory-hard KDF, configured N=2^17, r=8, p=1 (~64 MiB).
    Argon2id needs a native addon; scrypt is Node-core and is the documented
@@ -253,34 +267,56 @@ export async function createApp(opts = {}) {
   /* strip comments FIRST: schema comments contain semicolons, so splitting
      before stripping would produce junk statements */
   const NL = String.fromCharCode(10);
-  const sqlNoComments = SCHEMA_SQL.split(NL).map((l) => l.replace(/--.*/, '')).join(NL);
+  const sqlNoComments = (sql) => sql.split(NL).map((l) => l.replace(/--.*/, '')).join(NL);
   /* round11: dollar-quote-aware split — plpgsql function bodies contain ';'
      inside $$ ... $$ and must never be cut in half */
-  const stmts = [];
-  let cur = '', inDollar = false;
-  for (let i = 0; i < sqlNoComments.length; i++) {
-    const two = sqlNoComments.slice(i, i + 2);
-    if (two === '$$') { inDollar = !inDollar; cur += two; i++; continue; }
-    if (sqlNoComments[i] === ';' && !inDollar) { stmts.push(cur); cur = ''; continue; }
-    cur += sqlNoComments[i];
-  }
-  if (cur.trim()) stmts.push(cur);
-  for (const stmt of stmts) {
-    const clean = stmt.trim();
-    if (clean) await store.query(clean);
+  const splitSql = (sql) => {
+    const t = sqlNoComments(sql);
+    const out = [];
+    let cur = '', inDollar = false;
+    for (let i = 0; i < t.length; i++) {
+      const two = t.slice(i, i + 2);
+      if (two === '$$') { inDollar = !inDollar; cur += two; i++; continue; }
+      if (t[i] === ';' && !inDollar) { out.push(cur); cur = ''; continue; }
+      cur += t[i];
+    }
+    if (cur.trim()) out.push(cur);
+    return out.map((x) => x.trim()).filter(Boolean);
+  };
+  /* round12: VERSIONED migrations. 001 = the original idempotent baseline
+     (schema.sql, kept in place); later files live in server/migrations/.
+     A DB bootstrapped before this mechanism exists has its core tables but
+     no schema_migrations rows: 001 is then RECORDED as applied without
+     re-running (it is create-if-not-exists anyway, but recording-only keeps
+     the checksum honest for pre-existing installs). */
+  await store.query('create table if not exists schema_migrations (version text primary key, name text not null, checksum text not null, applied_at timestamptz not null default now())');
+  const applied = new Set((await store.query('select version from schema_migrations')).map((r) => r.version));
+  const preExisting = applied.size === 0 && (await store.query("select 1 from information_schema.tables where table_name = 'users'")).length > 0;
+  for (const mig of MIGRATIONS) {
+    if (applied.has(mig.version)) continue;
+    if (preExisting && mig.version === '001') {
+      await store.query('insert into schema_migrations (version, name, checksum) values ($1,$2,$3)', [mig.version, mig.name, mig.checksum]);
+      continue;
+    }
+    for (const stmt of splitSql(mig.sql)) await store.query(stmt);
+    await store.query('insert into schema_migrations (version, name, checksum) values ($1,$2,$3)', [mig.version, mig.name, mig.checksum]);
   }
   const anyUser = await store.query('select id from users limit 1');
   if (!anyUser.length) {
     const schoolId = 'school-' + rid().slice(0, 8);
     const adminUser = process.env.SPR_ADMIN_USER || 'admin';
     const adminPw = process.env.SPR_ADMIN_PW || 'change-me-admin';
+    /* round13 rule: a password supplied by the owner through the environment
+       is treated as chosen; the DEFAULT password always forces a rotation on
+       first login (and the API blocks everything until it happens). */
+    const mustRotate = !process.env.SPR_ADMIN_PW;
     await store.query('insert into schools (id, name) values ($1, $2)', [schoolId, process.env.SPR_SCHOOL_NAME || 'SPR School']);
     const h = await hashPassword(adminPw);
     await store.query(
-      'insert into users (id, school_id, username, display_name, role, pw_salt, pw_hash, must_change_pw) values ($1,$2,$3,$4,$5,$6,$7,true)',
-      [rid(), schoolId, adminUser, 'Administrator', 'admin', h.salt, h.hash]
+      'insert into users (id, school_id, username, display_name, role, pw_salt, pw_hash, must_change_pw) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [rid(), schoolId, adminUser, 'Administrator', 'admin', h.salt, h.hash, mustRotate]
     );
-    await audit(store, { school_id: schoolId, action: 'bootstrap.admin', target: adminUser, detail: { note: 'first-run admin created with must_change_pw' } });
+    await audit(store, { school_id: schoolId, action: 'bootstrap.admin', target: adminUser, detail: { note: mustRotate ? 'first-run admin created; default password forces rotation' : 'first-run admin created with owner-supplied password' } });
   }
 
   const staticDir = opts.staticDir ? path.resolve(opts.staticDir) : null;
@@ -347,6 +383,13 @@ export async function createApp(opts = {}) {
       if (req.method !== 'GET' && p !== '/api/auth/logout') {
         if (req.headers['x-csrf-token'] !== ctx.csrf) return bad(res, 403, 'missing or wrong CSRF token');
       }
+      /* round13: must_change_pw is ENFORCED, not just displayed. Until the
+         password is changed the account can do nothing but see itself,
+         change the password, or sign out. Applies to the bootstrap admin and
+         to any account an admin resets. */
+      if (ctx.user.must_change_pw && p !== '/api/me' && p !== '/api/auth/change-password' && p !== '/api/auth/logout') {
+        return bad(res, 403, 'set a new password before using the app');
+      }
 
       if (p === '/api/auth/logout' && req.method === 'POST') {
         await store.query('update sessions set revoked_at = now() where id = $1', [ctx.sid]);
@@ -399,8 +442,9 @@ export async function createApp(opts = {}) {
         const duty = (await membershipsFor(store, ctx.user.id))[m[1]];
         if (!duty && ctx.user.role !== 'admin' && ctx.user.role !== 'manager') return bad(res, 403, 'not your class');
         if (!(await classInSchool(store, m[1], ctx.user.school_id))) return bad(res, 404, 'no such class');
+        const wantAll = u.searchParams.get('include') === 'archived';
         const rows = await store.query(
-          'select id, student_no, name_cn, name_en, gender, under14, active from students where class_id = $1 order by student_no', [m[1]]);
+          'select id, student_no, name_cn, name_en, gender, under14, active, archived_at from students where class_id = $1 and ($2::boolean or archived_at is null) order by student_no', [m[1], wantAll]);
         return ok(res, { students: rows });
       }
 
@@ -541,6 +585,24 @@ export async function createApp(opts = {}) {
           await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'account.activate', target: row.username, req_id: reqId });
           return ok(res, { ok: true });
         }
+        /* round12: student archive / restore. Archiving is REVERSIBLE and
+           keeps every record; it only removes the student from the default
+           roster view. Genuine deletion is never offered through the API. */
+        if ((m = p.match(/^\/api\/admin\/students\/([0-9a-f-]+)\/archive$/)) && req.method === 'POST') {
+          const row = (await store.query('select s.id, s.class_id, s.name_en, s.name_cn, s.archived_at from students s where s.id = $1 and s.school_id = $2', [m[1], ctx.user.school_id]))[0];
+          if (!row) return bad(res, 404, 'no such student');
+          if (row.archived_at) return bad(res, 409, 'already archived');
+          await store.query('update students set archived_at = now(), updated_at = now() where id = $1', [m[1]]);
+          await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'student.archive', target: row.name_en || row.name_cn || m[1], class_id: row.class_id, req_id: reqId });
+          return ok(res, { ok: true });
+        }
+        if ((m = p.match(/^\/api\/admin\/students\/([0-9a-f-]+)\/restore$/)) && req.method === 'POST') {
+          const row = (await store.query('select s.id, s.class_id, s.name_en, s.name_cn from students s where s.id = $1 and s.school_id = $2', [m[1], ctx.user.school_id]))[0];
+          if (!row) return bad(res, 404, 'no such student');
+          await store.query('update students set archived_at = null, updated_at = now() where id = $1', [m[1]]);
+          await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'student.restore', target: row.name_en || row.name_cn || m[1], class_id: row.class_id, req_id: reqId });
+          return ok(res, { ok: true });
+        }
         if ((m = p.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/reset-password$/)) && req.method === 'POST') {
           const body = await readBody(req);
           const pw = String(body.password || '');
@@ -609,7 +671,7 @@ export async function createApp(opts = {}) {
         const duty = (await membershipsFor(store, ctx.user.id))[m[1]];
         if (!duty && ctx.user.role !== 'admin' && ctx.user.role !== 'manager') return bad(res, 403, 'not your class');
         if (!(await classInSchool(store, m[1], ctx.user.school_id))) return bad(res, 404, 'no such class');
-        const students = await store.query('select id, student_no, name_cn, name_en, gender from students where class_id=$1 and active order by student_no', [m[1]]);
+        const students = await store.query('select id, student_no, name_cn, name_en, gender, active, archived_at from students where class_id=$1 and active order by student_no', [m[1]]);
         const records = await store.query('select * from records where class_id=$1 order by updated_at', [m[1]]);
         await audit(store, { school_id: ctx.user.school_id, actor_id: ctx.user.id, actor_name: ctx.user.username, action: 'data.export', target: m[1], class_id: m[1], req_id: reqId });
         return ok(res, { students: students, records: records.map(pubRec), exported_at: nowIso() });

@@ -3,6 +3,7 @@
 // pulls, offline-outbox replay semantics. Synthetic data only.
 // Run: node tests/test-server-sync.mjs
 import { createApp } from '../server/spr-server.mjs';
+import rot from './helpers/rotate.js';
 
 let pass = 0, fail = 0;
 function ok(cond, label) { if (cond) { pass++; console.log('  ok: ' + label); } else { fail++; console.log('  FAIL: ' + label); } }
@@ -10,7 +11,7 @@ function ok(cond, label) { if (cond) { pass++; console.log('  ok: ' + label); } 
 const srv = await createApp({ cookieSecure: false });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + srv.address().port;
-const ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
+let ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
 
 function newClient() {
   const c = { cookie: null, csrf: null };
@@ -30,12 +31,20 @@ function newClient() {
 
 const admin = newClient();
 await admin.req('POST', '/api/auth/login', { username: 'admin', password: ADMIN_PW });
+/* round13: complete the forced rotation when the default password was used */
+{
+  const me = await admin.req('GET', '/api/me');
+  if (me.json && me.json.user && me.json.user.must_change_pw) {
+    await admin.req('POST', '/api/auth/change-password', { current: ADMIN_PW, next: 'Spr-Admin-Rotated-9x7' });
+    ADMIN_PW = 'Spr-Admin-Rotated-9x7';
+  }
+}
 const mkUser = async (u, duty) => {
   const usr = (await admin.req('POST', '/api/admin/users', { username: u, display_name: u, role: 'teacher', password: u + '-School-Pass-1' })).json.user;
   const cls = (await admin.req('POST', '/api/admin/classes', { name: 'Sync ' + u })).json.class;
   await admin.req('POST', '/api/admin/memberships', { class_id: cls.id, user_id: usr.id, duty });
   const c = newClient();
-  await c.req('POST', '/api/auth/login', { username: u, password: u + '-School-Pass-1' });
+  await rot.login(c, '/api/auth/login', u, u + '-School-Pass-1');
   const st = (await c.req('POST', '/api/students', { class_id: cls.id, student_no: '01', name_en: 'Sync Student 01' })).json.student;
   return { c, cls: cls.id, student: st.id };
 };
@@ -124,8 +133,8 @@ console.log('7. two teachers, same field, simultaneously');
 {
   /* same teacher category is single-owner (FET), so simulate two sessions of
      the FET = two browser tabs racing on the same observation */
-  const tabA = newClient(); await tabA.req('POST', '/api/auth/login', { username: 'syncfet', password: 'syncfet-School-Pass-1' });
-  const tabB = newClient(); await tabB.req('POST', '/api/auth/login', { username: 'syncfet', password: 'syncfet-School-Pass-1' });
+  const tabA = newClient(); await rot.login(tabA, '/api/auth/login', 'syncfet', 'syncfet-School-Pass-1');
+  const tabB = newClient(); await rot.login(tabB, '/api/auth/login', 'syncfet', 'syncfet-School-Pass-1');
   const id = crypto.randomUUID();
   await tabA.req('POST', '/api/records', { id, class_id: fet.cls, student_id: fet.student, category: 'observation', period: 'Mar 2027', note: 'first', expected_version: 0, idempotency_key: 'race-0' });
   const a = await tabA.req('POST', '/api/records', { id, class_id: fet.cls, student_id: fet.student, category: 'observation', period: 'Mar 2027', note: 'tabA edit', expected_version: 1, idempotency_key: 'race-1' });

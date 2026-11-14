@@ -1,3 +1,4 @@
+import rot from './helpers/rotate.js';
 // Role-based access + authentication tests for the SPR school backend.
 // Synthetic data only. Run: node tests/test-server-rbac.mjs
 import { createApp } from '../server/spr-server.mjs';
@@ -30,7 +31,7 @@ await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + srv.address().port;
 const newClient = clientFactory(base);
 
-const ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
+let ADMIN_PW = process.env.SPR_ADMIN_PW || 'change-me-admin';
 const admin = newClient();
 
 console.log('1. authentication');
@@ -41,6 +42,16 @@ console.log('1. authentication');
   ok(r2.status === 200 && r2.json.csrf, 'admin login returns session + CSRF');
   ok((r2.setCookie || '').includes('HttpOnly') && (r2.setCookie || '').includes('SameSite=Lax'), 'session cookie is HttpOnly + SameSite=Lax');
   ok(r2.json.user.must_change_pw === true, 'bootstrap admin flagged must_change_pw');
+  /* round13: the flag is ENFORCED — everything except me/change-password/logout is blocked until rotation */
+  const gated = await admin.req('GET', '/api/classes');
+  ok(gated.status === 403, 'must_change_pw blocks normal API use (403)');
+  if (r2.json.user.must_change_pw) {
+    const rot = await admin.req('POST', '/api/auth/change-password', { current: ADMIN_PW, next: 'Spr-Admin-Rotated-9x7' });
+    ok(rot.status === 200, 'admin completes the forced rotation');
+    ADMIN_PW = 'Spr-Admin-Rotated-9x7';
+    const free = await admin.req('GET', '/api/classes');
+    ok(free.status === 200, 'API usable after rotation');
+  }
   const noAuth = newClient();
   const r3 = await noAuth.req('GET', '/api/classes');
   ok(r3.status === 401, 'unauthenticated access denied');
@@ -70,10 +81,10 @@ let fet1, cet1, fet2, mgr, P4A, P4B, S08;
   const r3 = await admin.req('POST', '/api/admin/memberships', { class_id: P4B, user_id: uFet2.id, duty: 'fet' });
   ok(r1.status === 200 && r2.status === 200 && r3.status === 200, 'memberships assigned');
 
-  fet1 = newClient(); await fet1.req('POST', '/api/auth/login', { username: 'fet1', password: 'TeacherFet1Pass!x' });
-  cet1 = newClient(); await cet1.req('POST', '/api/auth/login', { username: 'cet1', password: 'TeacherCet1Pass!x' });
-  fet2 = newClient(); await fet2.req('POST', '/api/auth/login', { username: 'fet2', password: 'TeacherFet2Pass!x' });
-  mgr = newClient(); await mgr.req('POST', '/api/auth/login', { username: 'head', password: 'ManagerHead1Pass!x' });
+  fet1 = newClient(); await rot.login(fet1, '/api/auth/login', 'fet1', 'TeacherFet1Pass!x');
+  cet1 = newClient(); await rot.login(cet1, '/api/auth/login', 'cet1', 'TeacherCet1Pass!x');
+  fet2 = newClient(); await rot.login(fet2, '/api/auth/login', 'fet2', 'TeacherFet2Pass!x');
+  mgr = newClient(); await rot.login(mgr, '/api/auth/login', 'head', 'ManagerHead1Pass!x');
   const st = await fet1.req('POST', '/api/students', { class_id: P4A, student_no: '08', name_cn: '合成学生零八', name_en: 'Synthetic Student 08', gender: 'M' });
   S08 = st.json.student.id;
   ok(st.status === 201 && !!S08, 'FET creates roster student (synthetic)');
@@ -140,7 +151,7 @@ console.log('5. deactivation + session revocation');
   await admin.req('POST', '/api/admin/users/' + head.id + '/deactivate');
   const after = await mgr.req('GET', '/api/me');
   ok(after.status === 401, 'existing session revoked immediately on deactivation');
-  const relogin = await mgr.req('POST', '/api/auth/login', { username: 'head', password: 'ManagerHead1Pass!x' });
+  const relogin = await rot.login(mgr, '/api/auth/login', 'head', 'ManagerHead1Pass!x');
   ok(relogin.status === 401, 'deactivated account cannot authenticate');
 }
 

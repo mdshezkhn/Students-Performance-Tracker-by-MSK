@@ -72,6 +72,13 @@ async () => {
   /* the adapter minted its own student row for register 08; the class roster uses the API one -> remap student_id */
   const rec = mapped.records.find(r => r.category === 'observation');
   rec.student_id = stu.id;
+  /* round13: admin-created accounts force first-login rotation — do it now so
+     every later login in either browser context uses the rotated password */
+  {
+    const rt = async (u, pw) => { const t = SS.create({ baseUrl: '' }); const me = await t.login(u, pw);
+      if (me && me.must_change_pw) await t.call('POST', '/api/auth/change-password', { current: pw, next: pw + 'R' }); };
+    await rt('fet1', 'Fet1-School-Pass-9'); await rt('cet1', 'Cet1-School-Pass-9');
+  }
   await c.logout();
   return { clsId: cls.id, stuId: stu.id, semId: semRow.id, rec: { id: rec.id, class_id: rec.class_id, student_id: stu.id, semester_id: rec.semester_id, category: 'observation', period: rec.period, ordinal: rec.ordinal, value: rec.value, max_value: rec.max_value, note: rec.note } };
 }
@@ -81,7 +88,7 @@ JS_FET_OBSERVE = """
 async (fx) => {
   const SS = window.SchoolSync;
   const c = SS.create({ baseUrl: '', persist: (() => { const m = {}; return { get: (k) => (k in m ? m[k] : null), set: (k, v) => { m[k] = v; } }; })() });
-  const me = await c.login('fet1', 'Fet1-School-Pass-9');
+  const me = await c.login('fet1', 'Fet1-School-Pass-9R');
   c.queue({ kind: 'score', payload: Object.assign({}, fx.rec, { expected_version: 0, idempotency_key: 'r11-fet-obs-1' }) });
   const r = await c.flush();
   return { who: me.username, sent: r.sent, errors: r.errors.map(e => e.reason + ': ' + (e.message || '')), conflicts: r.conflicts.length };
@@ -92,7 +99,7 @@ JS_CET_SEE_AND_ENTER = """
 async (fx) => {
   const SS = window.SchoolSync, A = window.SPRAdapter;
   const c = SS.create({ baseUrl: '', persist: (() => { const m = {}; return { get: (k) => (k in m ? m[k] : null), set: (k, v) => { m[k] = v; } }; })() });
-  const me = await c.login('cet1', 'Cet1-School-Pass-9');
+  const me = await c.login('cet1', 'Cet1-School-Pass-9R');
   const seen = (await c.call('GET', '/api/classes/' + fx.clsId + '/records')).records;
   const obs = seen.find(r => r.id === fx.rec.id);
   const stus = (await c.call('GET', '/api/classes/' + fx.clsId + '/students')).students;
@@ -118,7 +125,7 @@ async (fx) => {
   /* DEFAULT persistence (localStorage): no explicit store passed */
   const SS = window.SchoolSync;
   const c = SS.create({ baseUrl: '' });
-  await c.login('fet1', 'Fet1-School-Pass-9');
+  await c.login('fet1', 'Fet1-School-Pass-9R');
   /* phase decided by the DURABLE outbox, never by window state (a restarted
      page has none): if the persisted outbox is empty this is the pre-restart
      page (queue), otherwise this is the restarted page (flush) */
@@ -136,7 +143,7 @@ async (fx) => {
   /* device replacement: a browser with NOTHING locally signs in and pulls */
   const SS = window.SchoolSync, A = window.SPRAdapter, Calc = window.ESLMarkbook || window.Calc;
   const c = SS.create({ baseUrl: '' });
-  const me = await c.login('fet1', 'Fet1-School-Pass-9');
+  const me = await c.login('fet1', 'Fet1-School-Pass-9R');
   const recs = (await c.call('GET', '/api/classes/' + fx.clsId + '/records')).records;
   const sem = A.fromBackend({ students: [{ id: fx.stuId, student_no: '08', name_en: 'Synthetic Student 08' }], records: recs });
   return { who: me.username, n: recs.length, semOk: !!(sem && sem.students && sem.students.length === 1) };
@@ -162,7 +169,7 @@ JS_FET_REVIEW = """
 async (fx) => {
   const SS = window.SchoolSync;
   const c = SS.create({ baseUrl: '', persist: (() => { const m = {}; return { get: (k) => (k in m ? m[k] : null), set: (k, v) => { m[k] = v; } }; })() });
-  const me = await c.login('fet1', 'Fet1-School-Pass-9');
+  const me = await c.login('fet1', 'Fet1-School-Pass-9R');
   const recs = (await c.call('GET', '/api/classes/' + fx.clsId + '/records')).records;
   const obs = recs.find(r => r.id === fx.rec.id);
   const sp = recs.find(r => r.category === 'spelling');
@@ -176,7 +183,7 @@ async (fx) => {
   const offline = fx.offline === true;
   const SS = window.SchoolSync;
   const c = SS.create({ baseUrl: '', persist: window.__r11store || (window.__r11store = { mem: {}, get(k) { return (k in this.mem) ? this.mem[k] : null; }, set(k, v) { this.mem[k] = v; } }) });
-  if (!window.__r11loggedin) { await c.login('fet1', 'Fet1-School-Pass-9'); window.__r11loggedin = true; }
+  if (!window.__r11loggedin) { await c.login('fet1', 'Fet1-School-Pass-9R'); window.__r11loggedin = true; }
   if (offline) {
     c.queue({ kind: 'score', payload: { id: fx.rec.id + 'a', class_id: fx.clsId, student_id: fx.rec.student_id, semester_id: fx.semId, category: 'observation', period: 'October', ordinal: 1, value: 7, max_value: 10, note: 'Reading-LO1', expected_version: 0, idempotency_key: 'r11-fet-offline-1' } });
   }
@@ -189,7 +196,7 @@ JS_CONFLICT = """
 async (fx) => {
   const SS = window.SchoolSync;
   const c = SS.create({ baseUrl: '', persist: (() => { const m = {}; return { get: (k) => (k in m ? m[k] : null), set: (k, v) => { m[k] = v; } }; })() });
-  await c.login('fet1', 'Fet1-School-Pass-9');
+  await c.login('fet1', 'Fet1-School-Pass-9R');
   /* stale expected_version on purpose: the row is at version >= 1 */
   c.queue({ kind: 'score', payload: Object.assign({}, fx.rec, { value: 5, expected_version: 0, idempotency_key: 'r11-conflict-1' }) });
   const r = await c.flush();
