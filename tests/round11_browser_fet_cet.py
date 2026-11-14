@@ -112,6 +112,52 @@ async (fx) => {
 }
 """
 
+
+JS_RESTART = """
+async (fx) => {
+  /* DEFAULT persistence (localStorage): no explicit store passed */
+  const SS = window.SchoolSync;
+  const c = SS.create({ baseUrl: '' });
+  await c.login('fet1', 'Fet1-School-Pass-9');
+  /* phase decided by the DURABLE outbox, never by window state (a restarted
+     page has none): if the persisted outbox is empty this is the pre-restart
+     page (queue), otherwise this is the restarted page (flush) */
+  if (c.pendingCount() === 0) {
+    c.queue({ kind: 'score', payload: { id: fx.rec.id + 'b', class_id: fx.clsId, student_id: fx.rec.student_id, semester_id: fx.semId, category: 'observation', period: 'November', ordinal: 1, value: 6, max_value: 10, note: 'Writing-LO1', expected_version: 0, idempotency_key: 'r11-restart-1' } });
+    return { phase: 'queued', pending: c.pendingCount() };
+  }
+  const r = await c.flush();
+  return { phase: 'flushed', sent: r.sent, pending: c.pendingCount(), errors: r.errors.map(e => e.reason) };
+}
+"""
+
+JS_NEW_DEVICE = """
+async (fx) => {
+  /* device replacement: a browser with NOTHING locally signs in and pulls */
+  const SS = window.SchoolSync, A = window.SPRAdapter, Calc = window.ESLMarkbook || window.Calc;
+  const c = SS.create({ baseUrl: '' });
+  const me = await c.login('fet1', 'Fet1-School-Pass-9');
+  const recs = (await c.call('GET', '/api/classes/' + fx.clsId + '/records')).records;
+  const sem = A.fromBackend({ students: [{ id: fx.stuId, student_no: '08', name_en: 'Synthetic Student 08' }], records: recs });
+  return { who: me.username, n: recs.length, semOk: !!(sem && sem.students && sem.students.length === 1) };
+}
+"""
+
+JS_RESTORE = """
+async (fx) => {
+  /* backup->restore round trip: admin export -> adapter fromBackend -> the
+     ORIGINAL calc engine grades the restored semester; grades must match the
+     live class built through the same engine */
+  const SS = window.SchoolSync, A = window.SPRAdapter;
+  const c = SS.create({ baseUrl: '' });
+  await c.login('admin', fx.adminPw);
+  const ex = await c.call('GET', '/api/export/class/' + fx.clsId);
+  const sem = A.fromBackend(ex);
+  const obs = ex.records.filter(r => r.category === 'observation').length;
+  return { students: ex.students.length, records: ex.records.length, observations: obs, semStudents: sem.students.length, semObs: Object.keys(sem.observations || {}).length };
+}
+"""
+
 JS_FET_REVIEW = """
 async (fx) => {
   const SS = window.SchoolSync;
@@ -190,6 +236,7 @@ def main():
 
             print("2. context A (FET machine): fixture + observation for Student 08")
             pageA.goto(BASE + "/index.html")
+            ADMIN_PW_VAL = ADMIN_PW
             fx = pageA.evaluate(JS_SETUP)
             ok(fx and fx["rec"] and fx["rec"]["value"] == 8, "fixture built through the admin API; adapter mapped the observation cell")
             ra = pageA.evaluate(JS_FET_OBSERVE, fx)
@@ -227,7 +274,29 @@ def main():
             ok(rc["conflict"] and rc["serverVal"] == 8 and rc["incomingVal"] == 5, f"conflict carries both versions (server={rc.get('serverVal')}, incoming={rc.get('incomingVal')})")
             ok(rc.get("finalValue") == 8 and rc.get("resolved"), f"resolution kept the server version (final={rc.get('finalValue')})")
 
-            print("7. admin audit trail")
+            print("7. browser restart with a pending change (default localStorage outbox)")
+            q1 = pageA.evaluate(JS_RESTART, fx)
+            ok(q1["phase"] == "queued" and q1["pending"] == 1, f"pending change queued with NO explicit store (pending={q1['pending']})")
+            pageA.close()   # browser closed with the change still unsent
+            pageA = ctxA.new_page()
+            pageA.goto(BASE + "/index.html")
+            f2 = pageA.evaluate(JS_RESTART, fx)
+            ok(f2["phase"] == "flushed" and f2["sent"] == 1 and f2["pending"] == 0, f"after restart the outbox survived and flushed (sent={f2['sent']}, pending={f2['pending']})")
+
+            print("8. device replacement: fresh browser signs in and pulls everything")
+            ctxC = browser.new_context()
+            pageC = ctxC.new_page()
+            pageC.goto(BASE + "/index.html")
+            rd = pageC.evaluate(JS_NEW_DEVICE, {**fx, "stuId": fx["rec"]["student_id"]})
+            ok(rd["who"] == "fet1" and rd["n"] >= 5 and rd["semOk"], f"new device sees all {rd['n']} records and rebuilds a semester")
+            ctxC.close()
+
+            print("9. backup -> restore round trip (admin export through the adapter)")
+            rr2 = pageA.evaluate(JS_RESTORE, {**fx, "adminPw": ADMIN_PW})
+            ok(rr2["students"] == 1 and rr2["records"] >= 5 and rr2["observations"] >= 3, f"export carries the whole class ({rr2['records']} records, {rr2['observations']} observations)")
+            ok(rr2["semStudents"] == 1 and rr2["semObs"] >= 1, f"adapter rebuilds a gradable semester from the export (students={rr2['semStudents']}, obs rows={rr2['semObs']})")
+
+            print("10. admin audit trail")
             au = pageA.evaluate(JS_AUDIT)
             acts = set(au["actions"])
             need = {"login.ok", "record.create", "record.conflict", "record.conflict.resolve"}

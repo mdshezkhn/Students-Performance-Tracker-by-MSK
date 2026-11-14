@@ -26,10 +26,23 @@
     opts = opts || {};
     const baseUrl = String(opts.baseUrl || '').replace(/\/+$/, '');
     const fetchImpl = opts.fetch || (typeof fetch !== 'undefined' ? fetch.bind(null) : null);
-    const persist = opts.persist || {
-      get: function () { return null; },
-      set: function () {}
-    };
+    /* round11 §5: durability by DEFAULT. A caller that passes nothing gets
+       localStorage in a browser — an offline outbox that evaporates on reload
+       would silently violate the never-drop-pending-changes rule. In node (no
+       localStorage) the no-op stub keeps tests explicit. */
+    let persist = opts.persist || null;
+    if (!persist) {
+      let ls = null;
+      try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (e) { ls = null; }
+      if (ls) {
+        persist = {
+          get: function (k) { try { const v = ls.getItem('spr-ss-' + k); return v === null ? null : JSON.parse(v); } catch (e) { return null; } },
+          set: function (k, v) { try { if (v === null) ls.removeItem('spr-ss-' + k); else ls.setItem('spr-ss-' + k, JSON.stringify(v)); } catch (e) {} }
+        };
+      } else {
+        persist = { get: function () { return null; }, set: function () {} };
+      }
+    }
     if (!fetchImpl) throw new Error('no fetch implementation available');
     let csrf = persist.get('csrf') || null;
     let me = persist.get('me') || null;
