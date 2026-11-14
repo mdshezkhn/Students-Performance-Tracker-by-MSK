@@ -5222,7 +5222,13 @@
       return await sbWrite(channel, token, env, who, at, shareName);
     } catch (e) {
       if (e && e.rpcMissing) throw sprProtectionErr('write RPC absent');
-      if (e && e.notEnrolled && keyProof) {
+      if ((e && e.notEnrolled && keyProof) || (e && e.badToken && keyProof)) {
+        /* round11: a second device holding the sync key enrols its OWN token
+           (the row re-arms after the key proof verifies against the payload
+           HMAC) instead of staying rejected forever. Key possession already
+           implies full read/write capability over this channel's data; the
+           token exists to stop ANONYMOUS writes, not to rank paired devices.
+           Legacy mixed-version devices (envelope without tok) land here too. */
         try {
           await sbEnrol(channel, token, keyProof);
           return await sbWrite(channel, token, env, who, at, shareName);
@@ -5930,7 +5936,13 @@
        row's wrap). Wraps are stable across plain sign-ins, so wsig does not
        churn the way asum would if it included them. */
     const wsig = await dsSum(JSON.stringify(v2.wraps || {}));
-    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone });   /* NO hash ever leaves this device */
+    /* round11: tok rides INSIDE the sealed plaintext. One row keeps ONE
+       armed token hash, so paired devices must converge on the channel's
+       token instead of each minting their own (which the row rejects). The
+       token is only readable by holders of the sync key, who can already
+       decrypt the whole workbook: it grants them nothing new, it just stops
+       each device's pushes from being refused after adoption. */
+    const pt = JSON.stringify({ sprDS: 1, ts: Date.now(), sum: sum, users: users, v2: v2, v3: classSyncPayload(), gone: gone, tok: cfg.writeToken || null });   /* NO hash ever leaves this device */
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ck = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
     const ct = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv: iv }, ck, new TextEncoder().encode(pt)));
@@ -5961,6 +5973,10 @@
   }
   function dsInstall(obj) {
     try {
+      if (obj && obj.tok) {   /* round11: the row's token IS the armed hash; converge so this device's next push is not refused */
+        const c = dsCfg();
+        if (c && c.writeToken !== obj.tok) { c.writeToken = obj.tok; dsSaveCfg(c); }
+      }
       dsMergeAccounts(obj, 'install', obj.v2);   /* union, cloud records win: never silently drop local-only accounts */
       dsBootFloor(obj.ts);
       try { sessionStorage.removeItem('spr-session'); } catch (e2) {}
@@ -6379,6 +6395,7 @@
     } catch (e) { throw new Error('could not store the cloud copy on this device: ' + e.message); }
     const cfg = dsCfg() || {};
     cfg.on = true; cfg.channel = hit.chan; cfg.key = hit.keyB64; cfg.owner = owner; cfg.adoptedAcct = true;
+    if (hit.obj && hit.obj.tok) cfg.writeToken = hit.obj.tok;   /* round11: converge on the channel's armed token */
     cfg.device = cfg.device || dsDeviceName(); cfg.pairedAt = cfg.pairedAt || new Date().toISOString();
     dsSaveCfg(cfg);
     try { localStorage.removeItem(DS_DECLINED_KEY); } catch (e2) {}

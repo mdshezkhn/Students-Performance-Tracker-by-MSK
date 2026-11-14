@@ -105,11 +105,23 @@ end;
 $$;
 
 -- 3. enrol RPC ----------------------------------------------------------------
--- Arms a pre-upgrade row (write_token_hash IS NULL) with the caller's token.
--- Proof: p_key is the channel's sync key. Only paired devices hold it. The
--- server cannot store it, but it CAN verify it against data already in the
--- row: the payload carries mac = base64url(HMAC-SHA256(key, ct)). Recompute
--- that HMAC with the caller's key; a stranger's key fails.
+-- Arms the row with the caller's token. Proof: p_key is the channel's sync
+-- key. Only paired devices hold it. The server cannot store it, but it CAN
+-- verify it against data already in the row: the payload carries
+-- mac = base64url(HMAC-SHA256(key, ct)). Recompute that HMAC with the
+-- caller's key; a stranger's key fails.
+--
+-- round11 (2026-11-14): re-arming an ALREADY armed row is now ALLOWED when
+-- the key proof verifies. Reason: one row keeps ONE armed hash, but paired
+-- devices each minted their own token, so a second device's pushes were
+-- refused forever ("write token rejected"). The app now (a) carries the
+-- channel token inside the sealed envelope so adopted devices converge, and
+-- (b) calls this RPC when a write is token-rejected. Security is unchanged
+-- in substance: a sync-key holder can already decrypt and legitimately
+-- replace the whole payload; the token's job is to stop ANONYMOUS writes
+-- from parties with no key, not to rank paired devices against each other.
+-- Rotation abuse by a rogue paired device is contained the same way as
+-- before: the owner turns sync off (tombstone + row delete) and re-enables.
 
 create or replace function public.spr_channel_enrol(
   p_id uuid,
@@ -129,9 +141,8 @@ begin
   if not found then
     raise exception 'spr_channel_enrol: channel not found';
   end if;
-  if v_row.write_token_hash is not null then
-    raise exception 'spr_channel_enrol: channel already enrolled';
-  end if;
+  /* round11: no 'already enrolled' refusal here any more: re-arm is allowed
+     when the key proof verifies (see header note above). */
   v_ct := v_row.payload->>'ct';
   if coalesce(v_ct, '') = '' or coalesce(v_row.payload->>'mac', '') = '' then
     raise exception 'spr_channel_enrol: row has no sealed payload to verify against';
