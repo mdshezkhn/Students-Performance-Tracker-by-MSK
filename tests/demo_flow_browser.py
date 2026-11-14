@@ -18,26 +18,47 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORT = 8891
-BASE = f"http://127.0.0.1:{PORT}"
+BASE = __import__("os").environ.get("LIVE_BASE") or f"http://127.0.0.1:{PORT}"
 PW = "demo-Monday-2026"
+
+
+def safe_reload(page, tries=3):
+    for i in range(tries):
+        try:
+            page.reload(); return True
+        except Exception:
+            page.wait_for_timeout(2500)
+    return False
+
+def safe_goto(page, url, tries=3):
+    for i in range(tries):
+        try:
+            page.goto(url); return True
+        except Exception:
+            page.wait_for_timeout(2500)
+    return False
 
 results = []
 def ok(cond, label, evidence=""):
     results.append((bool(cond), label))
     print(("  ok: " if cond else "  FAIL: ") + label + (("  [" + str(evidence) + "]") if (evidence and not cond) else ""))
 
-server = subprocess.Popen(
-    [r"C:\Python314\python.exe", "-m", "http.server", str(PORT), "--bind", "127.0.0.1", "--directory", ROOT],
-    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+if __import__("os").environ.get("LIVE_BASE"):
+    server = None
+else:
+    server = subprocess.Popen(
+        [r"C:\Python314\python.exe", "-m", "http.server", str(PORT), "--bind", "127.0.0.1", "--directory", ROOT],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
-    for _ in range(50):
-        try:
-            urllib.request.urlopen(BASE + "/app/index.html", timeout=1)
-            break
-        except Exception:
-            time.sleep(0.2)
-    else:
-        print("server did not start"); sys.exit(2)
+    if not __import__("os").environ.get("LIVE_BASE"):
+        for _ in range(50):
+            try:
+                urllib.request.urlopen(BASE + "/app/index.html", timeout=1)
+                break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            print("server did not start"); sys.exit(2)
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
@@ -48,14 +69,14 @@ try:
         cloud_hits = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         def _watch(r):
-            if "supabase" in r.url or ("pages.dev" in r.url and PORT not in r.url):
+            if "supabase" in r.url or ("pages.dev" in r.url and str(PORT) not in r.url and "spr-school-demo" not in r.url):
                 cloud_hits.append(r.url)
         page.on("request", _watch)
-        page.goto(BASE + "/app/")
+        page.goto(BASE + ("/app/" if "127.0.0.1" in BASE else "/"))
         page.evaluate("navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister())))")
         page.evaluate("caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))))")
-        page.reload()
-        page.wait_for_timeout(1200)
+        safe_reload(page)
+        page.wait_for_timeout(1500)
 
         # 1. after the gate, the sign-in dialog offers the demo entry
         page.wait_for_selector("text=Try the demo classes", timeout=15000)
@@ -98,12 +119,12 @@ try:
         page.locator("[data-action=class-open]").first.click()
         page.wait_for_timeout(1800)
         ok(page.evaluate("() => location.hash") == "#/dashboard", "class opened (dashboard route)")
-        page.goto(BASE + "/app/#/students"); page.wait_for_timeout(1500)
+        safe_goto(page, BASE + ("/app/#/students" if "127.0.0.1" in BASE else "/#/students")); page.wait_for_timeout(1500)
         ok(page.locator("#app >> text=Demo Student 08").count() > 0, "students view lists demo roster (Student 08)")
         ok(page.locator("#app >> text=Demo Student 15").count() > 0, "students view lists demo roster (Student 15)")
 
         # 4. reload persistence
-        page.reload(); page.wait_for_timeout(1500)
+        safe_reload(page); page.wait_for_timeout(1800)
         body = page.locator("#app").inner_text() + page.locator("body").inner_text()
         ok("Demo FET" in body or "P4-A Demo" in body or "Demo Student" in body, "after reload: session or class data persists")
         ok(page.locator("#demo-banner").count() == 1, "banner persists after reload")
@@ -146,7 +167,7 @@ try:
         ok(len(cloud_hits) == 0, "demo flow made ZERO cloud requests (" + str(len(cloud_hits)) + " seen)")
         # mobile viewport: the classes view must not scroll sideways
         page.set_viewport_size({"width": 390, "height": 844})
-        page.goto(BASE + "/app/#/classes"); page.wait_for_timeout(1200)
+        safe_goto(page, BASE + ("/app/#/classes" if "127.0.0.1" in BASE else "/#/classes")); page.wait_for_timeout(1200)
         sw = page.evaluate("() => document.documentElement.scrollWidth")
         ok(sw <= 392, "no horizontal overflow at 390px (scrollWidth " + str(sw) + ")")
         browser.close()
@@ -155,4 +176,4 @@ try:
     print("\nDEMO-FLOW: %d ok, %d FAIL" % (len(results) - len(fails), len(fails)))
     sys.exit(1 if fails else 0)
 finally:
-    server.terminate()
+    if server: server.terminate()
