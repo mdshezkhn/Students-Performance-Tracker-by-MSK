@@ -117,3 +117,15 @@ the moment the school provisions hosting.
 **This release is NOT marked production-ready.** It is technically
 release-ready (classification B): every technical gate that can be closed
 from this repository is closed and evidenced.
+
+---
+
+## Blocker-closure update (2026-11-14, evening)
+
+The independent audit's findings F1/F3 are closed with evidence, F2 is
+corrected (live probes with valid headers: anon UPDATE/DELETE grant-denied,
+SELECT open, INSERT grant-open-but-unexecuted), the containment SQL is
+hardened (explicit RLS) and re-harnessed (round6 32/0), and the missing
+sweep log is committed (sha256 recorded in the closure report). Release
+classification remains **B**. Details: `RELEASE-BLOCKER-CLOSURE-REPORT.md`
+and the closure addendum in `FINAL-INDEPENDENT-VERIFICATION-REPORT.md`.

@@ -68,3 +68,14 @@ if unresolved.
   rotation.
 - **Remaining**: custody assignment at provisioning time.
 - **Risk**: weak custody undermines every technical control.
+
+---
+
+## Blocker-closure update (2026-11-14, evening)
+
+Legacy-Supabase item status after closure work: repository preparation is
+COMPLETE (hardened SQL, rollback, `scripts/verify-containment.sh`, corrected
+evidence docs). The remaining action is unchanged and owner-only: execute
+`docs/supabase-write-token.sql` STEP 1 in the Supabase SQL editor (after the
+§2 backup), paste back the §7 CHECK result, then run the verification
+script. No other item changed.

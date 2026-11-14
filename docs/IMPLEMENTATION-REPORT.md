@@ -98,7 +98,7 @@ docs/qa/round29/final-sweep.log (closing sweep, all suites RC=0).
 | 15–17 | Sync / offline / Excel acceptance docs (evidence-backed) | suites cited within |
 | 18 | calc-boundaries suite; engine untouched | 13/0 + 329/0 |
 | 19 | Static-response hardening + findings register (0 CRITICAL open) | SECURITY-REVIEW doc |
-| 20 | Live legacy re-verification (88 rows readable; writes now 401) + readiness | LEGACY-SUPABASE-RETIREMENT-READINESS |
+| 20 | Live legacy re-verification (88 rows readable; anon UPDATE/DELETE grant-denied live, INSERT grant open - corrected in blocker closure) + readiness | LEGACY-SUPABASE-RETIREMENT-READINESS |
 | 21 | Stale privacy-notice text corrected; jargon audit clean | TEACHER-UX doc, notices 28/0 |
 | 22 | Reporting traceability doc | REPORTING doc |
 | 23 | Scale bench 1/5/20 classes — zero failures | bench + PERFORMANCE doc |

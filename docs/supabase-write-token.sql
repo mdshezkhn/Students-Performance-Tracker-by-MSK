@@ -202,6 +202,15 @@ grant execute on function public.spr_channel_ping(uuid, text) to anon, authentic
 -- are unknown to this file), removes the table privileges, then makes sure
 -- plain read and insert still work. Verified on a real Postgres engine with
 -- differently named policies and with an ALL policy.
+--
+-- blocker-closure 2026-11-14: live probes (valid Authorization header) show
+-- anon UPDATE and DELETE are ALREADY grant-denied on the project today
+-- (42501), while INSERT remains grant-open. This file still drops the old
+-- inert UPDATE/DELETE policies (hygiene: a future re-grant must not silently
+-- resurrect them) and now ALSO enforces RLS explicitly — if row level
+-- security were disabled on the live table, policies alone would not bind.
+
+alter table public.spr_channels enable row level security;
 
 do $$
 declare r record;

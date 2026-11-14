@@ -2,14 +2,34 @@
 
 Live re-verification performed **2026-11-14** against the production Supabase
 project (`hvjswsedoapsskedrkoj.supabase.co`, publishable key — the key is
-public by design and is not a secret):
+public by design and is not a secret). **Corrected 2026-11-14 (blocker
+closure, finding F2)**: the original table below claimed "PATCH → 401 =
+anonymous writes blocked server-side". That 401 was an ARTIFACT — the probe
+was sent without the `Authorization` header, so PostgREST rejected the
+REQUEST, not the database permission. The corrected per-operation evidence
+(all probes sent WITH both `apikey` and `Authorization` headers):
 
-| Probe (anonymous, publishable key) | Result | Meaning |
+| Operation (anonymous, publishable key) | Result | Evidence quality |
 |---|---|---|
-| `GET /rest/v1/spr_channels` | **200, exactly 88 rows** | envelopes + metadata still anonymously readable |
-| `POST /rpc/spr_channel_write` | **404** | owner has still NOT run the write-token SQL |
-| `POST /rpc/spr_channel_enrol` | **404** | same |
-| `PATCH /rest/v1/spr_channels?id=…` (direct write) | **401 denied** | anonymous writes are blocked server-side (RLS) |
+| `GET /rest/v1/spr_channels` (SELECT) | **200, exactly 88 rows** | live-confirmed |
+| `PATCH …/spr_channels?id=<row>` with a real field, **row id that cannot exist** (zero rows affected by construction) | **401 `42501 permission denied for table spr_channels`, hint: "GRANT UPDATE … TO anon"** | live-confirmed, grant-level denial (not RLS) |
+| `DELETE …/spr_channels?id=<row>` (nonexistent row, zero rows affected) | **401 `42501`, hint "GRANT DELETE … TO anon"** | live-confirmed, grant-level denial |
+| `POST` (INSERT) | **grant OPEN** (`Allow: GET, HEAD, POST, OPTIONS` — PostgREST advertises only privileges the anon role actually holds) and an anon INSERT policy is documented as pre-existing (`docs/OWNER-RUNBOOK-supabase.md` §1 expected policies: SELECT + INSERT + UPDATE) | **presumed permitted — NOT live-executed** (sending a real INSERT is prohibited by the closure mandate; junk-row creation is the only impact — see residual below) |
+| `POST /rpc/spr_channel_write` / `spr_channel_enrol` / `spr_channel_ping` | **404 ×3** | live-confirmed — owner has still NOT run the write-token SQL |
+| Row count after all probes | **still 88** | probes verified non-mutating |
+
+An empty-body PATCH returning `204` (observed in the independent audit) is
+**not** evidence of write permission: with no columns in the SET list,
+PostgREST performs no column-privilege check and no row is touched. Only the
+field-bearing probe above answers the permission question, and it is denied.
+
+RLS note: the REST layer cannot read `pg_policies` / `relrowsecurity`. The
+UPDATE/DELETE denials above are GRANT-level and hold regardless of policy
+state. Whether row-level security is currently enabled on the table is
+**NOT VERIFIED** (read-only owner dashboard query: `select relrowsecurity
+from pg_class where relname = 'spr_channels';`). The hardened containment
+SQL now enforces RLS explicitly, so this unknown cannot matter after
+containment.
 
 ## Containment status (the new application)
 
@@ -30,10 +50,18 @@ data-safety 36/0, device-sync 114/0):
    therefore simply stays paused until the owner acts.
 5. **The new backend shares nothing with Supabase** (zero dependencies).
 
-Combined with the live 401 on direct writes, the residual exposure is:
-**readable ciphertext + row metadata (names/timestamps) for 88 historical
-channels; no write path at all.** Payloads are AES-GCM envelopes whose keys
-never appear in URLs or the bundle.
+Combined with the corrected per-operation evidence above, the residual
+exposure is: **readable ciphertext + row metadata (names/timestamps) for 88
+historical channels; anonymous INSERT grant open (junk-row/DoS vector only —
+a junk row can never be read by anyone else without that channel's key,
+cannot overwrite an existing channel (primary key), and cannot be modified
+afterwards (UPDATE grant denied)); anonymous UPDATE and DELETE denied at the
+grant level.** Payloads are AES-GCM envelopes whose keys never appear in URLs
+or the bundle. The write-token SQL (hardened 2026-11-14: now also enables
+RLS explicitly and re-verified by the round-6 real-Postgres harness, 32/0)
+deliberately keeps INSERT open — new channels need it — inside token-armed
+semantics: direct UPDATE/DELETE stay revoked and every write goes through the
+RPCs.
 
 ## Row ownership / contents (inventory)
 
@@ -66,6 +94,26 @@ state per step:
 
 ## Risk if unresolved
 
-LOW-to-MEDIUM and non-growing: historical ciphertext remains publicly
-fetchable; no writes; no keys exposed. The exposure only shrinks as the owner
+MEDIUM and non-growing: historical ciphertext remains publicly fetchable,
+and the open INSERT grant permits junk-row spam against the table (nuisance /
+storage growth only — no readable or modifiable data). UPDATE/DELETE are
+grant-denied. No keys exposed. The exposure only shrinks as the owner
 executes steps 3 (or 4) and 5–6.
+
+## Containment execution + verification (owner-authorised; NOT executed)
+
+Prepared and verified in-repo; requires the owner's dashboard authority:
+
+1. Backup (runbook §2, reversible) — `docs/OWNER-RUNBOOK-supabase.md`.
+2. Run `docs/supabase-write-token.sql` (STEP 1, whole file — now hardened
+   with `enable row level security`; the exact file re-verified by
+   `tests/test-round6.js` → real-Postgres harness, 32/0, artifact
+   `docs/qa/round6/sql-policy-test-output.txt`).
+3. Paste back the CHECK result (SQL §7): must show ONLY
+   `spr_channels_read (SELECT)` + `spr_channels_insert (INSERT)`.
+4. Independent post-check (one command, non-mutating):
+   `scripts/verify-containment.sh` — expects SELECT still 200 (share links
+   keep working), field-bearing PATCH still 42501, DELETE still 42501,
+   `spr_channel_ping` now responding (not 404), row count unchanged.
+5. Rollback: runbook §6 (restores the old policy + grants, plus the
+   truncate+insert restore from the §2 backup if any row ever looks wrong).

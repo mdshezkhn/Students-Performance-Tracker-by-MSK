@@ -115,3 +115,26 @@ No production student records were used for any test or fixture in this work (sy
 2. **Provision the China host** per `docs/DEPLOYMENT-GUIDE.md` (domain + ICP 备案 + VPS + PostgreSQL + TLS). Nothing student-data-related may be cut over before that; staging uses synthetic data only.
 
 Both are tracked in `docs/IMPLEMENTATION-REPORT.md` as *Awaiting external action*.
+
+---
+
+## Addendum (2026-11-14, blocker-closure F2) — live permission corrections
+
+This baseline was written 2026-11-13. Probe methodology then had one flaw:
+the direct-write probe was sent without the `Authorization` header, so its
+401 reflected a rejected REQUEST, not a database denial. Live re-probes
+(2026-11-14, valid headers, write-shaped requests aimed at a row id that
+cannot exist — zero rows affected) establish for `public.spr_channels`:
+
+- anon **SELECT**: open (200, 88 rows) — unchanged from the baseline.
+- anon **UPDATE**: **denied at the grant level** (42501, "GRANT UPDATE … TO
+  anon" hint). The baseline's "anonymously writable" and §P1's "presumed
+  INSERT/UPDATE open" are therefore SUPERSEDED for UPDATE.
+- anon **DELETE**: denied at the grant level (42501) — newly established.
+- anon **INSERT**: grant OPEN (advertised method) + documented pre-existing
+  insert policy — presumed permitted, never live-executed (junk-row vector
+  only; cannot touch or reveal existing rows).
+- The write-token RPCs remain absent (404) — the baseline's C1 remediation
+  (app refuses unauthenticated writes) remains in force and tested.
+
+Authoritative current table: `docs/LEGACY-SUPABASE-RETIREMENT-READINESS.md`.
